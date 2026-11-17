@@ -7,6 +7,7 @@ Until 1.0, anything may change between versions; a show file saved by an older v
 equipment it is for. This file is the short version, for someone deciding whether to update.
 
 ## Unreleased
+- **A newer version is easy to see.** The title bar's update line is a pill in the accent, with an arrow, and Download (later Restart now) is the main button. Still never in Show mode or while anything plays.
 - **Safer with a show or a packet from someone else.** No window of the app can be sent to another page (a link, a file dropped on it): each page talks to the show, so it stays the app's. Only web and mail addresses are handed to the system. A web remote with no key of its own gets one that cannot be worked out from the show's id (which OSC control tells anyone who asks); its address changes once. A packet that is not OSC on the lighting desk's port is dropped. A show file's settings cannot carry an object's prototype.
 - **The assistant's "apply at once" never opens a door.** A change that switches a module on or off, or touches the network patches or the devices, always waits for review.
 

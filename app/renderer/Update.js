@@ -1,4 +1,4 @@
-// A newer version, in one quiet line in the title bar (app/main/updates.js decides when there is one). Never in
+// A newer version, in one line in the title bar (a pill in the accent, its one action a primary button) (app/main/updates.js decides when there is one). Never in
 // Show mode or while anything plays: the line is not drawn, and the app does nothing about updates meanwhile.
 import { html, useState, useEffect, ec } from './lib.js';
 
@@ -14,10 +14,10 @@ export function UpdateLine({ u, s, say }) {
   const v = u.version;
   return html`<span class="update-line" data-update=${u.step}>
     ${u.step === 'available' ? html`<span>Version ${v} is ready to download.</span>
-        <button class="btn small" data-update-download onClick=${() => act('update-download')}>Download</button>
+        <button class="btn primary small" data-update-download onClick=${() => act('update-download')}>Download</button>
         <button class="btn ghost small" data-update-later onClick=${() => act('update-later')}>Not now</button>`
       : u.step === 'downloading' ? html`<span>Downloading version ${v}…${u.percent ? ` ${u.percent}%` : ''}</span>`
       : html`<span>Version ${v} will install when you quit.</span>
-        <button class="btn small" data-update-restart onClick=${() => act('update-restart')}>Restart now</button>`}
+        <button class="btn primary small" data-update-restart onClick=${() => act('update-restart')}>Restart now</button>`}
   </span>`;
 }

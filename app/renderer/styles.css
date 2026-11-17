@@ -131,7 +131,12 @@ button { font: inherit; color: inherit; cursor: default; }
 .btn.ghost.small { font-size: var(--fs-l); }
 .titlebar .btn.small { font-size: var(--fs-m); }
 /* a newer version (Update.js): quiet, a grey line like any other words */
-.update-line { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; font-size: var(--fs-s); color: var(--text-1); white-space: nowrap; }
+.update-line { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; font-size: var(--fs-m); font-weight: 600; color: var(--text-0); white-space: nowrap;
+  padding: 2px 3px 2px 8px; border-radius: 999px; background: var(--accent-wash); border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--bg-4)); animation: fade .4s; }
+/* a newer version is something to do: the pill wears the accent of the one action, an arrow before its words */
+.update-line::before { content: '↓'; font-weight: 700; color: var(--accent); }
+.update-line[data-update="downloading"] { padding-right: 10px; }
+.update-line .btn { border-radius: 999px; }
 .update-line > span { overflow: hidden; text-overflow: ellipsis; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-1); }
 .btn.ghost:hover { background: var(--bg-3); color: var(--text-0); }
