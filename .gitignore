@@ -24,3 +24,12 @@ __pycache__/
 /app/build-info.json
 # A prop's real Wi-Fi password, if someone builds the kit's sketches in place (the templates are secrets.example.h)
 /core/kit/firmware/*/secrets.h
+# What build/compile.mjs writes (npm run build): a .js beside each .ts, the pages' bundles, their maps
+/app/**/*.js
+/core/**/*.js
+/bin/**/*.js
+/build/**/*.js
+/test/**/*.js
+/examples/**/*.js
+*.js.map
+!/app/renderer/vendor/*.js

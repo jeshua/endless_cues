@@ -1,0 +1,176 @@
+// Updates (core/update/updates.js): when the app may look, what it says, and that nothing happens during a show.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'events';
+import { createUpdates, feedFor, settingsOf, due, said, FEED, TEST_FEED, DAY } from '../core/update/updates';
+
+/** A stand-in for electron-updater: the feed has `latest`; a download finishes when `finish()` is called. */
+function fakeUpdater({ current = '0.3.0-alpha.2', latest = '0.3.0-alpha.3', fail = null } = {}) {
+  const u = new EventEmitter();
+  u.feeds = []; u.checks = 0; u.downloads = 0; u.installed = 0; u.latest = latest; u.fail = fail;
+  let pending = null;
+  u.setFeedURL = (o) => u.feeds.push(o);
+  u.checkForUpdates = async () => {
+    u.checks++;
+    if (u.fail) throw u.fail;
+    const newer = u.latest !== current;
+    u.emit(newer ? 'update-available' : 'update-not-available', { version: u.latest });
+    return { isUpdateAvailable: newer };
+  };
+  u.downloadUpdate = (token) => new Promise((resolve, reject) => {
+    u.downloads++;
+    pending = { resolve, reject };
+    if (token) token.onCancel = () => reject(new Error('cancelled'));
+  });
+  u.finish = () => { u.emit('download-progress', { percent: 100 }); u.emit('update-downloaded', { version: u.latest }); pending.resolve([]); };
+  u.quitAndInstall = () => { u.installed++; };
+  return u;
+}
+const token = () => ({ cancel() { if (this.onCancel) this.onCancel(); } });
+
+function rig(opts = {}) {
+  const updater = fakeUpdater(opts);
+  const world = { mode: 'edit', sounding: false, config: opts.config || {}, now: opts.now || 1e12, said: [], shown: [], quitAnswer: true, quits: 0 };
+  const u = createUpdates({ updater, token, version: '0.3.0-alpha.2', mode: () => world.mode, sounding: () => world.sounding,
+    getConfig: () => world.config, saveConfig: (c) => Object.assign(world.config, c), now: () => world.now,
+    told: (s) => world.shown.push(s), ask: (t) => world.said.push(t), quit: async () => { world.quits++; return world.quitAnswer; }, env: opts.env || {} });
+  return { u, updater, world };
+}
+const flush = () => new Promise((r) => setImmediate(r));
+
+test('the feed: everyone’s by default, the test versions’ when chosen, a test feed above both', () => {
+  assert.equal(feedFor({ test: false }), FEED);
+  assert.equal(feedFor({ test: true }), TEST_FEED);
+  assert.equal(TEST_FEED, 'https://downloads.endlesscues.com/test/');
+  assert.equal(feedFor({ test: true }, { EC_UPDATE_FEED: 'http://127.0.0.1:8123' }), 'http://127.0.0.1:8123/');
+  assert.deepEqual(settingsOf({}), { auto: true, test: false, lastCheck: 0 }, 'checking is on, test versions off');
+  assert.deepEqual(settingsOf({ updates: { auto: false, test: true, lastCheck: 5 } }), { auto: false, test: true, lastCheck: 5 });
+});
+
+test('a check is due once a day, and never while switched off', () => {
+  assert.ok(due({ auto: true, lastCheck: 0 }, 1e12));
+  assert.ok(!due({ auto: true, lastCheck: 1e12 - DAY + 1000 }, 1e12));
+  assert.ok(due({ auto: true, lastCheck: 1e12 - DAY }, 1e12));
+  assert.ok(!due({ auto: false, lastCheck: 0 }, 1e12));
+});
+
+test('the daily check waits for Edit mode with nothing playing, and its line hides in Show mode', async () => {
+  const { u, updater, world } = rig();
+  world.mode = 'show'; u.tick(); await flush();
+  assert.equal(updater.checks, 0, 'Show mode: no check');
+  world.mode = 'edit'; world.sounding = true; u.tick(); await flush();
+  assert.equal(updater.checks, 0, 'sound playing: no check');
+  world.sounding = false; u.tick(); await flush();
+  assert.equal(updater.checks, 1);
+  assert.equal(updater.feeds[0].url, FEED);
+  assert.equal(updater.feeds[0].provider, 'generic');
+  assert.deepEqual([u.state().step, u.state().version, u.state().visible], ['available', '0.3.0-alpha.3', true]);
+  assert.ok(world.config.updates.lastCheck, 'the check is remembered');
+  world.mode = 'show'; u.tick();
+  assert.equal(u.state().visible, false, 'hidden in Show mode');
+  world.mode = 'edit'; u.tick();
+  assert.equal(u.state().visible, true, 'back in Edit');
+  // and not again today
+  u.later(); u.tick(); await flush();
+  assert.equal(updater.checks, 1);
+  assert.equal(u.state().visible, false, 'Not now hides it');
+  world.now += DAY; u.tick(); await flush();
+  assert.equal(updater.checks, 2, 'tomorrow it looks again');
+  assert.equal(u.state().visible, true);
+});
+
+test('switched off, nothing is checked by itself; Help ▸ Check for Updates… still works and says the answer', async () => {
+  const { u, updater, world } = rig({ latest: '0.3.0-alpha.2', config: { updates: { auto: false } } });
+  u.tick(); await flush();
+  assert.equal(updater.checks, 0);
+  await u.check({ manual: true });
+  assert.equal(updater.checks, 1);
+  assert.deepEqual(world.said, ['You have the latest version.']);
+  world.mode = 'show';
+  await u.check({ manual: true });
+  assert.equal(updater.checks, 1, 'not in Show mode');
+  assert.match(world.said[1], /Show mode/);
+});
+
+test('an offline check is silent by itself, plain when asked, and tried again an hour later', async () => {
+  const err = Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED'), {});
+  const { u, updater, world } = rig({ fail: err });
+  u.tick(); await flush();
+  assert.equal(updater.checks, 1);
+  assert.deepEqual(world.said, [], 'nothing said');
+  assert.equal(world.config.updates, undefined, 'a check that got no answer is not counted');
+  u.tick(); await flush();
+  assert.equal(updater.checks, 1, 'not again at once');
+  world.now += 3600e3; u.tick(); await flush();
+  assert.equal(updater.checks, 2);
+  await u.check({ manual: true });
+  assert.deepEqual(world.said, ['Could not check for updates. There is no connection to endlesscues.com.']);
+  assert.equal(said(new Error('Could not locate update bundle for com.github.Electron within file:///x/')), 'macOS could not install it over this copy of the app.');
+  assert.equal(said(new Error('Cannot find channel "latest-mac.yml" update info: HttpError: 404')), 'The update server has no version for this computer yet.');
+});
+
+test('nothing downloads until Download, and Show mode stops a download under way', async () => {
+  const { u, updater, world } = rig();
+  await u.check({ manual: true });
+  assert.equal(updater.downloads, 0, 'found, not fetched');
+  world.mode = 'show';
+  assert.match((await u.download()).error, /Edit mode/);
+  world.mode = 'edit';
+  const going = u.download();
+  assert.equal(u.state().step, 'downloading');
+  world.mode = 'show'; u.tick();
+  await going;
+  assert.deepEqual([u.state().step, u.state().visible], ['available', false], 'stopped, and offered again in Edit');
+  world.mode = 'edit'; u.tick();
+  const again = u.download();
+  updater.finish(); await again;
+  assert.deepEqual([u.state().step, u.state().version, u.state().visible], ['ready', '0.3.0-alpha.3', true]);
+  assert.equal(updater.installed, 0, 'never installed by itself');
+});
+
+test('Restart now: only in Edit mode with nothing playing, and only after quitting’s questions say yes', async () => {
+  const { u, updater, world } = rig();
+  assert.match((await u.restart()).error, /nothing to install/);
+  await u.check(); const d = u.download(); updater.finish(); await d;
+  world.sounding = true;
+  assert.match((await u.restart()).error, /nothing playing/);
+  world.sounding = false; world.mode = 'show';
+  assert.match((await u.restart()).error, /Edit mode/);
+  world.mode = 'edit'; world.quitAnswer = false;
+  assert.deepEqual(await u.restart(), { canceled: true }, 'Cancel at the unsaved-changes question');
+  assert.equal(updater.installed, 0);
+  world.quitAnswer = true;
+  assert.deepEqual(await u.restart(), { ok: true });
+  assert.equal(updater.installed, 1);
+  assert.equal(world.quits, 2);
+});
+
+test('a download the system will not install (its signature refused) stops saying it will install', async () => {
+  const { u, updater, world } = rig();
+  await u.check(); const d = u.download(); updater.finish(); await d;
+  updater.emit('error', new Error('Could not get code signature for running application'));
+  assert.equal(u.state().visible, false);
+  assert.match(world.said[0], /^Version 0\.3\.0-alpha\.3 cannot be installed\. macOS refused/);
+});
+
+test('Test versions reads the test feed, forgets what everyone’s offered, and checks again', async () => {
+  const { u, updater, world } = rig();
+  await u.check();
+  assert.equal(u.state().step, 'available');
+  u.configure({ test: true });
+  assert.equal(world.config.updates.test, true);
+  assert.equal(u.state().step, 'idle');
+  u.tick(); await flush();
+  assert.equal(updater.checks, 2, 'due again at once');
+  assert.equal(updater.feeds[updater.feeds.length - 1].url, TEST_FEED);
+  u.configure({ auto: false });
+  assert.deepEqual(u.settings().auto, false);
+});
+
+test('a copy run from source never checks, and says so when asked', async () => {
+  const said = [];
+  const u = createUpdates({ updater: fakeUpdater(), enabled: false, ask: (t) => said.push(t) });
+  u.tick();
+  await u.check({ manual: true });
+  assert.match(said[0], /runs from source/);
+});

@@ -4,25 +4,34 @@
   "description": "Endless Cues: open show control. QLab's cue list, a sound designer's tools, an open show file.",
   "main": "app/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test \"test/*.test.js\"",
-    "smoke": "electron . --smoke",
+    "build": "node build/compile.mjs",
+    "watch": "node build/compile.mjs --watch",
+    "clean": "node build/compile.mjs --clean",
+    "typecheck": "tsc -p .",
+    "prepare": "node build/compile.mjs",
+    "start": "node build/compile.mjs && electron .",
+    "test": "node build/compile.mjs && tsc -p . && node --enable-source-maps --test \"test/*.test.js\"",
+    "smoke": "node build/compile.mjs && electron . --smoke",
     "tracker": "node bin/tracker.js",
-    "users:prepare": "node test/users/prepare.js",
+    "users:prepare": "node build/compile.mjs && node test/users/prepare.js",
     "users:collect": "node test/users/collect.js",
     "postinstall": "node -e \"if(process.platform==='darwin')require('child_process').spawnSync('xattr',['-cr','node_modules/electron/dist/Electron.app'])\"",
-    "demo": "node examples/make-demo.js",
-    "fake-prop": "node bin/ec-fake-prop.js",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux",
-    "release": "node bin/release.js"
+    "demo": "node build/compile.mjs && node examples/make-demo.js",
+    "fake-prop": "node build/compile.mjs && node bin/ec-fake-prop.js",
+    "pack": "node build/compile.mjs && electron-builder --dir",
+    "dist": "node build/compile.mjs && electron-builder",
+    "dist:mac": "node build/compile.mjs && electron-builder --mac",
+    "dist:win": "node build/compile.mjs && electron-builder --win",
+    "dist:linux": "node build/compile.mjs && electron-builder --linux",
+    "release": "node build/compile.mjs && node bin/release.js"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "electron": "^43.2.0",
-    "electron-builder": "^26.18.0"
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "preact": "^10.29.8",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
@@ -44,7 +53,9 @@
       "examples/make-demo.js",
       "package.json",
       "!**/*.md",
-      "bin/**"
+      "bin/**",
+      "!**/*.ts",
+      "!**/*.js.map"
     ],
     "asar": true,
     "publish": [

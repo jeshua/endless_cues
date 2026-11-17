@@ -1,0 +1,262 @@
+// The stage window's code (stage.html). A plain script (build/compile.mjs writes stage.js).
+const TEST = new URLSearchParams(location.search).has('test');
+const stageEl = document.getElementById('stage');
+const patternEl = document.getElementById('pattern');
+const blackoutEl = document.getElementById('blackout');
+const report = (ev) => window.cueStage.report(ev);
+
+let stage = { width: 1920, height: 1080, matrix: null };
+const layers = new Map();          // cue id -> { el, media, kind, geo, tweens, paused, order }
+let order = 0;
+
+// ── the stage in the window ─────────────────────────────────────────────
+function layout() {
+  const k = Math.min(innerWidth / stage.width, innerHeight / stage.height);
+  const ox = (innerWidth - stage.width * k) / 2, oy = (innerHeight - stage.height * k) / 2;
+  stageEl.style.width = `${stage.width}px`;
+  stageEl.style.height = `${stage.height}px`;
+  // (read right to left: the corner pin bends the stage in its own pixels, then it is scaled and centred in the window)
+  stageEl.style.transform = `translate(${ox}px, ${oy}px) scale(${k})${stage.matrix ? ` matrix3d(${stage.matrix.join(',')})` : ''}`;
+}
+addEventListener('resize', layout);
+
+function setStage({ width, height, matrix }) {
+  const resized = width !== stage.width || height !== stage.height;
+  stage = { width, height, matrix: matrix || null };
+  layout();
+  if (resized && patternEl.style.display === 'block') drawPattern();
+}
+
+// ── a layer's geometry, and the moves on it ─────────────────────────────
+function apply(l) {
+  const g = l.geo;
+  l.el.style.opacity = String(Math.max(0, Math.min(1, g.opacity / 100)));
+  l.el.style.transform = `translate(${g.x}px, ${-g.y}px) rotate(${g.rotation}deg) scale(${g.scale})`;
+}
+let ticking = false, lastStep = 0;
+function step() {
+  lastStep = performance.now();
+  let any = false;
+  for (const l of layers.values()) {
+    if (l.paused || !l.tweens.size) continue;
+    for (const [k, t] of l.tweens) {
+      const x = t.secs > 0 ? Math.min(1, (lastStep - t.t0) / (t.secs * 1000)) : 1;
+      l.geo[k] = t.from + (t.to - t.from) * x;
+      if (x >= 1) l.tweens.delete(k); else any = true;
+    }
+    apply(l);
+  }
+  return any;
+}
+function tick() { if (step()) requestAnimationFrame(tick); else ticking = false; }
+function run() { if (!ticking) { ticking = true; requestAnimationFrame(tick); } }
+// A window that is not being drawn (covered, or its display asleep) is given no animation frames; a fade must
+// still land where it was going, so a slow timer steps whatever the frames have left behind.
+setInterval(() => { if (performance.now() - lastStep > 150 && [...layers.values()].some((l) => l.tweens.size && !l.paused)) { if (!step()) ticking = false; } }, 100);
+
+function move({ id, props, secs }) {
+  const l = layers.get(id);
+  if (!l) return;
+  const now = performance.now();
+  for (const [k, to] of Object.entries(props || {})) {
+    if (!(k in l.geo) || !Number.isFinite(Number(to))) continue;
+    if (!(secs > 0)) { l.tweens.delete(k); l.geo[k] = Number(to); continue; }
+    l.tweens.set(k, { from: l.geo[k], to: Number(to), t0: l.paused ? 0 : now, secs, done: 0 });
+  }
+  apply(l);
+  run();
+}
+
+// ── showing ─────────────────────────────────────────────────────────────
+function shown(id, l) { if (layers.get(id) === l && !l.reported) { l.reported = true; report({ type: 'shown', id }); } }
+function failed(id, l, detail) { if (layers.get(id) === l) report({ type: 'error', id, detail: String(detail || 'cannot be shown') }); }
+
+/** A stand-in for a camera in a test run: a picture that moves, so a check can see that it is live. */
+function standIn() {
+  const c = document.createElement('canvas');
+  c.width = 320; c.height = 180;
+  const g = c.getContext('2d');
+  let n = 0;
+  const draw = () => { g.fillStyle = '#1f6fd1'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#fff'; g.fillRect((n++ * 7) % 320, 0, 12, 180); };
+  draw();
+  const timer = setInterval(draw, 50);
+  const stream = c.captureStream(20);
+  stream.addEventListener('inactive', () => clearInterval(timer));
+  return stream;
+}
+async function openCamera(name) {
+  if (TEST) return standIn();
+  let found = null;
+  if (name) {
+    // (a camera is chosen by its name, which travels with the show; an id is this computer's)
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    found = all.find((d) => d.label === name) || all.find((d) => d.label && d.label.toLowerCase().includes(name.toLowerCase()));
+    if (!found) throw new Error(`no camera named ${name}`);
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: found ? { deviceId: { exact: found.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } } : { width: { ideal: 1920 }, height: { ideal: 1080 } } });
+  cameras();                     // (the cameras have names once one has been opened)
+  return stream;
+}
+
+function show({ id, kind, url, text, font, size, textColor, align, camera, mirror, fit, layer, loop, from, geometry, paused }) {
+  hide({ id });
+  const el = document.createElement('div');
+  el.className = `cue ${kind === 'text' ? 'natural' : ['fit', 'fill', 'stretch', 'natural'].includes(fit) ? fit : 'fit'}${mirror ? ' mirror' : ''}`;
+  // a higher layer is in front; on one layer, what started last is
+  el.style.zIndex = String(Math.max(0, Math.min(9999, Math.round(Number(layer) || 0))) * 10 + 1);
+  const l = { el, kind, media: null, geo: { opacity: 100, x: 0, y: 0, scale: 1, rotation: 0, ...(geometry || {}) }, tweens: new Map(), paused: !!paused, order: order++ };
+  layers.set(id, l);
+  if (kind === 'video') {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.loop = !!loop; v.disablePictureInPicture = true;
+    v.addEventListener('error', () => failed(id, l, (v.error && v.error.message) || 'this video cannot be played (its format?)'));
+    v.addEventListener('loadeddata', () => shown(id, l));
+    const start = () => {
+      if (from > 0) { try { v.currentTime = Math.min(from, Math.max(0, (v.duration || from) - 0.03)); } catch { /* not seekable */ } }
+      if (!l.paused) v.play().catch((err) => { if (layers.get(id) === l && !l.paused) failed(id, l, err); });
+    };
+    v.src = url;
+    if (from > 0) v.addEventListener('loadedmetadata', start, { once: true }); else start();
+    l.media = v;
+    el.appendChild(v);
+  } else if (kind === 'image') {
+    const img = document.createElement('img');
+    img.addEventListener('load', () => shown(id, l));
+    img.addEventListener('error', () => failed(id, l, 'this image cannot be read'));
+    img.src = url;
+    el.appendChild(img);
+  } else if (kind === 'text') {
+    const t = document.createElement('div');
+    t.className = 'title';
+    t.textContent = text || '';
+    t.style.fontFamily = font ? `"${String(font).replace(/["\\]/g, '')}", system-ui, sans-serif` : 'system-ui, sans-serif';
+    t.style.fontSize = `${Math.max(1, Number(size) || 96)}px`;
+    t.style.color = CSS.supports('color', String(textColor || '')) ? textColor : '#ffffff';
+    t.style.textAlign = ['left', 'center', 'right'].includes(align) ? align : 'center';
+    el.appendChild(t);
+    requestAnimationFrame(() => shown(id, l));
+    setTimeout(() => shown(id, l), 120);
+  } else if (kind === 'camera') {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.autoplay = true;
+    v.addEventListener('loadeddata', () => shown(id, l));
+    l.media = v;
+    el.appendChild(v);
+    openCamera(camera).then((stream) => {
+      if (layers.get(id) !== l) { for (const t of stream.getTracks()) t.stop(); return; }      // stopped before the camera had opened
+      l.stream = stream;
+      v.srcObject = stream;
+      v.play().catch(() => {});
+    }).catch((err) => failed(id, l, `the camera could not be opened: ${err.message || err}`));
+  }
+  apply(l);
+  stageEl.appendChild(el);
+}
+
+function hide({ id }) {
+  const l = layers.get(id);
+  if (!l) return;
+  layers.delete(id);
+  if (l.stream) for (const t of l.stream.getTracks()) t.stop();
+  if (l.media) { try { l.media.pause(); l.media.removeAttribute('src'); l.media.srcObject = null; l.media.load(); } catch { /* gone */ } }
+  l.el.remove();
+}
+function clear() { for (const id of [...layers.keys()]) hide({ id }); }
+
+/** Pause holds the picture, and any move on it, where they are. */
+function pause({ id }) {
+  const l = layers.get(id);
+  if (!l || l.paused) return;
+  l.paused = true;
+  const now = performance.now();
+  for (const t of l.tweens.values()) t.done = now - t.t0;
+  if (l.media && l.kind === 'video') l.media.pause();
+}
+function resume({ id }) {
+  const l = layers.get(id);
+  if (!l || !l.paused) return;
+  l.paused = false;
+  const now = performance.now();
+  for (const t of l.tweens.values()) t.t0 = now - (t.done || 0);
+  if (l.media && l.kind === 'video') l.media.play().catch(() => {});
+  run();
+}
+function seek({ id, t }) {
+  const l = layers.get(id);
+  if (!l || l.kind !== 'video') return;
+  try { l.media.currentTime = Math.max(0, t); } catch { /* not seekable yet */ }
+}
+
+/**
+ * The sound of video `id` was `t` s into its file at `at` (this computer's clock). The picture is brought to
+ * it: a little out, by playing a few percent fast or slow until it is there (a skip would be seen); far out,
+ * by a skip. Within a frame or so it is left alone.
+ */
+function sync({ id, t, at }) {
+  const l = layers.get(id);
+  if (!l || l.kind !== 'video' || l.paused || l.media.readyState < 2 || l.media.seeking) return;
+  const v = l.media;
+  const want = t + (Date.now() - at) / 1000;
+  let off = v.currentTime - want;
+  if (v.loop && v.duration > 0) { off = ((off % v.duration) + v.duration) % v.duration; if (off > v.duration / 2) off -= v.duration; }
+  if (v.paused && !v.ended) v.play().catch(() => {});
+  if (Math.abs(off) > 0.4) { v.playbackRate = 1; try { v.currentTime = v.loop && v.duration > 0 ? ((want % v.duration) + v.duration) % v.duration : Math.max(0, want); } catch { /* not seekable */ } }
+  else if (Math.abs(off) > 0.04) v.playbackRate = off > 0 ? 0.95 : 1.05;
+  else v.playbackRate = 1;
+  l.off = off;
+}
+
+// ── the test pattern, and the blackout ──────────────────────────────────
+function drawPattern() {
+  const w = stage.width, h = stage.height, u = Math.max(8, Math.round(Math.min(w, h) / 12));
+  const lines = [];
+  for (let x = w / 2 % u; x <= w; x += u) lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}"/>`);
+  for (let y = h / 2 % u; y <= h; y += u) lines.push(`<line x1="0" y1="${y}" x2="${w}" y2="${y}"/>`);
+  const bars = ['#ffffff', '#ffff00', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#0000ff', '#000000'];
+  const bw = (u * 6) / bars.length, by = h / 2 + u * 2;
+  const mark = (x, y, label, anchor) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${u * 0.45}" fill="#fff" font-family="system-ui, sans-serif">${label}</text>`;
+  patternEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <rect width="${w}" height="${h}" fill="#101010"/>
+    <g stroke="#5a5a5a" stroke-width="2">${lines.join('')}</g>
+    <g stroke="#fff" stroke-width="4" fill="none">
+      <rect x="2" y="2" width="${w - 4}" height="${h - 4}"/>
+      <line x1="0" y1="0" x2="${w}" y2="${h}"/><line x1="${w}" y1="0" x2="0" y2="${h}"/>
+      <line x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}"/><line x1="0" y1="${h / 2}" x2="${w}" y2="${h / 2}"/>
+      <circle cx="${w / 2}" cy="${h / 2}" r="${Math.min(w, h) / 2 - 2}"/><circle cx="${w / 2}" cy="${h / 2}" r="${u}"/>
+    </g>
+    ${bars.map((c, i) => `<rect x="${w / 2 - u * 3 + i * bw}" y="${by}" width="${bw}" height="${u}" fill="${c}"/>`).join('')}
+    <rect x="${w / 2 - u * 3}" y="${by}" width="${u * 6}" height="${u}" fill="none" stroke="#fff" stroke-width="2"/>
+    <text x="${w / 2}" y="${h / 2 - u * 1.5}" text-anchor="middle" font-size="${u * 0.7}" fill="#fff" font-family="system-ui, sans-serif">${w} × ${h}</text>
+    ${mark(u * 0.3, u * 0.6, 'top left', 'start')}${mark(w - u * 0.3, u * 0.6, 'top right', 'end')}
+    ${mark(u * 0.3, h - u * 0.3, 'bottom left', 'start')}${mark(w - u * 0.3, h - u * 0.3, 'bottom right', 'end')}
+  </svg>`;
+}
+function pattern({ on }) {
+  patternEl.style.display = on ? 'block' : 'none';
+  if (on) drawPattern(); else patternEl.innerHTML = '';
+}
+function blackout({ on, secs }) {
+  blackoutEl.style.transition = secs > 0 ? `opacity ${secs}s linear` : 'none';
+  blackoutEl.style.opacity = on ? '1' : '0';
+}
+
+async function cameras() {
+  try {
+    const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.label);
+    report({ type: 'cameras', list: [...new Set(all.map((d) => d.label))] });
+  } catch { /* none to list */ }
+}
+
+const ops = { stage: setStage, show, hide, clear, move, pause, resume, seek, sync, pattern, blackout, cameras };
+// A command that throws is said (the log), never lost in a window nobody is watching closely.
+window.cueStage.onCmd((cmd) => {
+  const f = ops[cmd.op];
+  if (!f) return;
+  try { const p = f(cmd); if (p && p.catch) p.catch((err) => report({ type: 'operror', op: cmd.op, id: cmd.id || '', detail: String(err) })); }
+  catch (err) { report({ type: 'operror', op: cmd.op, id: cmd.id || '', detail: String(err) }); }
+});
+if (!TEST) navigator.mediaDevices.addEventListener('devicechange', cameras);
+
+layout();
+report({ type: 'ready' });
+if (!TEST) cameras();

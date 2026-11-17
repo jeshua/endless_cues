@@ -9,12 +9,7 @@
 </head>
 <body>
 <div id="root"></div>
-<!-- the list as it is looked at: chains, find, zoom (a plain script, shared with the tests) -->
-<script src="list-view.js"></script>
-<!-- the lines drawn over a sound (core/audio/lanes.js: the arithmetic the audio window plays them by) -->
-<script src="core/audio/lanes.js"></script>
-<!-- what the window leaves out until it is needed: colours, empty columns, the add-cue list (a plain script, shared with the tests) -->
-<script src="tidy.js"></script>
-<script type="module" src="app.js"></script>
+<!-- the window's code: app.ts and what it imports, bundled by build/compile.mjs -->
+<script type="module" src="window.bundle.js"></script>
 </body>
 </html>
