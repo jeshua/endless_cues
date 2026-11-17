@@ -1,0 +1,247 @@
+{
+  "person": "marcus",
+  "verdict": "with-workarounds",
+  "verdictWhy": "It vamps and it leaves the vamp at the end of the pass, with the click going round in step on 3-4 only, and that was the thing I came to find out. But the vamp only happens if I remember to press L after every GO, I could not get a counted vamp to take its count at all, and timecode and the Mic cue are just memos. As a backup machine I would rehearse on it this week; I would not call it show-ready until the vamp holds by itself.",
+  "ratings": {
+    "learn": 4,
+    "speed": 4,
+    "clarity": 3,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "bring",
+      "outcome": "done",
+      "notes": "Import from QLab on the first screen; 18 cues, groups, fades, devamps and targets came across with the audio. The report said plainly what did not: click levels, slice counts, MIDI, Mic, Timecode."
+    },
+    {
+      "id": "click",
+      "outcome": "done",
+      "notes": "Imported click cues were silent on the Effects bus (1-2). Added a bus, named it Click, sent it to Outputs 3-4, set bus and level on all three click cues in one multi-select. hear reports the click 'on outputs 3-4 only (Click)'. What happens on a machine with only two outputs was not answerable from the screen."
+    },
+    {
+      "id": "vamp",
+      "outcome": "done-with-trouble",
+      "notes": "Make from markers gave a 0:16-0:24 region, but the first run played straight through it. It only vamps if L (hold next) is pressed after GO. With L: three passes, click in step, and GO on '11 Out of the vamp' finished the pass and played on."
+    },
+    {
+      "id": "counted",
+      "outcome": "gave-up",
+      "notes": "The app says a region takes a count, but the count box on the Finale's region would not take '4' in seven tries and a run went straight through 0:30. Also could not place a marker at 0:38 for the bows vamp."
+    },
+    {
+      "id": "rehearse",
+      "outcome": "done",
+      "notes": "Cmd+T, 25, Enter, Space: track and click both from 0:25, header says LOADED TO 0:25.0. Again: Esc Esc, Up, Cmd+T, 25, Enter, Space; the time is not remembered."
+    },
+    {
+      "id": "renumber",
+      "outcome": "done",
+      "notes": "Select Finale to Finale button, Cmd+R, Start at 300, Renumber: 300-305, targets followed ('301 · Finale track'). The two children got numbers too, as QLab would."
+    },
+    {
+      "id": "levels",
+      "outcome": "done",
+      "notes": "Typed -9 in the Ballad track's Level while it played: heard at -9 at once, Active cues shows -9 dB, '11 unsaved' chip. Cmd+S saved to a folder with the audio copied in, without interrupting playback. First click after GO landed on the click cue because the list had scrolled."
+    },
+    {
+      "id": "panic",
+      "outcome": "done",
+      "notes": "Esc fades, Esc again is silence. Up puts 20 Ballad back on standby; GO plays it from the top at -9. Three presses."
+    }
+  ],
+  "findings": [
+    {
+      "title": "A vamp with no count does not vamp unless L is pressed after every GO",
+      "severity": "major",
+      "kind": "missing",
+      "area": "audio",
+      "task": "vamp",
+      "expected": "A QLab slice with an infinite count goes round by itself until a Devamp. After 'Make from markers' with the count left empty ('Empty: it waits for…') I expected the track to hold at 0:16-0:24 until cue 11.",
+      "happened": "GO, and the track played through 0:24 to 0:28 with nothing holding it. A chip '⟳ hold next' was in Active cues. The explanation is below the fold of the inspector: 'With no count it does not loop by itself: in the show, press L …'. So every performance needs GO and then L before bar 13, and a forgotten L means the track leaves the stage behind.",
+      "evidence": [
+        "023.png"
+      ],
+      "steps": "Import Songbook.qlab5. Select Opening track ▸ Time & Loops ▸ Make from markers. Select 10 Opening, Space. Wait 26 s: hear says 0:26+, not held.",
+      "suggestion": "Let a region be set to hold every time until a Devamp or L, as an infinite slice does."
+    },
+    {
+      "title": "The loop region's count box would not take a number",
+      "severity": "major",
+      "kind": "bug",
+      "area": "inspector",
+      "task": "counted",
+      "expected": "The text says 'Give a region a count (3) and the track goes round it that many times by itself, then plays on.' I clicked the box, typed 4, pressed Enter.",
+      "happened": "The box stayed empty and the Finale played straight through 0:30 (hear: 0:33.3, not held). Tried click, double click, Cmd+A first, Enter, Tab, a single key press: seven attempts on the Finale's 'Slice 2' region. The same typing worked in Level, the bus name and the marker box, so it looks like this box, but I tried it on one region only and cannot rule out the test rig. The box is also about three letters wide: its placeholder reads 'hol'.",
+      "evidence": [
+        "031.png"
+      ],
+      "steps": "Import Songbook.qlab5. Finale track ▸ Time & Loops ▸ Make from markers. Click the small box after 'Slice 2 · 0:20.0 – 0:30.0 ·', type 4, Enter. Look: value is empty. GO the Finale and wait 32 s: no loop."
+    },
+    {
+      "title": "Timecode and Mic cues come across as memos that do nothing; the MIDI message is not read",
+      "severity": "major",
+      "kind": "missing",
+      "area": "import",
+      "task": "bring",
+      "expected": "Timecode to the lighting desk, a Mic cue for the reverb return and a program change to Keys 2, as in the QLab file.",
+      "happened": "'40 Timecode to the lighting desk: was a Timecode cue: kept as a Memo that does nothing.' '22 Reverb return up: was a Mic cue: kept as a Memo that does nothing.' '21 Keys 2 patch change: was a MIDI cue: its message is not read from QLab yet; kept as a Memo, to be made again as a MIDI cue.' Said plainly at import and again on the cue's notes at standby, which is right. But the backup would not drive the lighting desk, and I did not see a Timecode cue type in the toolbar.",
+      "evidence": [
+        "003.png",
+        "062.png"
+      ],
+      "steps": "Import Songbook.qlab5 and read the report."
+    },
+    {
+      "title": "The import report and the Devamp tooltip say devamp will not do what it does",
+      "severity": "minor",
+      "kind": "wording",
+      "area": "import",
+      "task": "vamp",
+      "expected": "To be told whether cue 11 gets me out of the vamp.",
+      "happened": "The report says '2 cues (11 Out of the vamp; 31 Out of the bows vamp): a Devamp here ends a whole-file loop after its pass; slices are not here yet', one line after saying markers can be made into loop regions. The Devamp tooltip says 'A looping sound finishes its current pass and ends.' In fact GO on cue 11 released the held region at the end of its pass and the track played on. I expected the track to stop or the cue to do nothing, and nearly did not try it.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "Import Songbook.qlab5 and read the fourth line of the report; hover Devamp in the toolbar."
+    },
+    {
+      "title": "One click on the inspector waveform moves where a number starts",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "counted",
+      "expected": "Clicking the waveform at 0:38 would place the marker I was naming in the box beside it ('name, at 0:00.0'). The waveform in the playing view says 'Click the waveform to mark a place'.",
+      "happened": "It set the Finale track's Start at to about 0:38. The only signs were a small ↺ beside Start at on another tab and 'Undo start at'. The line 'Click the waveform to set where the cue starts' was on screen, but the same waveform means something different in the two places, and a stray click in an edit session would start the Finale thirty-eight seconds late.",
+      "evidence": [],
+      "steps": "Finale track ▸ Time & Loops, click the waveform two thirds along, then open the Audio tab: Start at has a ↺."
+    },
+    {
+      "title": "No way found to put a marker at a typed time",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "counted",
+      "expected": "The box says 'name, at 0:00.0', so I typed 'Bows end, at 0:38' to mark the end of the bows vamp.",
+      "happened": "A marker appeared as '0:00.0 Bows end, at 0:38' (and '0:00.0 Bows end 0:38' for the other spelling): the time went into the name. The QLab file only had slices at 0:20 and 0:30, so without a 0:38 marker there is no bows vamp region.",
+      "evidence": [],
+      "steps": "Finale track ▸ Time & Loops, type 'Bows end, at 0:38' in the marker box, Add marker."
+    },
+    {
+      "title": "Load to Time does not remember the last time",
+      "severity": "minor",
+      "kind": "slow",
+      "area": "transport",
+      "task": "rehearse",
+      "expected": "On the twentieth pass of the second verse, Cmd+T Enter Space.",
+      "happened": "Cmd+T opens empty each time; Enter with it empty loads 0:00. So each repeat is Esc Esc, Up, Cmd+T, 2, 5, Enter, Space. A Load cue would probably do it (the import brought one, disarmed, for the Finale); I did not build one.",
+      "evidence": [],
+      "steps": "Select 20 Ballad, Cmd+T, 25, Enter, Space, Esc Esc, Up, Cmd+T: the box is empty."
+    },
+    {
+      "title": "Imported click cues are silent and on a house bus until three things are done by hand",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "import",
+      "task": "click",
+      "expected": "QLab had the click on outputs 3-4 only; I expected it to arrive on 3-4, or at least on a bus called Click.",
+      "happened": "Each click cue came in at -inf on the Effects bus, which plays on Outputs 1-2. The report explains it ('silent until you raise its level… give it a bus of its own'), and silent is the safe way to fail, but raising the level before making the bus would put the click in the house. Tracks also landed on Effects, not Music.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "Import Songbook.qlab5, select Opening click ▸ Audio: Level -inf, Bus Effects."
+    },
+    {
+      "title": "The cue list shows 'bus4' for a bus I named Click",
+      "severity": "polish",
+      "kind": "wording",
+      "area": "cue-list",
+      "task": "click",
+      "expected": "'Click' in the Target column, as in the mixer ('Click ›3–4') and the inspector.",
+      "happened": "The column shows 'bus4' on all three click cues.",
+      "evidence": [
+        "062.png"
+      ],
+      "steps": "Settings ▸ Audio ▸ Add a bus, rename it Click, put a cue on it."
+    },
+    {
+      "title": "The text that explains loop counts and L is below the fold",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "vamp",
+      "expected": "To read how a region behaves beside the region.",
+      "happened": "'Give a region a count (3)… With no count it does not loop by itself: in the show, press L…' is cut off at the bottom of the inspector once a region exists; I only read it after a run had gone wrong.",
+      "evidence": [
+        "023.png",
+        "031.png"
+      ],
+      "steps": "Opening track ▸ Time & Loops ▸ Make from markers at the default window size."
+    },
+    {
+      "title": "Click kept out of the house, and the app says so",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "mixer",
+      "task": "click",
+      "expected": "A fight with output routing.",
+      "happened": "One bus, one drop-down ('Outputs 3–4'), and the mixer labels it 'Click ›3–4'. Three cues changed in one multi-select.",
+      "evidence": [
+        "062.png"
+      ],
+      "steps": "Settings ▸ Audio ▸ Add a bus."
+    },
+    {
+      "title": "The click goes round the vamp with the track and leaves with it",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "audio",
+      "task": "vamp",
+      "expected": "To have to build the same loop on the click cue and hope they stayed together.",
+      "happened": "The region is on the track only; holding it held the click too ('held in a loop' on both, same position), and the Devamp released both at the end of the pass.",
+      "evidence": [],
+      "steps": "Opening with a region, GO, L, wait, GO cue 11."
+    },
+    {
+      "title": "Load to Time, Renumber and panic are where a QLab hand expects them",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "rehearse",
+      "expected": "To hunt for them.",
+      "happened": "Cmd+T loads the whole group (track and click) and the header says 'LOADED TO 0:25.0'. Cmd+R renumbers and targets follow. Esc fades, Esc again stops dead, Up is back at the top of the number.",
+      "evidence": [],
+      "steps": "Select 20 Ballad, Cmd+T, 25, Enter, Space."
+    },
+    {
+      "title": "A level changed while playing is heard at once, counted as unsaved, and saved without a dropout",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "files",
+      "task": "levels",
+      "expected": "To wonder whether tomorrow's level was the one I heard.",
+      "happened": "-9 heard immediately, 'N unsaved' chip with the list of changes, Cmd+S wrote the show folder with the audio copied in while the Ballad kept playing.",
+      "evidence": [],
+      "steps": "GO the Ballad, Ballad track ▸ Audio ▸ Level -9, Cmd+S."
+    },
+    {
+      "title": "The import report says plainly what did not come across",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "import",
+      "task": "bring",
+      "expected": "To find out during a run.",
+      "happened": "Every loss is named by cue number, and the memo that replaces a MIDI cue carries the reason on its notes where it shows at standby.",
+      "evidence": [
+        "003.png",
+        "062.png"
+      ],
+      "steps": "Import Songbook.qlab5."
+    }
+  ],
+  "rig": [
+    "After GO the cue list scrolled, so a click by remembered position landed on the click cue instead of the track; a person looking at the screen would mostly not do this.",
+    "The count-box failure may be the rig's typing rather than the app; other fields took the same typing.",
+    "Could not test what the Click bus does on a device with only two outputs: the rig pretends to have eight."
+  ]
+}

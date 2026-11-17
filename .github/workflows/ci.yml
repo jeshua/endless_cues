@@ -1,0 +1,97 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm test
+      # The end-to-end run needs a display and an audio device. macOS runners have both;
+      # Linux gets a virtual display and a null sink. Windows has a job of its own, below.
+      - if: runner.os == 'macOS'
+        run: npm run smoke
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb pulseaudio
+          pulseaudio --start --exit-idle-time=-1 && pactl load-module module-null-sink
+          xvfb-run -a npm run smoke -- --no-sandbox
+        continue-on-error: true   # until the Linux run has been watched pass on a real runner
+
+  # The app itself on Windows: the end-to-end run from source, then the x64 installer built and the
+  # packaged app put through the same run. The pictures of the window and the installer are kept, so
+  # either can be looked at (or installed on a real PC) without a tag.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: End-to-end run, from source
+        # (--enable-logging: the renderer's console in the log, so an error thrown in a page says what it was)
+        run: npm run smoke -- --enable-logging=stderr
+        env: { SMOKE_SHOTS: smoke-out/source }
+      - name: Build the installer (x64, unsigned)
+        if: ${{ !cancelled() }}
+        run: npx electron-builder --win nsis --x64 --publish never
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - name: End-to-end run, the packaged app
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: '"./dist.noindex/win-unpacked/Endless Cues Public Alpha.exe" --smoke --enable-logging=stderr'
+        # a packaged build carries no tests: its run reads the test sounds from the checkout
+        env: { SMOKE_SHOTS: smoke-out/packaged, EC_FIXTURES: '${{ github.workspace }}/test/fixtures' }
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-pictures
+          path: smoke-out
+          if-no-files-found: warn
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-x64
+          path: dist.noindex/*.exe
+          if-no-files-found: warn
+          retention-days: 14
+
+  build:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, args: --mac }
+          - { os: windows-latest, args: --win }
+          - { os: ubuntu-latest, args: --linux }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      # Unsigned until the signing identities exist (docs/specs/10-cross-platform.md says what is needed).
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+        env: { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: endless-cues-${{ runner.os }}
+          path: |
+            dist.noindex/*.dmg
+            dist.noindex/*.zip
+            dist.noindex/*.exe
+            dist.noindex/*.AppImage
+            dist.noindex/*.deb

@@ -1,0 +1,30 @@
+/* Report a problem (Report.js). Its own file, beside styles.css; the tokens are styles.css's. */
+.sheet.report { width: min(560px, 92vw); display: flex; flex-direction: column; gap: 10px; }
+.sheet.report h2 { margin: 0; }
+.sheet.report p { margin: 0; }
+.sheet.report textarea { width: 100%; min-height: 96px; box-sizing: border-box; }
+.sheet.report .report-kind { align-self: flex-start; }
+.sheet.report label.check { display: inline-flex; align-items: center; gap: 7px; color: var(--text-1); font-size: var(--fs-m); }
+.sheet.report label.check input { width: auto; height: auto; margin: 0; }
+.report-picture { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.report-shot { padding: 0; border: 1px solid var(--bg-4); border-radius: var(--radius-s); background: var(--bg-0); cursor: zoom-in; line-height: 0; overflow: hidden; }
+.report-shot img { display: block; width: 168px; height: auto; }
+.report-shot.big { flex-basis: 100%; cursor: zoom-out; }
+.report-shot.big img { width: 100%; }
+.report-shot.off img { opacity: .25; filter: grayscale(1); }
+.report-line { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; color: var(--text-1); font-size: var(--fs-m); }
+.report-line input { width: 100%; box-sizing: border-box; }
+.report-what { font-size: var(--fs-s); line-height: 1.45; }
+.report-what .linkish { border: 0; background: none; padding: 0; color: var(--text-1); text-decoration: underline; font-size: inherit; cursor: pointer; }
+.report-what .linkish:hover { color: var(--text-0); }
+.report-json { user-select: text; white-space: pre-wrap; background: var(--bg-0); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; max-height: 180px; overflow: auto; color: var(--text-1); font-size: var(--fs-s); margin: 0; }
+.report-status { font-size: var(--fs-m); }
+.report-status.standby { color: var(--standby); }
+.report-status.danger { color: var(--danger); }
+.sheet.report .acts { margin-top: 4px; }
+.about-report { border: 0; background: none; padding: 0; color: var(--text-2); text-decoration: underline; font-size: var(--fs-s); cursor: pointer; }
+.about-report:hover { color: var(--text-0); }
+/* what goes with a report opened from "Something went wrong": the error and the recent error lines, each can be left out */
+.report-attached { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; font-size: var(--fs-s); }
+.report-attached .linkish { border: 0; background: none; padding: 0; color: var(--text-1); text-decoration: underline; font-size: inherit; cursor: pointer; }
+.report-attached pre { flex-basis: 100%; max-height: 140px; overflow: auto; white-space: pre-wrap; }

@@ -1,0 +1,162 @@
+<!doctype html>
+<!-- The web remote's page (modules/web-remote.js serves it). One file, no dependencies, works on a phone. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d0907">
+<title>Endless Cues remote</title>
+<style>
+  :root { --bg-0:#0d0907; --bg-1:#15100c; --bg-2:#281f18; --line:#33271d; --text-0:#efe4d2; --text-1:#c2b099; --text-2:#8a7862;
+          --go:#a3c98f; --standby:#ecd25e; --danger:#e4604b; --accent:#d39a6a; }   /* the app's Lab theme */
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg-0); color: var(--text-0); font: 16px/1.35 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); }
+  .title { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); display: flex; justify-content: space-between; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; margin-left: 6px; }
+  .dot.on { background: var(--go); }
+  .standby { margin-top: 6px; font-size: 22px; font-weight: 650; min-height: 30px; }
+  .standby .n { color: var(--standby); font-variant-numeric: tabular-nums; margin-right: 10px; }
+  .notes { color: var(--text-1); font-size: 14px; margin-top: 2px; white-space: pre-wrap; max-height: 3.9em; overflow: hidden; }
+  .active { padding: 6px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--text-1); display: none; }
+  .active.on { display: block; }
+  .bar { height: 3px; background: var(--bg-2); border-radius: 2px; margin: 4px 0 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--go); }
+  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .row { display: flex; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .row .n { width: 3.6em; flex: none; color: var(--text-1); font-variant-numeric: tabular-nums; }
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.head { background: color-mix(in srgb, var(--standby) 14%, var(--bg-0)); box-shadow: inset 3px 0 var(--standby); }
+  .row.live .name::before { content: "▶ "; color: var(--go); }
+  .row.off { opacity: .45; text-decoration: line-through; }
+  footer { display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--bg-1); }
+  button { border: 0; border-radius: 12px; font: inherit; font-weight: 700; color: var(--bg-0); }
+  #go { flex: 1; height: 84px; font-size: 34px; letter-spacing: .06em; background: var(--go); }
+  #go:active { filter: brightness(1.25); }
+  #go:disabled { background: var(--bg-2); color: var(--text-2); }
+  .side { display: flex; flex-direction: column; gap: 8px; width: 84px; }
+  .side button { flex: 1; background: var(--bg-2); color: var(--text-0); font-size: 20px; }
+  #panic { background: color-mix(in srgb, var(--danger) 30%, var(--bg-1)); color: var(--danger); font-size: 13px; letter-spacing: .06em; }
+  .view footer { display: none; }
+  /* levels and Load to Time: behind a button, so the main view stays the list and GO */
+  #more { background: none; color: var(--text-1); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 0 0 0 12px; display: none; }
+  .mix #more { display: inline; }
+  #panel { display: none; padding: 10px 16px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); }
+  .mix.open #panel { display: block; }
+  #panel h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+  .fader { display: flex; align-items: center; gap: 10px; margin: 4px 0; font-size: 14px; }
+  .fader .name { width: 5.5em; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-1); }
+  .fader input { flex: 1; min-width: 0; height: 30px; accent-color: var(--text-1); }
+  .fader .db { width: 4.2em; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+  .load { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .load input { flex: 1; min-width: 0; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-0); color: var(--text-0); font: inherit; padding: 0 12px; }
+  .load button { height: 40px; padding: 0 14px; background: var(--bg-2); color: var(--text-0); font-size: 14px; }
+  .load .at { color: var(--standby); font-size: 13px; font-variant-numeric: tabular-nums; }
+</style>
+<body>
+<header>
+  <div class="title"><span id="title">Endless Cues</span><span>remote<i class="dot" id="dot"></i><button id="more">Levels</button></span></div>
+  <div class="standby"><span class="n" id="sn"></span><span id="sname">—</span></div>
+  <div class="notes" id="notes"></div>
+</header>
+<div id="panel">
+  <h2>Load to time (the cue standing by)</h2>
+  <div class="load"><input id="loadat" inputmode="decimal" placeholder="1:30 or 90"><button id="load">Load</button><button id="unload">Clear</button><span class="at" id="loaded"></span></div>
+  <h2>Levels</h2>
+  <div id="faders"></div>
+</div>
+<div class="active" id="active"></div>
+<main id="list"></main>
+<footer>
+  <button id="go">GO</button>
+  <div class="side"><button id="up">▲</button><button id="down">▼</button></div>
+  <div class="side"><button id="panic">PANIC</button></div>
+</footer>
+<script>
+const k = new URLSearchParams(location.search).get('k') || '';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const clock = (t) => { t = Math.max(0, t); return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`; };
+let state = null, lastHead = null;
+function cmd(c) { fetch(`/cmd?k=${encodeURIComponent(k)}`, { method: 'POST', body: JSON.stringify(c) }).catch(() => {}); }
+function paint() {
+  const s = state; if (!s) return;
+  document.body.classList.toggle('view', !s.control);
+  $('title').textContent = s.title;
+  const head = s.cues.find((c) => c.id === s.playhead);
+  $('sn').textContent = head ? head.number : '';
+  $('sname').textContent = head ? head.name : 'End of list';
+  $('notes').textContent = head ? head.notes : '';
+  $('go').disabled = !head;
+  $('list').innerHTML = s.cues.map((c) => `<div class="row${c.id === s.playhead ? ' head' : ''}${c.live ? ' live' : ''}${c.disarmed ? ' off' : ''}" data-id="${esc(c.id)}"><span class="n">${esc(c.number)}</span><span class="name">${esc(c.name)}</span></div>`).join('');
+  if (s.playhead !== lastHead) { lastHead = s.playhead; const el = document.querySelector('.row.head'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  const a = $('active');
+  a.classList.toggle('on', s.active.length > 0);
+  paintMix();
+  a.innerHTML = s.active.slice(0, 3).map((x) => `<div>${esc(x.name)} <span style="float:right">${x.total ? '−' + clock(x.total - x.elapsed) : clock(x.elapsed)}${x.paused ? ' ❙❙' : ''}</span></div><div class="bar"><i style="width:${x.total ? Math.min(100, 100 * x.elapsed / x.total) : 0}%"></i></div>`).join('');
+}
+function connect() {
+  const es = new EventSource(`/events?k=${encodeURIComponent(k)}`);
+  es.onopen = () => $('dot').classList.add('on');
+  es.onmessage = (e) => { state = JSON.parse(e.data); paint(); };
+  es.onerror = () => { $('dot').classList.remove('on'); es.close(); setTimeout(connect, 1500); };
+}
+// ── levels and Load to Time ──
+const dB = (v) => (v <= -60 ? '−∞' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}`);
+/** "1:30", "1:02:03" or "90" as seconds (a leading − counts back from the end); null if it is not a time. */
+function seconds(text) {
+  const t = String(text).trim().replace(/^[-−]/, '');
+  if (!/^\d+(\.\d+)?(:\d{1,2}(\.\d+)?){0,2}$/.test(t)) return null;
+  const n = t.split(':').reduce((sum, part) => sum * 60 + Number(part), 0);
+  return /^[-−]/.test(String(text).trim()) ? -n : n;
+}
+let touching = null, sendAt = 0, pending = null;       // the fader under a finger is not moved by what arrives meanwhile
+function level(c) {                                    // at most ten a second while a fader is dragged, and always the last one
+  pending = c;
+  const wait = Math.max(0, sendAt + 100 - Date.now());
+  setTimeout(() => { if (pending) { cmd(pending); pending = null; sendAt = Date.now(); } }, wait);
+}
+function paintMix() {
+  const m = state && state.mix;
+  document.body.classList.toggle('mix', !!m);
+  if (!m) return;
+  const rows = [...m.buses.map((b) => ({ key: `bus:${b.id}`, name: b.name, db: b.db })), { key: 'master', name: 'Master', db: m.masterDb }];
+  const box = $('faders');
+  if (box.dataset.keys !== rows.map((r) => r.key + r.name).join('|')) {
+    box.dataset.keys = rows.map((r) => r.key + r.name).join('|');
+    box.innerHTML = rows.map((r) => `<div class="fader"><span class="name">${esc(r.name)}</span><input type="range" min="${m.min}" max="${m.max}" step="0.5" data-key="${esc(r.key)}"><span class="db"></span></div>`).join('');
+  }
+  for (const r of rows) {
+    const el = box.querySelector(`input[data-key="${CSS.escape(r.key)}"]`);
+    if (!el) continue;
+    if (touching !== r.key) el.value = r.db;
+    el.nextElementSibling.textContent = dB(Number(el.value));
+  }
+  $('loaded').textContent = m.loaded && m.loaded.id === state.playhead ? `loaded to ${clock(Math.abs(m.loaded.at))}${m.loaded.at < 0 ? ' from the end' : ''}` : '';
+}
+$('more').onclick = () => document.body.classList.toggle('open');
+$('faders').oninput = (e) => {
+  const key = e.target.dataset.key; if (!key) return;
+  touching = key;
+  const db = Number(e.target.value);
+  e.target.nextElementSibling.textContent = dB(db);
+  level(key === 'master' ? { op: 'master', db } : { op: 'bus', name: key.slice(4), db });
+};
+$('faders').onchange = (e) => {           // the finger came off: that is the level now, in the window too
+  const key = e.target.dataset.key; if (!key) return;
+  const db = Number(e.target.value);
+  pending = null;
+  cmd(key === 'master' ? { op: 'master', db, commit: true } : { op: 'bus', name: key.slice(4), db, commit: true });
+  setTimeout(() => { touching = null; }, 600);
+};
+$('load').onclick = () => { const secs = seconds($('loadat').value); if (secs == null) { $('loadat').select(); return; } cmd({ op: 'load', secs }); };       // (not a time: it is left selected, to be typed again)
+$('unload').onclick = () => { $('loadat').value = ''; cmd({ op: 'load', secs: 0 }); };
+$('go').onclick = () => cmd({ op: 'go' });
+$('up').onclick = () => cmd({ op: 'move', step: -1 });
+$('down').onclick = () => cmd({ op: 'move', step: 1 });
+$('panic').onclick = () => cmd({ op: 'panic' });
+$('list').onclick = (e) => { const r = e.target.closest('.row'); if (r && state && state.control) cmd({ op: 'playhead', id: r.dataset.id }); };
+connect();
+</script>
+</body>
+</html>

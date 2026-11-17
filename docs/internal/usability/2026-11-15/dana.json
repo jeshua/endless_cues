@@ -1,0 +1,318 @@
+{
+  "person": "dana",
+  "verdict": "with-workarounds",
+  "verdictWhy": "I built the whole evening in one sitting with nobody to ask, and it ran from house music to bows exactly as the notes say, so yes, I would stop borrowing the Mac. What holds me back is that a time I typed was quietly dropped because I pressed Tab instead of Enter, and that in Show mode a stray V still plays a track; I would tape over that key and check every number in the list before a performance.",
+  "ratings": {
+    "learn": 4,
+    "speed": 4,
+    "clarity": 4,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "build",
+      "outcome": "done",
+      "notes": "Add Sounds… took all seven in order; Renumber and Enter-to-rename did the rest. Names had to be typed whole because the rename box opens empty."
+    },
+    {
+      "id": "house",
+      "outcome": "done-with-trouble",
+      "notes": "Looked for Loop under Time & Loops; it is on the Audio tab. First fade ran 3 s, not 8: the Duration I typed and tabbed out of was dropped. With Enter it was right: 8 s fade, then stopped."
+    },
+    {
+      "id": "trim",
+      "outcome": "done-with-trouble",
+      "notes": "Start at 12, End at 0:40, Fade out 5 went in easily and it played 0:12 to 0:40. The countdown counted to the file's end, and I could not confirm the fade out from the level readout."
+    },
+    {
+      "id": "follow",
+      "outcome": "done",
+      "notes": "auto-follow and Post-wait 3 on Driftwood; Lantern waited 3 s and played. Standing by does not mention it."
+    },
+    {
+      "id": "level",
+      "outcome": "done",
+      "notes": "Level −4 on the Audio tab; plays at −4.0 dB. The level is not visible in the cue list."
+    },
+    {
+      "id": "save",
+      "outcome": "done",
+      "notes": "Save asked for a place, copied the music into the show folder; after quit and reopen everything was as left."
+    },
+    {
+      "id": "rehearse",
+      "outcome": "done",
+      "notes": "Tools ▸ Load to Time… 0:30, GO; and again (retyping 0:30). Show stayed Saved."
+    },
+    {
+      "id": "perform",
+      "outcome": "done-with-trouble",
+      "notes": "Show mode locked editing and the evening ran correctly end to end. But V still plays the selected cue and a click moves the playhead; Reset does ask first."
+    },
+    {
+      "id": "help",
+      "outcome": "done-with-trouble",
+      "notes": "No Help menu. Found Settings ▸ Keys: Space, Esc (twice: stop dead), ↑. The website's list differs on two keys."
+    }
+  ],
+  "findings": [
+    {
+      "title": "A time typed into an inspector box is thrown away unless you press Enter",
+      "severity": "major",
+      "kind": "bug",
+      "area": "inspector",
+      "task": "house",
+      "expected": "Typing 8 in Duration and pressing Tab or clicking the next control keeps it, as in QLab and every other form.",
+      "happened": "I typed 8 in the fade's Duration, pressed Tab and clicked the 'Stop target when done' switch. The box went on showing '8', but the cue list still said 0:03.0, and on GO the house music was gone within 4 seconds instead of 8. Coming back to the cue, Duration was empty again (grey 0:03.00). No warning. Repeated with 9 after it was set to 8: the box showed '9', the list stayed 0:08.0, and reselecting the cue showed 0:08.00. With Enter it is kept and reformatted ('0:08.00').",
+      "evidence": [],
+      "steps": "New show, File ▸ Add Sounds… one file, click Fade in the toolbar, choose the target, click Duration, type 8, press Tab (or click another control). The DURATION column still says 0:03.0; click another cue and back, Duration is empty.",
+      "suggestion": "Keep the value when the box loses the keyboard, or visibly put the old value back."
+    },
+    {
+      "title": "In Show mode the V key plays the selected cue on top of the show",
+      "severity": "major",
+      "kind": "confusing",
+      "area": "show-mode",
+      "task": "perform",
+      "expected": "Show mode says 'editing is locked', and I took it to mean nothing I press by accident can hurt. V is the key directly above the space bar.",
+      "happened": "In Show mode with house music playing I clicked the Salt row and pressed V: Salt started playing over the house music ('House music at 0.0 dB' and 'Salt at -4.0 dB' together). Done twice, same result. Nothing on screen in Show mode mentions V.",
+      "evidence": [
+        "057.png"
+      ],
+      "steps": "Open a show with two sounds, switch to Show, GO the first, click the second row, press V.",
+      "suggestion": "In Show mode, leave only GO, Panic, pause and the arrows on single keys, or make the others an option under GO and safety."
+    },
+    {
+      "title": "The countdown on a trimmed cue counts to the end of the file, not to its End at",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "transport",
+      "task": "trim",
+      "expected": "Undertow ends at 0:40, so with 0:38.5 on the clock the countdown should say about -0:01.5. The cue list's DURATION column does say 0:28.0.",
+      "happened": "While Undertow played, Active cues and the cue's row both said '−0:06.5' at '0:38.5 / 0:45.0', and the green bar was short of the end. The sound did stop at 0:40. The waveform in the playing strip does grey out the part after 0:40. Seen on one play (the second); I did not look at the countdown on the first.",
+      "evidence": [
+        "029.png"
+      ],
+      "steps": "Add a 45 s sound, Audio tab: End at 0:40, Enter. GO, and read the countdown near the end."
+    },
+    {
+      "title": "Nothing shows or reports that a cue's own fade out is happening",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "audio",
+      "task": "trim",
+      "expected": "During the last 5 seconds of Undertow the level beside the cue should be seen to fall, as it does for a Fade cue ('0 → −∞').",
+      "happened": "With Fade out 0:05.00 and End at 0:40.00, the level beside the running cue read '0 dB' and the rig's ear said 'Undertow at 0.0 dB' at 0:37.3, 0:38.1 and 0:40.0, then silence. I cannot tell whether the fade out is applied and simply not shown, or not applied; in a silent test session this is as far as I can check. A Fade cue, by contrast, reports 'fading to -60 dB'.",
+      "evidence": [
+        "029.png"
+      ],
+      "steps": "Sound with Fade out 5 and End at 0:40; GO; watch the level readout in Active cues over the last 5 seconds."
+    },
+    {
+      "title": "The tab called 'Time & Loops' has nowhere to make a cue loop",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "house",
+      "expected": "To loop the house music I went to the tab with Loops in its name and looked for a tick-box.",
+      "happened": "Time & Loops shows a waveform, 'Markers' and 'Loop regions: None. A region is a stretch that loops cleanly; the operator can hold the track there when a scene runs long.' with no button to add one. The plain 'Loop' switch is on the Audio tab. Once found it worked first time and the row shows a 'loop' tag.",
+      "evidence": [
+        "010.png"
+      ],
+      "steps": "Select an Audio cue, open Time & Loops.",
+      "suggestion": "Put the Loop switch (or a pointer to it) on the Time & Loops tab."
+    },
+    {
+      "title": "There is no Help menu; the key list is inside Settings",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "help",
+      "task": "help",
+      "expected": "A Help menu in the menu bar, or a '?' on the window, with the keys.",
+      "happened": "The menu bar is Endless Cues / File / Edit / View / Tools / Window. I found the keys by opening ⚙ Settings and seeing 'Keys' in its list: GO 'Space', 'Panic (again: stop dead) Esc', 'Move the playhead ↑ ↓'. The page is clear and complete once found, and ↑ did go back one cue. The GO button also says SPACE on it; Esc shows only when you point at Panic.",
+      "evidence": [
+        "060.png",
+        "061.png"
+      ],
+      "steps": "Look through the menus for help; then ⚙ ▸ Keys.",
+      "suggestion": "Add Help ▸ Keyboard Shortcuts that opens this page."
+    },
+    {
+      "title": "The website's key list disagrees with the app's",
+      "severity": "minor",
+      "kind": "wording",
+      "area": "help",
+      "task": "help",
+      "expected": "The Getting started page and the app to give the same keys.",
+      "happened": "The website says 'D: Arm or disarm it' and '⌘J: Open the assistant'. The app's Keys page says 'Arm / disarm A', 'Pre-wait · Duration · Post-wait E D W', 'Jump to cue ⌘J', 'Assistant ⌘K'. Someone who learned D from the website would open a Duration box instead.",
+      "evidence": [
+        "061.png"
+      ],
+      "steps": "Compare site/docs 'Keyboard' with Settings ▸ Keys."
+    },
+    {
+      "title": "Music tracks are put on the bus called Effects",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "mixer",
+      "task": "build",
+      "expected": "Seven music tracks added to a new show to come up on Music, since the mixer has a knob called Music.",
+      "happened": "Every added sound has Bus 'Effects' (options Music / Effects / Vocals). During the run the meter moved on the Effects knob and the Music knob did nothing. If I had reached for Music to turn the show down, nothing would have happened.",
+      "evidence": [
+        "050.png"
+      ],
+      "steps": "New show, Add Sounds…, select a cue, Audio tab: Bus shows Effects."
+    },
+    {
+      "title": "Standing by does not say that this GO will carry on into the next cue",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "cue-list",
+      "task": "follow",
+      "expected": "With Driftwood standing by, the big display to tell me that Lantern follows by itself after 3 seconds, since that is the one GO in the evening that does two things.",
+      "happened": "It says '5 Driftwood' and 'then 6 · Lantern', the same words as for any cue where 'then' means my next GO. The only sign is a small ⤓ at the far right of the row and 0:03.0 under POST-WAIT. After it ran, the playhead was correctly on 7 Bows.",
+      "evidence": [
+        "050.png"
+      ],
+      "steps": "Set a cue to auto-follow, put the playhead on it, read the standby area.",
+      "suggestion": "Say 'then follows into 6 · Lantern after 0:03'."
+    },
+    {
+      "title": "In Show mode one click on a row moves the playhead",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "show-mode",
+      "task": "perform",
+      "expected": "Locked means the next GO stays what it was unless I move it on purpose.",
+      "happened": "With house music playing in Show mode I clicked the Salt row; Standing by changed from the fade to '3 Salt'. My next GO would have skipped the house fade and Tide. (QLab does the same in show mode, so this may be intended; it is the thing I would be most likely to do by accident on a trackpad.)",
+      "evidence": [],
+      "steps": "Show mode, GO, click any other row, read Standing by."
+    },
+    {
+      "title": "A new Fade arrives broken and unnumbered, and points at nothing",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "cue-list",
+      "task": "house",
+      "expected": "A Fade added while the house music cue is selected to target that cue, as QLab does.",
+      "happened": "The Fade appeared under cue 1 with 'No target.', Target '— choose —', and '✕ 1 broken' at the bottom of the window, with no number. Choosing '1 · House music' from the list fixed it; I numbered it 1.5 with N. The words were clear enough to get me there.",
+      "evidence": [
+        "013.png"
+      ],
+      "steps": "Select an Audio cue, click Fade."
+    },
+    {
+      "title": "Inspector boxes jump when 'No target.' goes away; a label is cut off",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "house",
+      "expected": "Controls to stay where they are while I fill them in.",
+      "happened": "After choosing the Fade's target the 'No target.' line vanished and every control moved up a row, so my next click landed on the wrong thing. The switch label reads 'Stop target whe…' on screen.",
+      "evidence": [
+        "013.png"
+      ],
+      "steps": "Add a Fade, choose its target, watch the row of boxes."
+    },
+    {
+      "title": "Renaming a cue that still has its file's name starts from an empty box",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "cue-list",
+      "task": "build",
+      "expected": "Enter on '00 house music' to open the box with that text in it so I can fix it.",
+      "happened": "The box opens empty (the inspector's Name is empty too, though the list shows '00 house music'), so each of the seven names is typed from scratch.",
+      "evidence": [
+        "007.png"
+      ],
+      "steps": "Add a sound, select it, press Enter."
+    },
+    {
+      "title": "Load to time does not remember the last time",
+      "severity": "polish",
+      "kind": "missing",
+      "area": "transport",
+      "task": "rehearse",
+      "expected": "For 'again from 0:30', the box to offer 0:30 again.",
+      "happened": "Second time, Tools ▸ Load to Time… opened empty and I typed 0:30 again. Otherwise fine.",
+      "evidence": [],
+      "steps": "Load to Time 0:30, GO, Esc, select the cue, Load to Time again."
+    },
+    {
+      "title": "Adding the tracks, numbering them and naming them took minutes",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "import",
+      "task": "build",
+      "expected": "A fight.",
+      "happened": "File ▸ Add Sounds… brought all seven in in file order with their lengths; Tools ▸ Renumber Selected Cues… numbered them 1 to 7 in one go; Enter renames in the row.",
+      "evidence": [
+        "010.png"
+      ],
+      "steps": "New show, Add Sounds…, select all, Renumber."
+    },
+    {
+      "title": "Standing by, 'then', and the Active cues list say what is happening",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "perform",
+      "expected": "To be unsure what GO would do.",
+      "happened": "The big number and name beside GO, 'then 2 · Tide' under it, the running cue with its countdown and bar, and a fade shown as '0 → −∞' with its own countdown. Clicking the running cue's bar skips along it, which let me check each ending.",
+      "evidence": [
+        "050.png"
+      ],
+      "steps": "Run any show."
+    },
+    {
+      "title": "Save put the music inside the show folder and the app reopened the show as I left it",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "files",
+      "task": "save",
+      "expected": "Broken links to the tour music folder on another laptop.",
+      "happened": "First Save asked where, wrote 'Tour evening.ecshow' with a media folder holding all seven files, and the cues now point at 'media/02 Salt.wav'. After quitting and opening, the show came straight back: loop, 8 s fade with stop, Undertow 0:12 to 0:40 with 5 s fade out, auto-follow + 3 s, Salt −4, all there.",
+      "evidence": [],
+      "steps": "Save an unsaved show; quit; open."
+    },
+    {
+      "title": "Auto-follow with a post-wait did the Driftwood into Lantern gap first time",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "cue-list",
+      "task": "follow",
+      "expected": "To need a Wait cue or a group.",
+      "happened": "Continue 'auto-follow' and Post-wait 3 on Driftwood: at the end of Driftwood, 'Lantern is waiting (0:01.5 of 0:03.0)', then Lantern played, and the playhead went on to Bows.",
+      "evidence": [],
+      "steps": "Basics tab: auto-follow, Post-wait 3, Enter."
+    },
+    {
+      "title": "Load to time is obvious and leaves the show untouched",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "rehearse",
+      "expected": "To have to change Salt's start and remember to change it back.",
+      "happened": "Tools ▸ Load to Time…, 0:30, Enter: 'LOADED TO 0:30.0' beside Standing by, GO played Salt from 0:30 at −4 dB, and the show stayed 'Saved'.",
+      "evidence": [],
+      "steps": "Select a cue, Tools ▸ Load to Time…"
+    },
+    {
+      "title": "Reset asks 'Sure? Reset' while something is playing",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "show-mode",
+      "task": "perform",
+      "expected": "Reset, next to Panic, to kill the show on one stray click.",
+      "happened": "With a cue playing the button turned into 'Sure? Reset' and nothing stopped. With nothing playing it just goes to the top.",
+      "evidence": [
+        "059.png"
+      ],
+      "steps": "GO, click Reset once."
+    }
+  ],
+  "rig": [
+    "Clicking by coordinates meant a control that had moved (the Fade tab after choosing a target) took a click meant for another; a person would have seen it move. One stray 'n1.5' got typed into a cue name during that muddle and I could not reproduce it, so it is not reported.",
+    "No sound, so whether an Audio cue's own fade out is audible could not be judged; the finding is about what the screen shows."
+  ]
+}

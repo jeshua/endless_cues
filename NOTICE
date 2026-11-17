@@ -1,0 +1,50 @@
+Endless Cues
+Copyright (C) 2026 Jeshua Bratman
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+Affero General Public License (the LICENSE file) for more details.
+
+The show file format (docs/specs/03-show-file.md) is free for anyone to read, write and implement,
+in any software under any licence. Your shows are yours.
+
+Bundled third-party work, under its own licences:
+  app/renderer/vendor/preact-htm.js   Preact (MIT) and htm (Apache-2.0); licences beside it
+  app/renderer/fonts/                 Jost and Bricolage Grotesque (SIL Open Font License 1.1); each font's
+                                      copyright line and the licence text are beside them, in OFL-Jost.txt
+                                      and OFL-Bricolage-Grotesque.txt
+
+Endless Cues was made to run "Endless Forms", by Endless Forms Puppetry (endlessformspuppetry.com). If you use
+it in a production, please credit it: "Show control: Endless Cues, by Endless Forms Puppetry (endlesscues.com)".
+This is a request, not a condition of the licence.
+
+Artwork from Endless Forms, not under the AGPL
+
+The following files are artwork from the show "Endless Forms": its photographs and textures, the buck-mask
+figure (a cut shadow puppet from the show) and everything drawn from it, and the drawing of QIRX-G (a puppet from
+the show). They are Copyright (C) 2026 Endless Forms Puppetry (Monica Lerch and Jeshua Bratman). All rights
+reserved. They are included with permission for use in this app and its website only. They are not licensed for
+reuse: the AGPL and the rest of this notice do not apply to them, and a copy or fork of this program does not
+receive any right to them. The buck-mask figure was designed by Esme Roszel; the textures are by Callie Nicole Richards.
+
+  app/renderer/images/algae.webp           a photograph from the show, used as a texture
+  app/renderer/images/table-copper.webp    a texture from the show
+  app/renderer/images/table-pewter.webp    a texture from the show
+  app/renderer/images/mark.svg             the mark, drawn from the buck-mask figure
+  build/mark/buck-source.svg               the buck-mask figure itself (its laser-cut outline)
+  build/mark/*.svg                         every mark, icon, tile, badge and document icon drawn from it
+  build/icon.png, build/icon.icns          the app's icon, drawn from it
+  build/document.icns, build/document.ico  the show file's icon, drawn from it
+  app/renderer/Qirx.js                     the drawing data of QIRX-G's head and eye (the BOX, BODY, EYE and
+                                           HEAD values); the code around them is under the AGPL
+
+The program that crops and draws the marks (build/mark.js) is under the AGPL; the figure it reads is not.
+
+The name "Endless Cues" identifies this project and is not licensed by the AGPL either. A fork is welcome; please
+give it its own name and artwork.
+
+QLab is a trademark of Figure 53, LLC. Endless Cues is not affiliated with or endorsed by Figure 53.

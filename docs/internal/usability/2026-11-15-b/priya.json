@@ -1,0 +1,232 @@
+{
+  "person": "priya",
+  "verdict": "with-workarounds",
+  "verdictWhy": "The sound side I would run tonight: the import told me the truth cue by cue, the rain, the dip and the phone behaved exactly as in QLab, and the standby line always said what GO would do. What stops it being a plain yes is the one cue that leaves the computer: I had to retype the MSC GO by hand in a syntax I guessed, and the manual itself says MIDI has not been checked against real equipment, so the LX operator takes that cue on their own GO until I have seen the desk respond. About an hour of my evening, not the whole of it.",
+  "ratings": {
+    "learn": 4,
+    "speed": 4,
+    "clarity": 5,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "bring",
+      "outcome": "done",
+      "notes": "Import from QLab on the start screen, one file dialog, and a report listing six things that did not come across, by cue number, each with what to do. 24 cues in 2 lists; all sound files found."
+    },
+    {
+      "id": "verify",
+      "outcome": "done",
+      "notes": "Rain bed loops at -12 dB; cue 3 plays thunder, dips rain to -22 and brings it back after the 6 s wait; cue 5 stops the phone. The Active cues panel and what I heard agreed."
+    },
+    {
+      "id": "repair",
+      "outcome": "done-with-trouble",
+      "notes": "Playlist: set Shuffle, Repeat and Crossfade again (three fields). Preshow fade: it had come across and worked as it was (fades the group over 6 s and stops it). MSC: made a MIDI cue, guessed 'msc go 9', then read the manual to be sure; cannot know it reaches the desk. Act 2 group: dragged 'Thunder, close' out of the group as its own cue 12.5 (first drop landed one row too low). Blackout: replaced the memo with an empty Group with 'Fade & stop others' 3 s; it took wind and thunder out in 3 s. Hotkey on 11 and the cue cart: not possible, lived without."
+    },
+    {
+      "id": "notes",
+      "outcome": "done-with-trouble",
+      "notes": "All six done. Level, fade time, file swap (level kept, new duration shown), disarm and the blackout were a field each. The 6.5 copy-paste went wrong once: a Cmd+A outside a field selected every cue and I numbered all 23 of them -10; one Undo put it right."
+    },
+    {
+      "id": "save",
+      "outcome": "done",
+      "notes": "Cmd+S asked where once and wrote a .ecshow folder with show.json and media/ holding all ten sounds in use, including letter v2.wav. Nothing to collect by hand."
+    },
+    {
+      "id": "run",
+      "outcome": "done",
+      "notes": "Show mode locks editing and says so. Ran 0.5 to 6.5. The disarmed phone showed 'DISARMED — THIS GO WILL SKIP IT'. Fired 6.5 a cue early; Up arrow put the playhead back on it and the rain bed never flinched. The door is 2 s long so it had finished before I could stop it."
+    },
+    {
+      "id": "undo",
+      "outcome": "done-with-trouble",
+      "notes": "Undo was greyed out because I had saved, and Versions held only v1 with every note in it, so there was nothing to go back to that kept the other five. Deleted 6.5 by hand and saved v2 with the note '6.5 cut'."
+    }
+  ],
+  "findings": [
+    {
+      "title": "The MIDI Show Control cue is not read from QLab, and the manual says MIDI has not been tried on real equipment",
+      "severity": "major",
+      "kind": "missing",
+      "area": "import",
+      "task": "repair",
+      "expected": "The one cue that fires the lighting desk to come across with its device ID, command and cue number, as the audio cues did; or at least to be told what the QLab message was so I can retype it.",
+      "happened": "Import report: \"9 LX console GO (MSC): was a MIDI cue: its message is not read from QLab yet; kept as a Memo, to be made again as a MIDI cue.\" The memo does not carry the original message's fields, so I rebuilt it from memory. The manual then says \"MIDI is new and has been checked against the specification, not yet against equipment.\" The Network panel did show \"→ msc go 9 [F0 7F 7F 02 01 01 39 F7] (MIDI)\" when I auditioned it, which is the only evidence I have.",
+      "evidence": [
+        "003.png",
+        "022.png",
+        "064.png"
+      ],
+      "steps": "Import a .qlab5 with an MSC MIDI cue; read the report and the cue's notes.",
+      "suggestion": "Put the QLab message's fields (type, command, Q number, device ID) in the memo's notes even when the cue itself cannot be built."
+    },
+    {
+      "title": "The MIDI cue's inspector is one empty text box with no example of what to type",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "repair",
+      "expected": "QLab's pop-ups: Message Type, Command Format, Command, Q Number, Device ID. Or at least a placeholder showing the text form.",
+      "happened": "A new MIDI cue shows the red bar \"No midi message.\" over a blank field labelled \"MIDI message\" and a \"Note length\" field. No placeholder, no example. I guessed \"msc go 9\" and the red bar went away, then opened the manual to learn it defaults to every device and to lighting. Other fields in the app do have placeholders (\"0:00.00\", \"media/sound.wav\").",
+      "evidence": [
+        "022.png"
+      ],
+      "steps": "Select any cue, click ♬ MIDI in the toolbar, look at the MIDI tab.",
+      "suggestion": "Placeholder such as: msc go 12 dev 3 · note 60 100 · pc 12."
+    },
+    {
+      "title": "Undo is emptied by Save",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "files",
+      "task": "undo",
+      "expected": "In QLab I save constantly and can still Cmd+Z back through the session. I expected to step back to before the 6.5 paste, or at least see the steps.",
+      "happened": "After Cmd+S the ↶ button reads \"Undo (⌘Z)\" and is disabled; seen after the first save and again when I came back to regret 6.5. Versions listed only \"v1 … first version … 25 cues\", which holds all six notes together, so Restore could not take out one of them. I deleted the cue by hand.",
+      "evidence": [
+        "069.png"
+      ],
+      "steps": "Open any show, change two things, Cmd+S, look at the Undo button. Run twice (first save of the imported show; later save).",
+      "suggestion": "Keep the undo history across a save, or let a version be compared and restored cue by cue."
+    },
+    {
+      "title": "After deleting a cue the list jumps to the top and nothing is selected",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "cue-list",
+      "task": "repair",
+      "expected": "QLab selects the next cue and stays where I am working.",
+      "happened": "Deleted memo 9, memo 13 and cue 6.5 at different times; each time the list scrolled back to the top rows (Walk-in 1 at the top of the view), the inspector said nothing selected, and after the last one the playhead was on 0.5. I had to scroll back down to find my place each time.",
+      "evidence": [
+        "032.png"
+      ],
+      "steps": "Import the show, scroll so cue 13 is in view, click it, press Delete. The list shows the top of the show again. Seen three times.",
+      "suggestion": "Select the cue after the deleted one and keep the scroll position."
+    },
+    {
+      "title": "No 'Start first and enter' group; the act 2 group fires everything at once",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "cue-list",
+      "task": "repair",
+      "expected": "QLab's group mode where GO fires the first child and the playhead goes inside the group.",
+      "happened": "Report: \"12 Act 2: the storm returns: was a Start First and Enter group: here a group fires all its children together, or plays them one after another (a playlist).\" Left alone, wind and the close thunder would have started together. I dragged \"Thunder, close\" out and numbered it 12.5; the first drop went one row too far (below 13) and needed a second drag. There is no right-click menu on a cue and no ungroup command that I found.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "Import the show; GO on cue 12.",
+      "suggestion": "On import, flatten such a group into the cues it would have fired, or offer to."
+    },
+    {
+      "title": "Hotkey triggers and cue carts are not there",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "import",
+      "task": "repair",
+      "expected": "Interval music on its hotkey; the rehearsal stings as a cart of buttons.",
+      "happened": "\"11 Interval music: had a hotkey: triggers of that kind are not here yet.\" and \"Rehearsal stings: was a cue cart: imported as a list (carts are not here yet).\" Both are said plainly; I can run the interval from the list, and the stings from the second list in the drop-down.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "Import the show; read the report."
+    },
+    {
+      "title": "With many cues selected, typing a Number gives every cue the same number without asking",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "notes",
+      "expected": "Cmd+A in what I took to be the Number field to select its text. If cues are multi-selected, I would not expect Number to be editable for all of them at once.",
+      "happened": "The warning bar \"Number 6 is used twice.\" had pushed the inspector's fields down, my click missed the field, Cmd+A selected every cue (\"23 cues selected\"), and the value I then entered numbered all of them \"-10\", with \"22 warnings\" in the footer. One Undo (\"Undo number\") restored everything. Part of this was my hands working blind in the rig; I ran it once, so I am not sure a sighted user would get this far.",
+      "evidence": [],
+      "steps": "Click a cue, Cmd+A, type a value into the inspector's Number field, Enter.",
+      "suggestion": "Leave Number out of the multi-select inspector."
+    },
+    {
+      "title": "A second GO pressed straight after the first does nothing and nothing says so",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "transport",
+      "task": "run",
+      "expected": "QLab's double-GO protection is a setting I choose, and I know its length.",
+      "happened": "In Show mode I pressed Space twice with no pause, twice over; each time only one GO happened. I assume a double-GO guard, but I never set one and the screen gave no sign that a press was ignored. Could be the rig's timing; not confirmed.",
+      "evidence": [],
+      "steps": "Show mode, press Space twice within a fraction of a second."
+    },
+    {
+      "title": "An audio cue's Target column is empty",
+      "severity": "polish",
+      "kind": "missing",
+      "area": "cue-list",
+      "task": "bring",
+      "expected": "QLab shows the file name in Target, which is how I spot a wrong or missing file down the whole list at once.",
+      "happened": "Target is blank for every Audio cue; the file is only in the inspector's Audio tab, one cue at a time. Before the first save that field is a long absolute path.",
+      "evidence": [
+        "014.png",
+        "055.png"
+      ],
+      "steps": "Import the show; look at the Target column for cues 2, 4, 6, 7."
+    },
+    {
+      "title": "The import report says exactly what did not come across, by cue number, with what to do about it",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "import",
+      "task": "bring",
+      "expected": "A vague 'some cues could not be imported', and an evening of checking each cue.",
+      "happened": "Six lines, each \"number name: was X: here it is Y\", and \"The QLab file is not changed.\" The same words are left in the cue's notes, so the standby line for cue 9 read \"(QLab MIDI cue: its message was not read. Make a MIDI cue here in its place.)\". Everything it did not list, I checked three of and they were right.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "Import from QLab… on the start screen."
+    },
+    {
+      "title": "The standby line says what this GO will really do",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "show-mode",
+      "task": "run",
+      "expected": "A cue number and name.",
+      "happened": "\"DISARMED — THIS GO WILL SKIP IT\" on the cut phone cue; \"and with it, on the same GO: 8 · Underscore out\" on the auto-continue; \"then 6.5 · Door, memory\" otherwise. Active cues showed \"−22 → −12 dB\" on the rain while it came back, with the waiting fade counting down under it.",
+      "evidence": [
+        "064.png",
+        "055.png"
+      ],
+      "steps": "Show mode; step through cues 3 to 7."
+    },
+    {
+      "title": "Save makes one folder with the sounds in it, first time, without being asked",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "files",
+      "task": "save",
+      "expected": "A separate collect-files step, and a missing file at the theatre.",
+      "happened": "Cmd+S, one place to choose, and \"The Glass Orchard.ecshow\" held show.json and media/ with the ten sounds in use, including the composer's new letter v2.wav and not the old letter.wav. The cue's File field changed to \"media/letter v2.wav\".",
+      "evidence": [
+        "057.png"
+      ],
+      "steps": "Import, Cmd+S, look in the folder."
+    },
+    {
+      "title": "The QLab hands work: Space, Esc, V, Up arrow, Cmd+C/V, Delete, Cmd+S",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "run",
+      "expected": "To relearn keys.",
+      "happened": "Every QLab key I reached for did the QLab thing. After a GO one cue early, Up arrow moved the playhead back and nothing that was playing changed. A group with \"Fade & stop others\" 3 s did the blackout exactly.",
+      "evidence": [
+        "064.png"
+      ],
+      "steps": "Run the show from the keyboard."
+    }
+  ],
+  "rig": [
+    "Working from text coordinates, a warning bar or a different group mode moved the inspector's fields down a row and two of my clicks missed their field; a person looking at the screen would have seen it.",
+    "Clicking by name with --nth picked a different row than the one listed first, so I clicked rows by place.",
+    "hear reports a fading sound as 'at -10.0 dB (fading to -60 dB)' partway through the fade, so I could not hear the fade's shape, only that it ended in silence.",
+    "MIDI output could not be checked beyond the bytes shown in the app's own Network panel.",
+    "I could not see the app on Windows, which is the whole reason Priya is here."
+  ]
+}

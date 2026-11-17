@@ -1,0 +1,257 @@
+{
+  "person": "dana",
+  "verdict": "with-workarounds",
+  "verdictWhy": "I built the whole evening in one sitting and the run went as the notes ask, so yes, I could tour on this. But twice it frightened me: my tracks vanished until I saved, and the house fade showed no fade until I typed in a level it already seemed to have. I would rehearse every cue before trusting it in front of an audience.",
+  "ratings": {
+    "learn": 3,
+    "speed": 4,
+    "clarity": 4,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "build",
+      "outcome": "done-with-trouble",
+      "notes": "Seven files added in one go, but the list stayed empty until I saved the show; numbers typed then Tab were lost and had to be redone with Enter."
+    },
+    {
+      "id": "house",
+      "outcome": "done-with-trouble",
+      "notes": "Loop found on the Audio tab after looking in Time & Loops. The fade cue needed its target chosen and its To level typed before it reported a real fade."
+    },
+    {
+      "id": "trim",
+      "outcome": "done",
+      "notes": "Start at 12, End at 40, Fade out 5 on one line; duration became 0:28.0 and it played from 0:12. I could not check the fade-out itself (rig)."
+    },
+    {
+      "id": "follow",
+      "outcome": "done",
+      "notes": "auto-follow plus Post-wait 3; confirmed in the run: 3 seconds of silence, then Lantern with no GO."
+    },
+    {
+      "id": "level",
+      "outcome": "done",
+      "notes": "Level -4 on the Audio tab; plays at -4.0 dB. Not visible in the list."
+    },
+    {
+      "id": "save",
+      "outcome": "done",
+      "notes": "Saved as Tides tour.ecshow on the desk (it copies the music in). Reopening the app brought the show back exactly."
+    },
+    {
+      "id": "rehearse",
+      "outcome": "done",
+      "notes": "Load to Time 0:30, GO, stop, and again. Works only in Edit mode."
+    },
+    {
+      "id": "perform",
+      "outcome": "done",
+      "notes": "Show mode locked delete and rename. House loop, 8 s out, Tide, Salt at -4, Undertow from 0:12, Driftwood into Lantern, Bows all sounded as expected; moved on with the Active cues bar \"Click to skip there\"."
+    },
+    {
+      "id": "help",
+      "outcome": "done-with-trouble",
+      "notes": "No Help menu; found Settings > Keys: GO Space, Panic Esc (again: stop dead), playhead ↑ ↓."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Sounds added to a new, unsaved show do not appear in the cue list until the show is saved",
+      "severity": "major",
+      "kind": "bug",
+      "area": "import",
+      "task": "build",
+      "expected": "After New show > Audio > choosing seven files, seven cues in the list, as QLab does on an untitled workspace.",
+      "happened": "The top bar said \"7 unsaved\" and Undo read \"Undo add 7 sounds\", but the list still said \"No cues yet\" and the footer \"0 cues\". A second try with one file gave \"8 unsaved\", still \"No cues yet\". Only after Save (to a folder on the desk) did all eight rows appear at once, including the duplicate \"01 Tide-2\" I then had to delete. Nothing on screen said a save was needed.",
+      "evidence": [
+        "004.png"
+      ],
+      "steps": "Start the app. New show. Click ♪ Audio, choose any wav. Look at the list: \"No cues yet\", chip says \"1 unsaved\". Save the show to a folder: the cue appears. (Seen twice in one session: 7 files, then 1 file.)",
+      "suggestion": "Show the cues at once in an unsaved show, or ask for a folder before the first sound is added."
+    },
+    {
+      "title": "A Fade cue with To level left as the grey \"-inf\" does not fade: it holds the level, then cuts",
+      "severity": "major",
+      "kind": "bug",
+      "area": "audio",
+      "task": "house",
+      "expected": "The To level box shows \"-inf\", so I took it as already set to fade to silence over my 8 seconds.",
+      "happened": "With target House music, Duration 0:08.00, Stop target when done on, and To level untouched, `hear` reported \"House music at 0.0 dB (fading to NaN dB)\" through the whole 8 seconds, then \"Silence.\" After I typed -inf into the box myself it reported \"fading to -60 dB\". I cannot hear the rig, so I am not certain the sound really stays at full level, but the target is \"NaN\" until the box is typed in.",
+      "evidence": [
+        "020.png"
+      ],
+      "steps": "Add an audio cue, add a Fade, choose the audio cue as Target, set Duration 8, leave To level alone. GO the audio, GO the fade, hear: \"fading to NaN dB\". (Run three times.)",
+      "suggestion": "Make the shown -inf the real default value."
+    },
+    {
+      "title": "A cue Number typed and left with Tab is thrown away, and the old text stays in the box for the next cue",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "inspector",
+      "task": "build",
+      "expected": "Type the number, Tab to Name, type the name: both kept. That is how every form works.",
+      "happened": "Typed 0, Tab, typed \"House music\", Enter. The name was kept, the NUMBER column stayed blank though the box still read \"0\". Selecting the next cue and typing 1 made the box read \"01\"; again nothing in the list. Typing the number and pressing Enter does keep it.",
+      "evidence": [
+        "011.png"
+      ],
+      "steps": "Select a cue, click Number in Basics, type 1, press Tab. The list shows no number. Select another cue: the Number box still shows the 1. (Twice: cue 0 and cue 1.)",
+      "suggestion": "Keep a field's value when it loses the keyboard."
+    },
+    {
+      "title": "The row of the cue that is playing shrinks to a small tag at the left edge of the list",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "cue-list",
+      "task": "perform",
+      "expected": "The playing cue stays a full row, marked as playing, so I can see where I am in the running order.",
+      "happened": "With Bows playing in Show mode its row was a small box reading only \"Bows\" at the far left, with no number or time, where the other rows are full width. Seen in one picture; in the text the live row always sat at x=17 instead of with the others, so it may be every time.",
+      "evidence": [
+        "045.png"
+      ],
+      "steps": "Open a show in Show mode, GO the last cue, look at its row."
+    },
+    {
+      "title": "Clicking the middle of a Fade row with no name does not select it; the inspector stays on the previous cue",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "cue-list",
+      "task": "house",
+      "expected": "A click anywhere on a row selects that cue and the inspector shows it.",
+      "happened": "I clicked the Fade row in its name area and went to the inspector to type the level. The inspector was still Tide's, and my \"-inf\" went into Tide's File box: \"Its file is missing.\" Clicking the row near its left edge did select it. The unnamed Fade row shows an open name box that swallows the click.",
+      "evidence": [
+        "030.png"
+      ],
+      "steps": "Add a Fade and leave it unnamed. Select another cue. Click the Fade row around the NAME column. The inspector does not change."
+    },
+    {
+      "title": "Load to Time does nothing in Show mode and says nothing",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "show-mode",
+      "task": "rehearse",
+      "expected": "Picking a track up from a time is a rehearsal thing I do with the show locked; or else a word saying it is not available.",
+      "happened": "In Show mode ⌘T and Tools > Load to Time… opened no bar and showed no message; only the footer \"SHOW MODE — editing is locked\". In Edit mode the same command works.",
+      "evidence": [],
+      "steps": "Switch to Show. Select an audio cue. Tools > Load to Time…. Nothing appears. (Tried by key and by menu.)",
+      "suggestion": "Allow it in Show mode, or grey the menu item."
+    },
+    {
+      "title": "There is no Help menu; the keys are under Settings > Keys",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "help",
+      "task": "help",
+      "expected": "A Help menu, or a ? on the window, with the keys and a link to the manual.",
+      "happened": "The menu bar is App, File, Edit, View, Tools, Window. I found the list by opening the ⚙ and trying \"Keys\". The list itself is good: \"GO Space\", \"Panic (again: stop dead) Esc\", \"Move the playhead ↑ ↓\". There is no entry called \"back one cue\"; I took ↑ to be it.",
+      "evidence": [],
+      "steps": "Look through the menu bar for help.",
+      "suggestion": "Add a Help menu with Keys and the getting-started page."
+    },
+    {
+      "title": "Loop is on the Audio tab, not on the tab called Time & Loops",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "house",
+      "expected": "The loop switch under \"Time & Loops\".",
+      "happened": "Time & Loops has a waveform, Markers and \"Loop regions: None. A region is a stretch that loops cleanly…\" with no button to make one and no plain loop switch. The Loop switch is on the Audio tab. Once on, the row gets a clear \"loop\" tag.",
+      "evidence": [
+        "016.png"
+      ],
+      "steps": "Select an audio cue, open Time & Loops."
+    },
+    {
+      "title": "A new Fade has no target though it was added with the sound selected",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "house",
+      "expected": "QLab targets the cue I had selected.",
+      "happened": "The Fade came in with ✕ and \"No target.\"; I chose \"0 · House music\" from the list. Clear enough, one extra step. Choosing it also moved every field up a line, so my next click missed.",
+      "evidence": [],
+      "steps": "Select an audio cue, click ◢ Fade."
+    },
+    {
+      "title": "The toolbar offers 17 kinds of cue, drawn so dim they look switched off",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "cue-list",
+      "task": "build",
+      "expected": "The three or four I know (Audio, Fade, Stop) easy to see.",
+      "happened": "Group, Audio, Fade, Stop, Start, Pause, Devamp, Load, GoTo, Arm, Disarm, Wait, Memo, Network, Light, Mix, Jump in dark grey on dark brown. \"Devamp\", \"Arm\", \"Network\" and \"Jump\" are not my words.",
+      "evidence": [
+        "002.png"
+      ],
+      "steps": "New show; look at the toolbar."
+    },
+    {
+      "title": "A cue's level is not shown in the list, and a follow is only a small arrow",
+      "severity": "polish",
+      "kind": "missing",
+      "area": "cue-list",
+      "task": "level",
+      "expected": "To see from the list that Salt is at -4 and that Driftwood goes on by itself.",
+      "happened": "Salt's -4 dB is only in the inspector's Audio tab (and in Active cues once it plays). Driftwood shows \"0:03.0\" and a ⤓; standing by on it says \"then 5 · Lantern\" with no word that Lantern follows without a GO.",
+      "evidence": [
+        "041.png"
+      ],
+      "steps": "Set a level and an auto-follow; look at the list in Show mode."
+    },
+    {
+      "title": "In Show mode a click on a row still moves the playhead, and Reset sits beside Panic",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "show-mode",
+      "task": "perform",
+      "expected": "Locked means a stray click cannot change what GO does next.",
+      "happened": "Show mode did stop Backspace deleting and double-click renaming. But one click on Undertow made it the standing-by cue, and \"Reset\" (\"Stop everything; playhead to the top\") is one button below Panic with no confirm that I saw. The mixer knobs stay live too.",
+      "evidence": [
+        "041.png"
+      ],
+      "steps": "Show mode; click any row."
+    },
+    {
+      "title": "Load to Time is exactly what a dancer's \"from 0:30\" needs",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "rehearse",
+      "expected": "To fiddle with the cue's start time and have to put it back.",
+      "happened": "Tools > Load to Time… (⌘T), typed 0:30, Enter: \"LOADED TO 0:30.0\" by Standing by; GO played Salt from 0:30 at -4 dB. The second time took four keys. It does not remember 0:30 from the last time.",
+      "evidence": [],
+      "steps": "Edit mode, select a cue, ⌘T."
+    },
+    {
+      "title": "The standing-by line and the save chip say what will happen",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "perform",
+      "expected": "",
+      "happened": "\"Standing by 0 House music — then House out\" in large type; \"9 unsaved\" with the list of what; after saving \"Saved v2 — … House out added …\"; reopening the app brought the show back as left, playhead at the top. The ↺ \"Put back to media/01 Tide.wav\" rescued a field I had wrecked.",
+      "evidence": [
+        "041.png"
+      ],
+      "steps": ""
+    },
+    {
+      "title": "Auto-follow with a post-wait did what the choreographer asked, first time",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "transport",
+      "task": "follow",
+      "expected": "",
+      "happened": "Continue: auto-follow, Post-wait 3 on Driftwood. In the run: Driftwood ended, \"Lantern is waiting (0:02.3 of 0:03.0)\", then Lantern played. Start at / End at / Fade out for Undertow were three boxes on one line and the row's duration became 0:28.0.",
+      "evidence": [
+        "030.png"
+      ],
+      "steps": ""
+    }
+  ],
+  "rig": [
+    "`hear` shows a cue's set level, not where a fade-out inside the cue has got to, so Undertow's 5-second fade out could not be checked.",
+    "I ran well over the 150 actions (about 390 journal lines with looks, waits and hears): several clicks were sent in batches by position and missed after the layout moved, and had to be redone.",
+    "The run was stopped and restarted once before the first task (the show's own app was open; the owner's go-ahead was relayed)."
+  ]
+}

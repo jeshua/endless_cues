@@ -1,0 +1,168 @@
+{
+  "name": "endless-cues",
+  "version": "0.3.0-alpha.4",
+  "description": "Endless Cues: open show control. QLab's cue list, a sound designer's tools, an open show file.",
+  "main": "app/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"test/*.test.js\"",
+    "smoke": "electron . --smoke",
+    "tracker": "node bin/tracker.js",
+    "users:prepare": "node test/users/prepare.js",
+    "users:collect": "node test/users/collect.js",
+    "postinstall": "node -e \"if(process.platform==='darwin')require('child_process').spawnSync('xattr',['-cr','node_modules/electron/dist/Electron.app'])\"",
+    "demo": "node examples/make-demo.js",
+    "fake-prop": "node bin/ec-fake-prop.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "release": "node bin/release.js"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "electron-updater": "6.8.12"
+  },
+  "author": "Endless Cues",
+  "homepage": "https://endlesscues.com",
+  "build": {
+    "appId": "com.endlesscues.app",
+    "productName": "Endless Cues Public Alpha",
+    "copyright": "Endless Cues contributors",
+    "directories": {
+      "output": "dist.noindex",
+      "buildResources": "build"
+    },
+    "files": [
+      "app/**",
+      "core/**",
+      "examples/make-demo.js",
+      "package.json",
+      "!**/*.md",
+      "bin/**"
+    ],
+    "asar": true,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://downloads.endlesscues.com/",
+        "channel": "latest"
+      }
+    ],
+    "detectUpdateChannel": false,
+    "generateUpdatesFilesForAllChannels": false,
+    "fileAssociations": [
+      {
+        "ext": "ecshow",
+        "name": "Endless Cues Show",
+        "role": "Editor",
+        "rank": "Owner",
+        "isPackage": true,
+        "icon": "document.icns"
+      },
+      {
+        "ext": [
+          "qlab5",
+          "qlab5backup",
+          "qlab4",
+          "qlab4backup"
+        ],
+        "name": "QLab Workspace",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Endless Cues talks to equipment on your show network: lighting and sound desks, remotes and other computers.",
+        "NSMicrophoneUsageDescription": "Endless Cues lists audio devices so you can choose the show's output.",
+        "NSCameraUsageDescription": "Endless Cues shows a camera on the stage when a Camera cue asks for one.",
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.endlesscues.show",
+            "UTTypeDescription": "Endless Cues Show",
+            "UTTypeConformsTo": [
+              "com.apple.package",
+              "public.composite-content"
+            ],
+            "UTTypeIconFile": "document.icns",
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "ecshow"
+              ]
+            }
+          }
+        ]
+      },
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "artifactName": "Endless-Cues-${version}-mac-${arch}.${ext}"
+    },
+    "win": {
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      },
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "category": "AudioVideo",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "hello@endlesscues.com",
+      "synopsis": "Open show control"
+    },
+    "dmg": {
+      "title": "Endless Cues ${version}"
+    }
+  },
+  "bin": {
+    "ec": "bin/ec.js",
+    "ec-mcp": "bin/ec-mcp.js",
+    "ec-user": "bin/ec-user.js"
+  },
+  "productName": "Endless Cues Public Alpha",
+  "license": "AGPL-3.0-or-later",
+  "private": true
+}

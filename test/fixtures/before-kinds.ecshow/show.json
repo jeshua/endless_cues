@@ -1,0 +1,26 @@
+{
+  "format": "endless-cues-show",
+  "version": 1,
+  "id": "show_beforekinds",
+  "title": "Saved before kinds",
+  "notes": "A show as the app wrote it before buses had kinds and sounds had a chain: a three-band eq, one ducking pair, buses that are only names.",
+  "settings": {
+    "audio": {
+      "masterDb": 0,
+      "limiter": true,
+      "buses": [
+        { "id": "music", "name": "Music", "db": -3 },
+        { "id": "effects", "name": "Effects", "db": 0 },
+        { "id": "vocals", "name": "Vocals", "db": 0 }
+      ],
+      "duck": { "on": true, "key": "vocals", "target": "music", "threshold": -30, "depth": -12, "attack": 0.08, "hold": 0.7, "release": 2, "range": "all" }
+    }
+  },
+  "lists": [
+    { "id": "list_main", "name": "Main", "cues": [
+      { "id": "q1", "type": "audio", "number": "1", "file": "media/theme.wav", "bus": "music", "gainDb": -6, "eq": { "low": -6, "high": 2 } },
+      { "id": "q2", "type": "stop", "number": "2", "target": "q1" },
+      { "id": "q3", "type": "audio", "number": "3", "file": "media/line.wav", "bus": "vocals" }
+    ] }
+  ]
+}

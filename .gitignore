@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dist.noindex/
+dist-win.noindex/
+*.log
+.DS_Store
+# The private snapshot this project grew out of (show-specific; never published)
+/reference/
+# Local scratch + smoke output
+/.scratch/
+/smoke-out/
+# A run of the virtual users: desks, pictures, journals (the reports are collected into docs/internal/usability/)
+/test/users/runs/
+__pycache__/
+.env
+.env.*
+!.env.example
+
+# The pictures a run of the virtual users took (the reports beside them are kept)
+/docs/internal/usability/*/shots/
+# Worktrees for agents (one per branch)
+/.claude/worktrees/
+# Written into a packaged build by bin/release.js (version, commit, date)
+/app/build-info.json
+# A prop's real Wi-Fi password, if someone builds the kit's sketches in place (the templates are secrets.example.h)
+/core/kit/firmware/*/secrets.h
