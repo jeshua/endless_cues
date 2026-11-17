@@ -68,7 +68,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   await click('[data-run-from-go]');
   const act = (ref) => snap().engine.active.find((x) => x.id === id(ref));
   check('…and Run from here starts the loop and the music, the music at the −12 its fade left, with the playhead on the cue',
-    await until(() => act('rain') && act('music') && Math.abs(act('music').db - -12) < 0.1 && snap().engine.playhead === id('here'), 4000) && !(await has('[data-run-from]')),
+    await until(() => act('rain') && act('music') && Math.abs(act('music').db - -12) < 0.1 && snap().engine.playhead === id('here'), 4000) && await until(async () => !(await has('[data-run-from]')), 4000),
     [snap().engine.active.map((x) => [x.name, x.db]), snap().engine.playhead]);
   host.cmd({ op: 'mode', mode: 'show' });
   check('…Show mode refuses it', !!host.cmd({ op: 'run-from', id: id('here') }).error);

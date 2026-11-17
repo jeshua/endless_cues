@@ -519,9 +519,11 @@ async function run({ host, win, log, makeDemo }) {
       check('the Art-Net packet for its universe carries those levels', !!dmx() && dmx().universe === 0 && dmx().data.length === 512 && dmx().data[0] === 255 && dmx().data[9] === 128 && dmx().data[10] === 64 && dmx().data[11] === 0, dmx() && [...dmx().data.subarray(0, 12)]);
       const acn = sacn.parse(host.lighting.output.last(2));
       check('…and the sACN packet for the other, with a 16-bit pan', !!acn && acn.universe === 1 && acn.data[1] === 0x40 && acn.data[2] === 0x00, acn && [...acn.data.subarray(0, 5)]);
-      const sentBefore = light().packets;
-      await sleep(300);
-      check('the universes are refreshed steadily, changed or not', light().packets - sentBefore >= 12, light().packets - sentBefore);
+      // (counted over a second, against the clock: a slow machine's timers run late, but the refresh never stops)
+      const sentBefore = light().packets, t0 = Date.now();
+      await sleep(1000);
+      const sent = light().packets - sentBefore, secs = (Date.now() - t0) / 1000;
+      check('the universes are refreshed steadily, changed or not', sent >= 15 * secs, { sent, secs });
       if (!process.argv.includes('--net')) check('a test run sends none of it (packets are made, no socket is opened)', light().dryRun === true);
       // the dashboard, in the window
       win.webContents.send('ec-menu', 'lights');

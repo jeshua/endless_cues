@@ -1,6 +1,6 @@
 // The inspector: the selected cue's settings, drawn from the cue-type table (core/show/cue-types.js), so a
 // new field or cue type appears here without this file changing.
-import { html, useState, useEffect, useRef, ec, cmd, edit, setCue, clock, db, cx, mod, keys, parseTime } from './lib.js';
+import { html, useState, useEffect, useLayoutEffect, useRef, ec, cmd, edit, setCue, clock, db, cx, mod, keys, parseTime } from './lib.js';
 import { Waveform, Was, usePin, PinControls } from './Sidebar.js';
 import { Matrix, EqBands } from './Routing.js';
 import { ShapeField } from './Curves.js';
@@ -323,12 +323,13 @@ function Info({ text }) {
   const me = useRef();
   const place = (b) => { const r = b.getBoundingClientRect(), left = Math.max(8, Math.min(r.left - 6, innerWidth - 268));
     return r.bottom > innerHeight - 140 ? `left:${left}px;bottom:${innerHeight - r.top + 6}px` : `left:${left}px;top:${r.bottom + 6}px`; };
-  useEffect(() => {
+  // (attached as soon as it is drawn, not a frame later: a click that comes first must still put it away)
+  useLayoutEffect(() => {
     if (!open) return;
     const away = (e) => { if (!me.current || !me.current.contains(e.target)) setOpen(null); };
     const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(null); } };
-    document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc, true);
-    return () => { document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc, true); };
+    window.addEventListener('pointerdown', away, true); window.addEventListener('keydown', esc, true);
+    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', esc, true); };
   }, [open]);
   return html`<span class="info" ref=${me}><button type="button" class=${cx('info-btn', open && 'on')} data-info aria-label="What is this?" aria-expanded=${!!open}
       onClick=${(e) => { e.preventDefault(); e.stopPropagation(); setOpen(open ? null : place(e.currentTarget)); }}>i</button>

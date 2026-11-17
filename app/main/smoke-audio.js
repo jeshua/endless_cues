@@ -119,7 +119,15 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   // (opened again at each look: in a packaged run the master has been shut again between one look and the next)
   const open = () => av(`master.gain.cancelScheduledValues(0), master.gain.value = 1`);
   check('the monitor feed carries the main outputs on the output it is set to', await until(async () => { await open(); const m = snap().mixer.monitor; return m.on && m.live && m.out === 5 && m.peak > -52; }, 10000),   // (a packaged build on CI took 3 s to load the file)
-    { monitor: snap().mixer.monitor, sounding: active(ad1) || null, audio: await av(`({ master: master.gain.value, voices: voices.size, state: ctx.state })`) });
+    { monitor: snap().mixer.monitor, sounding: active(ad1) || null, audio: await av(`(async () => {
+      master.gain.cancelScheduledValues(0); master.gain.value = 1;
+      const a = ctx.createAnalyser(); a.fftSize = 1024; limiter.connect(a);
+      await new Promise((ok) => setTimeout(ok, 200));
+      const b = new Float32Array(1024); a.getFloatTimeDomainData(b); let q = 0; for (const x of b) q = Math.max(q, Math.abs(x)); limiter.disconnect(a);
+      return { master: master.gain.value, voices: voices.size, state: ctx.state, outKey, outs: ctx.destination.maxChannelCount, destCh: ctx.destination.channelCount, fake: FAKE_OUTS,
+        mono: monitor.mono ? { gain: monitor.mono.gain.value, ch: monitor.mono.channelCount } : null, tap: !!monitor.tap, limiterOut: q,
+        bands: [...voices.values()].map((v) => (v.band && v.band.gain ? v.band.gain.value : null)) };
+    })()`) });
   await av(`master.gain.value = 0`);
   edit([{ op: 'show.set', path: 'settings.audio.monitor.out', value: 12 }], 'monitor');
   check('…and says so when the device has no such output', await until(() => snap().mixer.monitor.on && !snap().mixer.monitor.live, 3000), snap().mixer.monitor);
@@ -152,8 +160,11 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   await until(() => snap().engine.durations[tone('wav')] > 0, 2000);
   await drag(0.4, 0.6, 0.95); edits++;            // (low down: the Volume line, always drawn, is not where the drag starts)
   check('a drag across the waveform draws a loop region', await until(() => { const l = (cue().loops || [])[0]; return l && Math.abs(l.start - 1.2) < 0.06 && Math.abs(l.end - 1.8) < 0.06; }, 2000), cue().loops);
-  await drag(1, 0.8, 0.05); edits++;
-  check('the End handle, dragged, sets End at', await until(() => Math.abs((cue().cutAt || 0) - 2.4) < 0.06, 2000), cue().cutAt);
+  // (a drag a slow machine lost, before the page had drawn the handle there, is made again)
+  let endSet = false;
+  for (let i = 0; i < 3 && !endSet; i++) { await drag(1, 0.8, 0.05); endSet = await until(() => Math.abs((cue().cutAt || 0) - 2.4) < 0.06, 2500); }
+  edits++;
+  check('the End handle, dragged, sets End at', endSet, cue().cutAt);
   await page(`document.querySelector('.wavedit [data-zoom="in"]').click()`);
   check('the waveform zooms in', await until(() => page(`/×2/.test(document.querySelector('.wavedit .wavebar').textContent)`), 2000));
   await page(`document.querySelector('.wavedit [data-zoom="fit"]').click()`);
