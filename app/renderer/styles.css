@@ -138,6 +138,9 @@ button { font: inherit; color: inherit; cursor: default; }
 .update-line[data-update="downloading"] { padding-right: 10px; }
 .update-line .btn { border-radius: 999px; }
 .update-line > span { overflow: hidden; text-overflow: ellipsis; }
+/* a show from another computer: one calm line, no colour (nothing is wrong), and Turn on */
+.away-line { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; font-size: var(--fs-s); color: var(--text-1); white-space: nowrap; }
+.away-line > span { overflow: hidden; text-overflow: ellipsis; }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-1); }
 .btn.ghost:hover { background: var(--bg-3); color: var(--text-0); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }

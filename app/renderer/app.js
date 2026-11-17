@@ -869,7 +869,7 @@ function App() {
       ${cart && engineList && !engineList.cart && html`<button class="chip" onClick=${() => { setCartId(null); setSel([]); }} title="Back to the list GO runs">GO runs ${engineList.name}</button>`}
       <div class="grow" style="-webkit-app-region:drag;align-self:stretch"></div>
       <${UpdateLine} u=${update} s=${s} say=${say} />
-      ${s.away && html`<span class="update-line" data-away title="Until then nothing listens on the network, nothing is sent to equipment, and no clock, OSC, MIDI or timecode trigger starts a cue."><span>This show came from another computer. Its network features are off until you turn them on.</span>
+      ${s.away && html`<span class="away-line" data-away title="Until then nothing listens on the network, nothing is sent to equipment, and no clock, OSC, MIDI or timecode trigger starts a cue."><span>This show came from another computer. Its network features are off until you turn them on.</span>
         <button class="btn small" data-turn-on onMouseDown=${(ev) => ev.preventDefault()} onClick=${() => cmd({ op: 'turn-on' }).then((r) => { if (r && r.error) say(r.error, true); })}>Turn on</button></span>`}
       ${running.map((m) => html`<button class=${cx('chip', m.status && !m.status.ok && 'bad')} onClick=${() => setSettings('modules')} title=${m.status ? m.status.text : ''}><span class=${cx('dot', m.status && m.status.ok ? 'go' : 'danger')}></span>${m.name}</button>`)}
       ${s.light.blackout && html`<button class="chip bad loud" onClick=${() => setDrawer('lights')} title="The lights are blacked out">LIGHTS BLACKOUT</button>`}
