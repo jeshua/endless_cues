@@ -20,7 +20,8 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
     const a = ring.getBoundingClientRect(), b = el.getBoundingClientRect();
     const near = Math.abs(a.left - b.left) < 9 && Math.abs(a.top - b.top) < 9 && Math.abs(a.right - b.right) < 9 && Math.abs(a.bottom - b.bottom) < 9;
     const say = document.querySelector('[data-point-say]');
-    return { near, say: say ? say.textContent : '', pulse: getComputedStyle(ring).animationName, pointer: getComputedStyle(ring).pointerEvents };
+    return { near, say: say ? say.textContent : '', pulse: getComputedStyle(ring).animationName, pointer: getComputedStyle(ring).pointerEvents,
+      still: matchMedia('(prefers-reduced-motion: reduce)').matches };
   })()`);
   const lastSaid = () => (snap().assistant.transcript || []).filter((m) => m.role === 'assistant').slice(-1)[0] || {};
 
@@ -43,7 +44,9 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   check('the helper says where a cue’s colour is changed, from the app’s guide', /Basics ▸ Colour/.test(lastSaid().text || '') && (lastSaid().points || [])[0] && lastSaid().points[0].target === 'inspector-field:color', lastSaid());
   const colour = await until(async () => { const r = await ringed('[data-field="color"]'); return r && r.near; }, 3000);
   check('…and the Colour field is ringed in the inspector (a cue selected, Basics brought forward)', colour && (await has('[data-insp-tab="basics"].on')) && snap().assistant && (await ringed('[data-field="color"]')).pointer === 'none', await ringed('[data-field="color"]'));
-  check('…its words beside it, and the ring breathes in the accent', /Colour/.test(((await ringed('[data-field="color"]')) || {}).say) && ((await ringed('[data-field="color"]')) || {}).pulse === 'point-pulse');
+  // (a computer with animations off, as Windows Server is, asks for reduced motion: then the ring holds still)
+  const rung = (await ringed('[data-field="color"]')) || {};
+  check('…its words beside it, and the ring breathes in the accent (or holds still when the computer asks for less motion)', /Colour/.test(rung.say) && rung.pulse === (rung.still ? 'none' : 'point-pulse'), rung);
   check('…and the reply has a “Show me”', await until(() => has('[data-assistant] [data-show-me="inspector-field:color"]'), 2000));
   check('…while nothing was changed: the show has no unsaved edit', !snap().show.dirty, snap().show.unsaved);
   await shot('guide-1-colour');
