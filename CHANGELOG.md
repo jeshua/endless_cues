@@ -7,6 +7,8 @@ Until 1.0, anything may change between versions; a show file saved by an older v
 equipment it is for. This file is the short version, for someone deciding whether to update.
 
 ## Unreleased
+
+## 0.3.0-alpha.5 · 2026-11-17
 - **No more hover tips in the inspector.** The few fields whose name needs explaining (Flagged, Armed, Continue, the waits, Fade others, Auto-load, Bus, Outputs, End at…) have a small ⓘ beside the name: click it to read one line, click anywhere else to put it away.
 - **An audio cue's Audio tab opens on its waveform**, with the Volume line (and the menu of its other lines) and the markers, edited right there. Time & Loops keeps the typed-in times, the tempo and the loop regions.
 - **Remove all markers**: beside the markers on Time & Loops, and in the waveform's right-click menu. One undo puts them back.
