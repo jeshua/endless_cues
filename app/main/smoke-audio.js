@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const show = require('../../core/show/show');
 
-async function audioDepth({ host, win, check, timed = check, until, page, sleep, log = () => {} }) {
+async function audioDepth({ host, win, check, timed = check, until, page, sleep, log = () => {}, shot = async () => {} }) {
   const snap = () => host.snapshot();
   const av = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
   const list = host.document.doc.lists[0].id;
@@ -141,6 +141,9 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   const ad6 = idOf('AD6');
   await page(`(() => { const r = [...document.querySelectorAll('.list tbody tr')].find((x) => /AD6/.test(x.textContent)); if (r) { r.scrollIntoView(); r.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); r.click(); } })()`);
   await until(() => page(`[...document.querySelectorAll('.inspector .tabs button')].some((b) => b.textContent === 'Time & Loops')`), 3000);
+  await page(`document.querySelector('.inspector [data-insp-tab="type"]').click()`);
+  check('the Audio tab opens on the waveform, with its Volume line and the markers’ strip', await until(() => page(`!!document.querySelector('[data-audio-wave] [data-wavedit] svg[data-lane-svg="volume"]') && !!document.querySelector('[data-audio-wave] [data-markers]')`), 4000));
+  await shot('9-audio-tab-wave');
   await page(`[...document.querySelectorAll('.inspector .tabs button')].find((b) => b.textContent === 'Time & Loops').click()`);
   check('Time & Loops shows the waveform with its Start and End handles', await until(() => page(`!!document.querySelector('[data-wavedit] [data-handle="start"]') && !!document.querySelector('[data-wavedit] [data-handle="end"]') && !!document.querySelector('[data-wavedit] canvas')`), 4000));
   const drag = (fx0, fx1, fy = 0.6) => page(`(async () => { const el = document.querySelector('[data-wavedit]'), r = el.getBoundingClientRect(); const ev = (type, fx) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + fx * r.width, clientY: r.top + ${fy} * r.height }));

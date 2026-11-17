@@ -55,7 +55,7 @@ const SCREENS = [
     { at: 'check', ask: /check (the |my )?show|problems?|broken|warnings?|missing (files?|sounds?)/, keys: ['checks'], text: 'Check [check], in the footer: what is broken, missing or odd, without playing anything; the footer also counts broken cues, warnings and flagged cues.' },
   ]],
   ['The inspector (under the list, in Edit mode: the selected cue)', [
-    { at: 'inspector', ask: /inspector|(cue'?s?|its) (settings|properties|fields)/, text: 'The inspector [inspector]: the selected cue’s settings, in tabs. Rarely used fields wait under More. Hover a field’s label for what it does. Several cues selected: a change goes to all.' },
+    { at: 'inspector', ask: /inspector|(cue'?s?|its) (settings|properties|fields)/, text: 'The inspector [inspector]: the selected cue’s settings, in tabs. Rarely used fields wait under More. A field whose name needs explaining has an ⓘ: click it. Several cues selected: a change goes to all.' },
     { at: 'inspector-tab:basics', ask: /basics/, text: 'Basics [inspector-tab:basics]: number, name, notes [inspector-field:notes], colour [inspector-field:color], flag, armed, continue [inspector-field:continue], and the waits once one is set.' },
     { at: 'inspector-field:color', ask: /colou?r/, text: 'A cue’s colour: Basics ▸ Colour [inspector-field:color], six colours and … for any; or right-click the row ▸ Colour.' },
     { at: 'inspector-tab:type', ask: /(audio|fade|group|network|device|light|midi|video) tab|(sound|its) file|target/, keys: ['target'], text: 'The type’s own tab [inspector-tab:type], named after it: a sound’s file and level [inspector-field:gainDb], a fade’s target and how far, a group’s mode, a device’s command…' },

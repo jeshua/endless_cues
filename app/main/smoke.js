@@ -663,11 +663,16 @@ async function run({ host, win, log, makeDemo }) {
         await until(() => page(`(() => { const tab = [...document.querySelectorAll('.inspector .tabs button')].find((x) => /^Triggers/.test(x.textContent)); const f = (k) => document.querySelector('.inspector [data-field="' + k + '"] input'); return !!tab && tab.textContent === 'Triggers (3)' && tab.classList.contains('on') && ['hotkey', 'oscTrigger', 'midiTrigger', 'clockTrigger', 'timecodeTrigger'].every(f) && f('hotkey').value === 'shift+7' && /The hotkey shift\\+7 is also TC2/.test(document.querySelector('.inspector').textContent); })()`), 3000),
         await page(`document.querySelector('.inspector') && document.querySelector('.inspector').textContent.slice(0, 600)`));
       await shot('9-triggers-tab');
-      // a field's label shows its tip on hover, at once
-      const tipShown = await page(`(() => { const l = document.querySelector('.inspector [data-field="hotkey"] label[data-tip]'); if (!l) return false;
-        l.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); const t = document.querySelector('.field-tip'); return !!t && t.style.display === 'block' && t.textContent === l.dataset.tip && t.textContent.length > 5; })()`);
-      await shot('9-field-tip');
-      check('a field label shows its plain tip on hover, and hides it after', tipShown && await page(`(() => { document.querySelector('.inspector [data-field="hotkey"] label[data-tip]').dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); return document.querySelector('.field-tip').style.display === 'none'; })()`));
+      // a field whose name does not say it all has an ⓘ: a click shows its line, a click elsewhere puts it away; nothing on hover
+      const tabBtn = (re) => `[...document.querySelectorAll('.inspector .tabs button')].find((x) => ${re}.test(x.textContent))`;
+      await page(`${tabBtn('/^Basics/')}.click()`);
+      const infoOk = await until(() => page(`(() => { const i = document.querySelector('.inspector [data-field="armed"] [data-info]'); return !!i && !document.querySelector('.inspector [data-field="name"] [data-info]'); })()`), 2000);
+      await page(`document.querySelector('.inspector [data-field="armed"] [data-info]').click()`);
+      const popped = await until(() => page(`(() => { const p = document.querySelector('.inspector [data-field="armed"] .info-pop'); return !!p && /GO skips it/.test(p.textContent); })()`), 2000);
+      await shot('9-field-info');
+      await page(`document.querySelector('.inspector .tabs').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+      check('Armed has an ⓘ (Name has none); a click shows its line, a click elsewhere puts it away', infoOk && popped && await until(() => page(`!document.querySelector('.inspector .info-pop')`), 2000));
+      await page(`${tabBtn('/^Triggers/')}.click()`);
       await page(`document.querySelector('.inspector [data-all-triggers]').click()`);
       check('Settings ▸ Integrations ▸ Triggers lists every trigger in the show, and marks the ones that share a key', await until(() => page(`(() => { const rows = [...document.querySelectorAll('.trig-table .tr:not(.head)')]; return rows.length === 5 && rows.filter((r) => r.classList.contains('marked')).length === 2 && rows.filter((r) => r.dataset.trigger === 'timecode').length === 1; })()`), 3000), await page(`[...document.querySelectorAll('.trig-table .tr')].map((r) => r.textContent)`));
       await shot('9-triggers-table');
@@ -790,7 +795,7 @@ async function run({ host, win, log, makeDemo }) {
       check('a new show starts from a template: the same cues, untitled, a show of its own', await until(() => snap().show.untitled && snap().doc.id !== idWas && snap().rows.length === cuesWere, 4000), [snap().show.untitled, snap().rows.length, cuesWere]);
     }
     // what one sound can do: formats, fade shapes, rate, the envelope, limits, the monitor, a lost output (smoke-audio.js)
-    await require('./smoke-audio').audioDepth({ host, win, check, timed, until, page, sleep, log });
+    await require('./smoke-audio').audioDepth({ host, win, check, timed, until, page, sleep, log, shot });
     // sound design (a cue's chain of tools, measured offline) and the kinds of sound (ducking by kind, the guess at a new sound) (smoke-sound.js)
     await require('./smoke-sound').soundChecks({ host, win, check, timed, until, page, sleep, shot, log });
     // simple until asked: the Live view hidden again, a show that uses it, a new sound's bus (smoke-defaults.js)

@@ -217,7 +217,20 @@ function Field({ f, cues, s, byId, info, pending, reveal }) {
   // pending: this field differs from the saved show on at least one of the selected cues
   const changed = cues.map((c) => [c, pending.cues.get(c.id) && pending.cues.get(c.id).fields.get(f.key)]).filter((x) => x[1]);
   const back = () => edit(changed.map(([c, p]) => ({ op: 'cue.set', id: c.id, props: { [f.key]: p.rawFrom } })), 'put back');
-  return html`<div data-field=${f.key} class=${cx('field', changed.length && 'pending', wide && 'wide', (f.key === 'name' || f.key === 'continue') && 'two', (f.kind === 'longtext' || f.kind === 'levels' || f.kind === 'matrix' || f.kind === 'sweep') && 'top')} ><label data-tip=${f.tip || f.help || null}>${f.label}${changed.length ? html`<${Was} was=${changed.length === 1 ? changed[0][1].from : 'several values'} onBack=${back} />` : null}</label>${control}</div>`;
+  return html`<div data-field=${f.key} class=${cx('field', changed.length && 'pending', wide && 'wide', (f.key === 'name' || f.key === 'continue') && 'two', (f.kind === 'longtext' || f.kind === 'levels' || f.kind === 'matrix' || f.kind === 'sweep') && 'top')} ><label>${f.label}${f.tip ? html`<${Info} text=${f.tip} />` : null}${changed.length ? html`<${Was} was=${changed.length === 1 ? changed[0][1].from : 'several values'} onBack=${back} />` : null}</label>${control}</div>`;
+}
+
+/** An audio cue's own tab opens on its waveform: the Volume line (and the menu of its other lines) and the markers,
+ *  edited right there, as on Time & Loops, which keeps the typed-in times, the tempo and the loop regions. */
+function AudioWave({ cue, s, info }) {
+  const dur = s.engine.durations[cue.file] || 0;
+  const a = s.engine.active.find((x) => x.id === cue.id && x.kind === 'audio');
+  const pin = usePin(a);
+  if (!cue.file) return null;
+  return html`<div class="field wide audio-wave" data-audio-wave>
+    <${WaveEdit} cue=${cue} duration=${dur} active=${a} pin=${pin.t} locked=${s.mode === 'show'} tools=${(info && info.sound && info.sound.tools) || []} onPick=${(t) => { if (a) pin.place(t); }} />
+    ${a ? html`<${PinControls} a=${a} pin=${pin} />` : null}
+  </div>`;
 }
 
 function TimeAndLoops({ cue, s, info }) {
@@ -270,7 +283,7 @@ function TimeAndLoops({ cue, s, info }) {
         <input type="text" class="mono" data-marker-at style="width:76px" title="Empty: where it is now" placeholder=${clock(pin.t ?? pos ?? 0, 2)} value=${at} onInput=${(e) => setAt(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') addMarker(); }} />
         <button class="btn small" onClick=${addMarker}>Add marker</button>
         ${!a && typed != null && Number.isFinite(typed) ? html`<button class="btn small" onClick=${() => { setCue(cue.id, { from: r2(typed) }, 'start at'); setAt(''); }}>Start here</button><button class="btn small" onClick=${() => { setCue(cue.id, { cutAt: r2(typed) }, 'end at'); setAt(''); }}>End here</button>` : null}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">${markers.map((m, i) => html`<span class="chip">${clock(m.at, 2)} ${m.name}<button class="btn ghost small icon" style="width:16px;height:16px" onClick=${() => setCue(cue.id, { markers: markers.filter((_, j) => j !== i) }, 'remove marker')}>×</button></span>`)}</div></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">${markers.length > 1 && s.mode !== 'show' ? html`<button class="btn ghost small" data-markers-clear onClick=${() => setCue(cue.id, { markers: [] }, 'remove all markers')}>Remove all</button>` : null}${markers.map((m, i) => html`<span class="chip">${clock(m.at, 2)} ${m.name}<button class="btn ghost small icon" style="width:16px;height:16px" onClick=${() => setCue(cue.id, { markers: markers.filter((_, j) => j !== i) }, 'remove marker')}>×</button></span>`)}</div></div>
       <div class="field wide"><label>Loop regions</label><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         ${loops.length ? loops.map((g, i) => html`<span class="chip" style="height:26px">${g.name || `Loop ${i + 1}`} · ${clock(g.start, 2)}–${clock(g.end, 2)} · round
           <${TextBox} mono style="width:44px;height:20px;padding:0 4px;text-align:center" placeholder="on L" value=${g.hold ? '∞' : g.count || ''} onCommit=${(v) => setCount(i, v)} />
@@ -303,22 +316,23 @@ function FadeTools({ cue, s }) {
     ${said ? html`<span class="dim">${said}</span>` : null}</div></div>`;
 }
 
-// A field's label shows its tip on hover, at once (the browser's own title waits a second): one floating line,
-// kept inside the window.
-let tipEl = null;
-function showTip(e) {
-  const l = e.target.closest && e.target.closest('label[data-tip]');
-  if (!l) return;
-  if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'field-tip'; document.body.appendChild(tipEl); }
-  tipEl.textContent = l.dataset.tip;
-  const r = l.getBoundingClientRect();
-  tipEl.style.display = 'block';
-  const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
-  tipEl.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
-  tipEl.style.top = `${r.bottom + 6 + h > innerHeight - 8 ? r.top - h - 6 : r.bottom + 6}px`;
-}
-function hideTip(e) {
-  if (tipEl && e.target.closest && e.target.closest('label[data-tip]')) tipEl.style.display = 'none';
+// The ⓘ beside a field whose name alone does not say what it does: a click shows one plain line under it, a
+// click anywhere else (or Esc) puts it away. Nothing on hover.
+function Info({ text }) {
+  const [open, setOpen] = useState(null);        // where its line goes: under the ⓘ, or over it near the window's foot
+  const me = useRef();
+  const place = (b) => { const r = b.getBoundingClientRect(), left = Math.max(8, Math.min(r.left - 6, innerWidth - 268));
+    return r.bottom > innerHeight - 140 ? `left:${left}px;bottom:${innerHeight - r.top + 6}px` : `left:${left}px;top:${r.bottom + 6}px`; };
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!me.current || !me.current.contains(e.target)) setOpen(null); };
+    const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(null); } };
+    document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc, true);
+    return () => { document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc, true); };
+  }, [open]);
+  return html`<span class="info" ref=${me}><button type="button" class=${cx('info-btn', open && 'on')} data-info aria-label="What is this?" aria-expanded=${!!open}
+      onClick=${(e) => { e.preventDefault(); e.stopPropagation(); setOpen(open ? null : place(e.currentTarget)); }}>i</button>
+    ${open ? html`<span class="info-pop" role="note" style=${open}>${text}</span>` : null}</span>`;
 }
 
 export function Inspector({ s, info, selected, byId, pending, focus, reveal, say, openSettings }) {
@@ -380,7 +394,7 @@ export function Inspector({ s, info, selected, byId, pending, focus, reveal, say
   const advanced = (f) => (cur === 'basics' && LIFT[f.key] ? !LIFT[f.key]() : f.advanced);
   const basic = fields.filter((f) => !advanced(f)), adv = fields.filter(advanced);
   const one = selected.length === 1 ? selected[0] : null;
-  return html`<div class="inspector" data-inspector onMouseOver=${showTip} onMouseOut=${hideTip}>
+  return html`<div class="inspector" data-inspector>
     <div class="tabs">
       ${tabs.map(([id, label]) => html`<button class=${cx(cur === id && 'on')} data-insp-tab=${id} onClick=${() => setTab(id)}>${label}</button>`)}
       <div class="what">${one ? html`<span>${info.types[one.type].glyph} ${info.types[one.type].summary}</span>` : `${selected.length} cues selected`}
@@ -389,6 +403,7 @@ export function Inspector({ s, info, selected, byId, pending, focus, reveal, say
     <div class="insp-body" key=${selected.map((c) => c.id).join()} ref=${body}>
       ${cur === 'design' ? html`<${SoundDesign} cue=${one} s=${s} info=${info} pending=${pending} />` : cur === 'time' ? html`<${TimeAndLoops} cue=${one} s=${s} info=${info} />` : html`<div class="form">
         ${probs.map((p) => html`<div class=${cx('problem', p.level !== 'error' && 'warning')}>${selected.length > 1 ? `${s.labels[p.id]}: ` : ''}${p.why.charAt(0).toUpperCase() + p.why.slice(1)}.</div>`)}
+        ${cur === 'type' && type === 'audio' && one ? html`<${AudioWave} cue=${one} s=${s} info=${info} />` : null}
         ${cur === 'type' && type === 'network' && one ? html`<${CommandPicker} cue=${one} s=${s} info=${info} />` : null}
         ${cur === 'triggers' ? html`<div class="field wide"><label></label><span class="dim">Each fires it; the playhead stays. <button class="btn ghost small" data-all-triggers onClick=${() => openSettings && openSettings('triggers')}>All triggers…</button></span></div>` : null}
         ${basic.map((f) => html`<${Field} key=${f.key} f=${f} cues=${selected} s=${s} byId=${byId} info=${info} pending=${pending} reveal=${reveal} />`)}

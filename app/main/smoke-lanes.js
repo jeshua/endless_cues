@@ -109,6 +109,17 @@ async function editing({ host, check, until, page, sleep, cue, edit }) {
   check('in Show mode a click on the line or the marker strip changes nothing', env().length === n && marks().length === ml && await page(`!document.querySelector('.wavedit') || !!document.querySelector('.wavedit.locked [data-wavedit] svg path.line')`), [env(), marks()]);
   host.cmd({ op: 'mode', mode: 'edit' });
   await until(() => page(`!!document.querySelector('.wavedit') && !document.querySelector('.wavedit.locked')`), 3000);
+
+  // ── a song's sections cleared at once: Remove all, beside the markers ──
+  const keep = cue().markers || [];
+  host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: cue().id, props: { markers: [{ at: 0.5, name: 'Verse' }, { at: 1.5, name: 'Chorus' }] } }], label: 'sections' }); edit(1);
+  await until(() => (cue().markers || []).length === 2, 2000);
+  await page(`(() => { const b = [...document.querySelectorAll('.inspector .tabs button')].find((x) => x.textContent === 'Time & Loops'); if (b && !b.classList.contains('on')) b.click(); })()`);
+  const shown = await until(() => page(`!!document.querySelector('[data-markers-clear]')`), 3000);
+  check('two markers: a Remove all beside them', shown, [cue().markers, await page(`document.querySelector('.inspector .tabs') && document.querySelector('.inspector .tabs').textContent`)]);
+  if (shown) { await page(`document.querySelector('[data-markers-clear]').click()`); edit(1); }
+  check('Remove all takes every marker away at once', await until(() => !(cue().markers || []).length, 2000), cue().markers);
+  if (keep.length) { host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: cue().id, props: { markers: keep } }], label: 'markers back' }); edit(1); }
 }
 
 async function heard({ host, check, until, sleep }) {

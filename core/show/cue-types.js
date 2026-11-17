@@ -412,11 +412,9 @@ const TYPES = {
   },
 };
 
-// What a field's label shows on hover in the inspector: one plain line for a person. `help` stays what the
-// assistant reads (it may hold JSON shapes); a field without a tip shows its help. "type.key" wins over "key".
+// The few fields whose name alone does not say what they do get an ⓘ in the inspector, clicked to read one plain
+// line. `help` stays what the assistant reads (it may hold JSON shapes) and is never shown. "type.key" wins over "key".
 const TIPS = {
-  name: 'What the list shows. Empty: made from what it does.',
-  color: 'Its colour in the list.',
   flagged: 'A reminder to come back to it. Does nothing in the show.',
   armed: 'Off: GO skips it, but its continue still passes on.',
   preWait: 'Wait this long after GO before it starts.',
@@ -425,43 +423,19 @@ const TIPS = {
   fadeOthers: 'Fades out and stops everything else over this many seconds. 0: off.',
   duckOthers: 'Holds everything else down by this much while it plays. 0: off.',
   autoLoad: 'Gets its file ready while it stands by, so it starts on the dot.',
-  gainDb: 'Its volume, in dB. 0 is as recorded.',
   bus: 'Which fader it plays through: Music, Effects, Vocals…',
-  from: 'Starts this far into the file.',
   cutAt: 'Stops here. With Loop: loops between start and here.',
-  loop: 'Plays round and round until stopped or faded.',
-  fadeIn: 'Fades up from silence over this many seconds.',
   outputs: 'Sends it to particular outputs instead of its bus’s.',
-  envelope: 'Its level drawn over its length, on Time & Loops.',
-  pan: 'Left −100, middle 0, right 100. A Pan line on Time & Loops takes over.',
-  automation: 'Pan and effect settings drawn over its length, on Time & Loops.',
-  eq: 'Bass, middle and treble for this one sound.',
-  chain: 'Effects on this one sound: filters, reverb, delay…',
-  markers: 'Named places on the waveform.',
-  loops: 'Parts that loop cleanly, a set number of times or until let go.',
   beatLead: 'How early, before the beat, it starts.',
   blendSecs: 'How long the blend takes.',
-  curve: 'How the value moves: straight, or eased.',
-  align: 'Left, centre or right.',
-  'fade.db': 'The level it fades its target to. −∞ is silence.',
-  'fade.duration': 'How long the fade takes.',
   'fade.stopTarget': 'Stops the sound when the fade ends, instead of leaving it playing silently.',
   'fade.chainTo': 'Moves the target’s effects to these settings too.',
-  'pause.target': 'The cue to pause. A Start cue resumes it.',
   'target.to': 'The cue it will point at from now on.',
   'goto.target': 'Moves the playhead here. Nothing plays.',
-  'arm.target': 'The cue to switch on.',
   'disarm.target': 'The cue to switch off: GO will skip it.',
   'devamp.target': 'The looping sound to let go of: it plays on past its loop.',
-  'wait.duration': 'How long it waits. Useful in a chain.',
-  'mix.duration': 'How long the faders take to get there.',
   'mix.desk': 'The whole Live desk as it was when kept.',
-  'music.target': 'The track to move.',
-  'music.to': 'The place in it to jump to.',
   'music.loop': 'Loops there until let go.',
-  'music.end': 'Where that loop ends.',
-  'music.level': 'Changes the track’s level by this much.',
-  'music.stop': 'Stops the track instead.',
   'music.letGo': 'Lets a held loop play on.',
 };
 for (const f of COMMON) if (TIPS[f.key]) f.tip = TIPS[f.key];

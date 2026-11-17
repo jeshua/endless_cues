@@ -389,6 +389,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     ${menu && menu.kind === 'marker' ? html`<div class="popover wave-menu" data-marker-menu style=${`left:${Math.min(menu.left, Math.max(0, width - 170))}px`}>
       <button class="sd-menu-item" data-add-marker-here onClick=${() => addMarkerAt(menu.t)}>Add marker here · ${clock(menu.t, 1)}</button>
       ${menu.i >= 0 ? html`<button class="sd-menu-item" onClick=${() => { setMenu(null); setNaming(menu.i); }}>Rename</button><button class="sd-menu-item danger" onClick=${() => { setMenu(null); removeMarker(menu.i); }}>Remove marker</button>` : null}
+      ${(cue.markers || []).length > 1 ? html`<button class="sd-menu-item danger" data-remove-all-markers onClick=${() => { setMenu(null); setMsel(-1); setCue(cue.id, { markers: [] }, 'remove all markers'); }}>Remove all markers</button>` : null}
     </div>` : null}
     <div ref=${box} data-wavedit class=${cx('wave tall', !locked && 'drawing')} onPointerDown=${down} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up} onDblClick=${dbl} onContextMenu=${context}>
       <canvas ref=${canvas}></canvas>

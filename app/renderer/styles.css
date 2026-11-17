@@ -370,8 +370,10 @@ input.bad { border-color: var(--danger); }
 .field.top { align-items: start; }
 .field.top > label { padding-top: 5px; }
 .field > label { color: var(--text-1); font-size: var(--fs-m); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.field > label[data-tip] { cursor: help; text-decoration: underline dotted var(--text-3); text-underline-offset: 3px; }
-.field-tip { position: fixed; z-index: 1000; display: none; max-width: 300px; padding: 6px 9px; border-radius: 6px; background: var(--bg-4); border: 1px solid var(--line); color: var(--text-1); font-size: var(--fs-s); line-height: 1.35; pointer-events: none; }
+.field > label .info { position: relative; display: inline-flex; vertical-align: 1px; margin-left: 4px; }
+.info-btn { width: 13px; height: 13px; padding: 0; border-radius: 50%; border: 1px solid var(--text-3); background: transparent; color: var(--text-2); font: italic 600 9px/11px var(--font, inherit); text-align: center; cursor: pointer; }
+.info-btn:hover, .info-btn.on { border-color: var(--text-1); color: var(--text-0); }
+.info-pop { position: fixed; z-index: 1000; width: max-content; max-width: 260px; padding: 6px 9px; border-radius: 6px; background: var(--bg-4); border: 1px solid var(--line); color: var(--text-1); font-size: var(--fs-s); font-weight: 400; line-height: 1.35; white-space: normal; text-align: left; box-shadow: var(--shadow); }
 .field .help { grid-column: 2; color: var(--text-2); font-size: var(--fs-s); margin-top: -4px; }
 .field .with-unit { display: flex; gap: 6px; align-items: center; }
 .field .with-unit .unit { color: var(--text-2); font-size: var(--fs-s); flex: none; }
@@ -1382,3 +1384,5 @@ button.chip.warn:hover { background: var(--standby-wash); }
 
 .settings-update { margin: 4px 0 10px; }
 .settings-update .update-line { display: inline-flex; gap: 8px; align-items: center; }
+/* an audio cue's waveform at the head of its Audio tab: the whole width */
+.form > .audio-wave { grid-column: 1 / -1; display: block; }
