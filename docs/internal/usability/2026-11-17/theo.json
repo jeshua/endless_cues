@@ -1,0 +1,252 @@
+{
+  "person": "theo",
+  "verdict": "with-workarounds",
+  "verdictWhy": "Every byte I checked matched what the screen said, the device models saved me typing, OSC control and the tally feed worked first time, and the show file is the best I have seen for git: renaming a cue was a one-line diff. What holds me back: a Network fade silently sent 146 messages with no value until I found #v# in the manual, and a desk on the wrong port looks fine everywhere except a small dot on the Rig tab. I'd bench it further before I bolt it under a staircase for four months.",
+  "ratings": {
+    "learn": 4,
+    "speed": 4,
+    "clarity": 3,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "bed",
+      "outcome": "done-with-trouble",
+      "notes": "Audio added both files in one dialog; loop is a 'Whole sound' switch on Time & Loops (had to scroll). The two cues came in with no numbers although 'Number new cues' is on; numbered them by hand."
+    },
+    {
+      "id": "desk",
+      "outcome": "done",
+      "notes": "Rig > Add a device > From a model > ETC Eos family; set 127.0.0.1:8001, typed 12 in Fire cue's second (unlabelled) field, +cue. Fired: /eos/cue/1/12/fire arrived exactly as shown."
+    },
+    {
+      "id": "raw",
+      "outcome": "done",
+      "notes": "Resolume model exists; Trigger clip with clip 2 -> /composition/layers/1/clips/2/connect 1, arrived with an int argument. Monitor showed the line but not the type."
+    },
+    {
+      "id": "ramp",
+      "outcome": "done-with-trouble",
+      "notes": "Network cue with Fade from 0, Fade to 1, 5 s sent 146 messages with no argument at all. Manual: the message must contain #v#. With it: 146 floats over 5.03 s, last exactly 1.0."
+    },
+    {
+      "id": "sensor",
+      "outcome": "done",
+      "notes": "OSC trigger '/sensor/door 1' on the heartbeat cue. /sensor/door 1 started it; /sensor/door 0 did not, and the monitor said 'did nothing'. /sensor/door 1.0 also started it."
+    },
+    {
+      "id": "buttons",
+      "outcome": "done",
+      "notes": "/go first 'did nothing'; switched on Settings > Integrations > Modules > OSC control. Then /go, /cue/5/start, /cue/2/start, /panic all worked."
+    },
+    {
+      "id": "tally",
+      "outcome": "done-with-trouble",
+      "notes": "Show feedback module needs a patch; the Rig devices are not offered, so made a Generic OSC patch for 127.0.0.1:9100. GO sent /endlesscues/go 2 heartbeat, /cue/2/start, /running 1, /playhead 3 ..."
+    },
+    {
+      "id": "tablet",
+      "outcome": "done",
+      "notes": "Web remote module, one switch, URL with key shown. curl with the key: 200 text/html, 11 KB; without: 403."
+    },
+    {
+      "id": "file",
+      "outcome": "done",
+      "notes": "Saved as The Cellar.ecshow (a folder). show.json is pretty JSON, stable ids, defaults omitted; renaming a cue gave a one-line diff. Web remote key is stored in it; versions/ and logs/ live beside it."
+    },
+    {
+      "id": "wrong",
+      "outcome": "done-with-trouble",
+      "notes": "Port 8009: the monitor shows the send like any other; the cue row, standby line and Show mode show nothing. Only a red dot on 'Rig', and the Rig page says 'not answering', which it also said on the right port."
+    }
+  ],
+  "findings": [
+    {
+      "title": "A Network cue fade without #v# sends the bare address over and over, with no warning",
+      "severity": "major",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "ramp",
+      "expected": "Filling in Fade from, Fade to and Duration would send the value, as QLab's Network cue fade does, or the inspector would say the message needs a placeholder.",
+      "happened": "With message '/composition/layers/1/video/opacity', Fade from 0, Fade to 1, Duration 5 s, the media server got 146 messages of '/composition/layers/1/video/opacity' with no argument. The monitor showed the same. Nothing on the cue or in Check said the fade fields were unused. Only the manual says 'A Network cue whose message contains #v# sends that value'.",
+      "evidence": [
+        "ramp.txt",
+        "ramp2.txt"
+      ],
+      "steps": "Add a Network cue, choose a patch, type an address without #v#, set Fade from 0, Fade to 1, Duration 5, Audition, and watch the receiving port.",
+      "suggestion": "When Fade from/to are set and the message has no #v#, say so on the cue (or append the value)."
+    },
+    {
+      "title": "A device that is not answering is shown only on the Rig page, not on its cues or in Show mode",
+      "severity": "major",
+      "kind": "missing",
+      "area": "network",
+      "task": "wrong",
+      "expected": "A warning where he is looking: on the cue row, in the standby line, or in Show mode, since a cue aimed at a dead desk is the thing that bites in a show.",
+      "happened": "After setting the desk to port 8009 and firing cue 3, the monitor listed '→ ETC Eos family 127.0.0.1:8009 /eos/cue/1/12/fire' like a success; the cue row and Show mode looked identical to the others. The only sign was a small red dot by 'Rig'; the Rig page said 'not answering · Check its power, and that it is on the show's network.' It said the same on the correct port (the stand-in cannot answer /eos/ping), so a wrong port and a silent desk look the same.",
+      "evidence": [
+        "082.png",
+        "090.png"
+      ],
+      "steps": "Add an ETC Eos device on a port nothing listens on, +cue Fire cue, fire it, go to Show mode.",
+      "suggestion": "Mark cues whose device is not answering, in the list and the standby line."
+    },
+    {
+      "title": "Rig devices and Network patches are two separate lists; Show feedback and the monitor's Send see only patches",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "settings",
+      "task": "tally",
+      "expected": "The two devices he just added would be the show's network equipment everywhere.",
+      "happened": "Settings > Integrations > Network said 'Patches: none' while the Rig had two devices (and a Network cue's Patch list offered both). Show feedback's 'Send to' had only '— choose a patch —', and the monitor's Send drop-down said 'no patches'. Had to make a separate Generic OSC patch.",
+      "evidence": [
+        "067.png"
+      ],
+      "steps": "Add a device on the Rig page, then open Settings > Integrations > Modules > Show feedback and open Send to.",
+      "suggestion": "Offer Rig devices wherever a patch is chosen."
+    },
+    {
+      "title": "Incoming messages from 127.0.0.1 are labelled as coming from the lighting desk",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "network",
+      "task": "sensor",
+      "expected": "The monitor would say the sender's address, or 'unknown'.",
+      "happened": "/sensor/door 1, /go and /panic (sent by the controllers) appear in the monitor as '← ETC Eos family (127.0.0.1:64239)'. The sender is matched to a device by IP alone. On a bench test where everything is local this misleads; on a real rig any second program on the desk's IP would too.",
+      "evidence": [
+        "046.png",
+        "082.png"
+      ],
+      "steps": "Add an Eos device at 127.0.0.1, then send any OSC to 53000 from the same computer and read the monitor.",
+      "suggestion": "Match on port too, or show the IP:port without a name when it is not the device's reply port."
+    },
+    {
+      "title": "The first cues added to a new show get no numbers although 'Number new cues' is on",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "cue-list",
+      "task": "bed",
+      "expected": "1 and 2, as QLab does, and as Settings > Show > Number new cues (on, counting by 1) says.",
+      "happened": "Adding room tone and heartbeat in one Add sounds dialog to a new show gave two cues with blank Number. Later cues (the Device and Network cues) were numbered 3, 4, 5 after I typed 1 and 2.",
+      "evidence": [
+        "003.png"
+      ],
+      "steps": "New show, Audio, pick two sound files at once, look at the Number column.",
+      "suggestion": ""
+    },
+    {
+      "title": "Device command fields on the Rig page have no labels",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "network",
+      "task": "desk",
+      "expected": "'Cue list' and 'Cue' next to Fire cue's two boxes; the show file has these labels.",
+      "happened": "Fire cue showed two boxes both reading '1' with no label. I guessed the second was the cue; the 'sends' preview only updates after leaving the box, so typing gave no feedback. The cue's inspector does label them (Layer, Clip).",
+      "evidence": [
+        "012.png"
+      ],
+      "steps": "Rig > Add a device > From a model > ETC Eos family; look at Fire cue.",
+      "suggestion": ""
+    },
+    {
+      "title": "The monitor does not show OSC argument types",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "network",
+      "task": "raw",
+      "expected": "'connect 1 (i)' or similar, since int vs float is the commonest Resolume/Eos mistake and the Send box already talks about i:/f:/s:.",
+      "happened": "Monitor line: '/composition/layers/1/clips/2/connect 1'. My listener showed it was an int; the app gave no way to tell. A float ramp shows '1.0' at the end, so you can partly infer it.",
+      "evidence": [
+        "033.png"
+      ],
+      "steps": "Fire a Resolume Trigger clip cue and read the monitor line.",
+      "suggestion": ""
+    },
+    {
+      "title": "Monitor messages wrap one character per line when a row has a note",
+      "severity": "polish",
+      "kind": "bug",
+      "area": "network",
+      "task": "sensor",
+      "expected": "'/sensor/door 0   did nothing' on one or two lines.",
+      "happened": "The address column wraps to one letter per line ('/ s e n s o r / d o o r 0') next to 'did nothing', taking a dozen lines. The narrow monitor also wraps every address over 3-4 lines and is hard to scroll to the newest entry.",
+      "evidence": [
+        "046.png",
+        "082.png"
+      ],
+      "steps": "Open the monitor, send an OSC message that matches no trigger.",
+      "suggestion": ""
+    },
+    {
+      "title": "The web remote's key is saved in show.json",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "files",
+      "task": "file",
+      "expected": "Since he keeps shows in git, nothing that grants control would be in the show file (the manual says exported settings never hold a remote's key).",
+      "happened": "show.json has \"web-remote\": { ... \"key\": \"b1eb1b5adc7c154e\" }. Committing the show publishes the key to control the show.",
+      "evidence": [],
+      "steps": "Switch on Web remote, save, read show.json.",
+      "suggestion": ""
+    },
+    {
+      "title": "Show file is readable, stable JSON that diffs to one line per change",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "files",
+      "task": "file",
+      "expected": "A binary or noisy file like QLab's.",
+      "happened": "show.json is pretty-printed, ids are stable, cue defaults are left out, sounds are relative (media/heartbeat.wav). Renaming one cue and saving changed exactly one line.",
+      "evidence": [],
+      "steps": "",
+      "suggestion": ""
+    },
+    {
+      "title": "Device models send exactly what the screen says",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "network",
+      "task": "desk",
+      "expected": "To type Eos and Resolume addresses by hand.",
+      "happened": "Eos and Resolume models list every command with the literal OSC it 'sends', +cue makes the cue, and /eos/cue/1/12/fire and /composition/layers/1/clips/2/connect 1 (int) arrived byte for byte.",
+      "evidence": [
+        "012.png"
+      ],
+      "steps": "",
+      "suggestion": ""
+    },
+    {
+      "title": "Incoming OSC that matches nothing is marked 'did nothing'",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "network",
+      "task": "buttons",
+      "expected": "Silence, as in most tools.",
+      "happened": "/go before OSC control was on and /sensor/door 0 showed in the monitor with 'did nothing'. The title bar chip 'OSC control' says '4 received, last /panic'.",
+      "evidence": [
+        "046.png"
+      ],
+      "steps": "",
+      "suggestion": ""
+    },
+    {
+      "title": "Show feedback and web remote work with one switch each",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "settings",
+      "task": "tally",
+      "expected": "Scripting a tally feed by hand.",
+      "happened": "GO produced /endlesscues/go 2 heartbeat, /endlesscues/cue/2/start heartbeat, /endlesscues/running 1, /endlesscues/playhead 3 '...'. Web remote served its page with the key and refused without it (403).",
+      "evidence": [],
+      "steps": "",
+      "suggestion": ""
+    }
+  ],
+  "rig": [
+    "The brief's manual path (.claude/worktrees/endless_cues_service/site/docs/index.html) does not exist; I read /Users/jeshua/workspace/repos/endless_cues_service/site/docs/index.html instead.",
+    "The osc stand-in cannot answer /eos/ping, so the Eos device read 'not answering' even on the correct port, which blurred the 'wrong' task.",
+    "The ⋯ title-bar menu seems to be an OS menu; clicking it showed nothing in look.",
+    "Layouts shift after a drop-down choice or when a settings section expands, so clicks at coordinates from the previous look landed on the wrong field twice (Network cue fade fields, Settings modules) and once closed the Settings sheet. That was my stale coordinates, not the app.",
+    "Reset's 'Sure? Reset' confirm once seemed not to stop a playing cue; I could not reproduce it (the second try worked), so it is not reported."
+  ]
+}

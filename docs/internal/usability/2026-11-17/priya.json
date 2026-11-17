@@ -1,0 +1,183 @@
+{
+  "person": "priya",
+  "verdict": "with-workarounds",
+  "verdictWhy": "Yes, I'd run tonight's tech on it on the Windows box, and probably the run after it. The import was honest about the MSC cue, the rain, thunder dip and phone stop played exactly as in QLab, and my notes took minutes. The lighting GO is the risk: I rebuilt it as a MIDI cue I've never heard reach a desk, and the blackout coming across as a 'Memo that does nothing' made me trust it less than it deserved.",
+  "ratings": {
+    "learn": 4,
+    "speed": 4,
+    "clarity": 4,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "bring",
+      "outcome": "done",
+      "notes": "Import from QLab… on the start screen; a summary named the two things lost (MSC cue kept as a Memo, a hotkey with no key). Everything else came across: playlist, group modes, loops, fades, the blackout's fade-and-stop-others."
+    },
+    {
+      "id": "verify",
+      "outcome": "done",
+      "notes": "Rain loops at -12 dB; Q3 dips it to -22 and brings it back; Q5 stops the phone. Active cues panel and row meters show it all."
+    },
+    {
+      "id": "repair",
+      "outcome": "done-with-trouble",
+      "notes": "Preshow playlist, its fade, the act 2 group and the blackout already worked when fired. Rebuilt the MSC GO as a MIDI cue 'msc go 9' (+ ▸ MIDI), deleted the Memo, renumbered and set auto-continue. A Reset that needed several clicks got in the way."
+    },
+    {
+      "id": "notes",
+      "outcome": "done",
+      "notes": "All six: thunder -6, rain returns 5 s (double-click in the list), 6.5 via Cmd+D, Q7 file swapped with level kept, Q4 disarmed, Q13 already fades all over 3 s."
+    },
+    {
+      "id": "save",
+      "outcome": "done",
+      "notes": "Cmd+S asked where; the .ecshow folder holds all ten sounds in use in media/ (letter v2 in, the old letter out)."
+    },
+    {
+      "id": "run",
+      "outcome": "done",
+      "notes": "Show mode, ran 0.5 to 7. Early GO on 7: stopped 7 and the waiting 8 with their row ■ buttons (fade), clicked 7 to stand by again, GO'd on cue. Three clicks."
+    },
+    {
+      "id": "undo",
+      "outcome": "done",
+      "notes": "Selected 6.5, Delete, Save. The other notes stayed; the save note said 'Saved v2 — 6.5 Door, memory removed'."
+    }
+  ],
+  "findings": [
+    {
+      "title": "The MSC GO to the lighting desk did not import, and the reason given doesn't fit an MSC cue",
+      "severity": "major",
+      "kind": "missing",
+      "area": "import",
+      "task": "bring",
+      "expected": "A QLab MIDI cue sending MSC GO comes across as a MIDI cue sending the same MSC, since the app's MIDI cue accepts 'msc go 12'.",
+      "happened": "Summary: '9 LX console GO (MSC): was a MIDI cue whose message this does not send (MIDI timecode, or an empty SysEx): kept as a Memo.' The cue is named MSC and the app does send MSC, so I rebuilt it by hand and had to supply the cue number from memory. I can't see inside the QLab file, so I can't tell if the importer misread it or the cue really was odd.",
+      "evidence": [
+        "002.png",
+        "016.png"
+      ],
+      "steps": "Import from QLab… > The Glass Orchard.qlab5; read the summary line for cue 9.",
+      "suggestion": "When it can't be carried over, say which MIDI message the QLab cue held (bytes or kind) so I can retype it."
+    },
+    {
+      "title": "Check says 'Nothing wrong' straight after an import that turned a cue into a Memo",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "import",
+      "task": "bring",
+      "expected": "Check, the 'without checking every cue by hand' tool, would list the imported cues that need attention.",
+      "happened": "Check: 'Nothing wrong. Nothing was played to find out.' The lost MSC cue appears only in the dismissed summary, the show's notes and the Memo's own notes.",
+      "evidence": [
+        "005.png"
+      ],
+      "steps": "Import the workspace, OK the summary, click Check in the bottom bar.",
+      "suggestion": "Flag imported cues that lost something so Check and the Flagged list show them."
+    },
+    {
+      "title": "Reset took several clicks over about ten seconds to stop anything",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "transport",
+      "task": "repair",
+      "expected": "Reset (or 'Sure? Reset' on the second click) stops everything and goes back to the top.",
+      "happened": "First click changed it to 'Sure? Reset' and the button grew to the left. Over the next clicks it kept showing 'Sure? Reset' while Rain bed and Underscore played on. A later click finally gave silence. Seen once; I may have clicked at the moment it reset its confirm, so not sure it's a bug.",
+      "evidence": [
+        "016.png"
+      ],
+      "steps": "With sounds playing in Edit mode, click Reset, then click 'Sure? Reset'. Not run twice.",
+      "suggestion": "Keep the button the same size when it asks 'Sure?'."
+    },
+    {
+      "title": "The blackout imports as a Memo whose inspector says 'A note. Does nothing.', but it fades everything",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "repair",
+      "expected": "A cue that takes everything out shows as something that acts, or the Memo says it acts.",
+      "happened": "Row: '✎ 13 Blackout: everything out' with a 'fade others 3s' badge; inspector header '✎ A note. Does nothing.' Under More it has 'Fade & stop others 3 s, Others are: all', and firing it did fade wind and thunder to silence in 3 s. I almost rebuilt it.",
+      "evidence": [
+        "010.png"
+      ],
+      "steps": "Import, select cue 13, read the inspector header; fire 12 then 13 and listen.",
+      "suggestion": "When a Memo has fade & stop others, say so in its header."
+    },
+    {
+      "title": "Recovering from an early GO takes three clicks",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "show-mode",
+      "task": "run",
+      "expected": "One move to undo the last GO: fade what it started and put the playhead back.",
+      "happened": "Had to click the row ■ on 7, the row ■ on the waiting 8 (auto-continued), then click row 7 to stand it by again. It worked cleanly and the rain was untouched.",
+      "evidence": [
+        "067.png"
+      ],
+      "steps": "Show mode, stand by 7, GO; then stop 7 and 8 and re-select 7."
+    },
+    {
+      "title": "A running fade is described as 'waiting'",
+      "severity": "polish",
+      "kind": "wording",
+      "area": "audio",
+      "task": "verify",
+      "expected": "'fading' while a fade runs.",
+      "happened": "During Rain returns' 3 s fade: '… \"Rain returns\" is waiting (0:01.3 of 0:03.0)', with Rain bed 'fading to -12 dB'. Same for stops: '\"fade out\" is waiting (0:00.9 of 0:02.0)'.",
+      "evidence": [],
+      "steps": "Fire 2 then 3; watch the active list during Rain returns' fade."
+    },
+    {
+      "title": "An Audio cue's Level is below the waveform; the tab has to be scrolled",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "notes",
+      "expected": "Level near the top of the Audio tab, like QLab's Audio Levels.",
+      "happened": "The Audio tab opens on the waveform; File and Level are only reached by scrolling the inspector. A 'Choose…' click landed on the wrong place once while it scrolled.",
+      "evidence": [],
+      "steps": "Select any Audio cue, click the Audio tab."
+    },
+    {
+      "title": "Disarmed cue is unmistakable in the standby header",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "cue-list",
+      "task": "notes",
+      "expected": "A greyed row as in QLab.",
+      "happened": "Header: 'STANDING BY DISARMED · GO SKIPS IT 4 Phone rings', row greyed, and unsaved edits get a dot on their row. Save · N lists each change.",
+      "evidence": [
+        "059.png"
+      ],
+      "steps": "Disarm a cue and stand it by."
+    },
+    {
+      "title": "Import came across truthfully and the QLab hands work",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "import",
+      "task": "verify",
+      "expected": "Spend the evening rebuilding.",
+      "happened": "Playlist, Start-first-and-enter group, loops, levels, fade dips, Stop cue, blackout's fade-others all came across and played right. Space GO, Esc panic (twice dead), Cmd+D duplicate, double-click a duration in the list, Cmd+S: all as in QLab. 'THIS GO: 2 OF 2 · Thunder, close' tells me what the next GO does inside a group.",
+      "evidence": [
+        "015.png"
+      ],
+      "steps": "Import and fire 2, 3, 4, 5."
+    },
+    {
+      "title": "Saving carries the sounds",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "files",
+      "task": "save",
+      "expected": "To have to collect files by hand.",
+      "happened": "The saved .ecshow folder has media/ with exactly the ten sounds in use, including the replacement letter v2.wav.",
+      "evidence": [],
+      "steps": "Save to a new folder and look inside."
+    }
+  ],
+  "rig": [
+    "The QLab workspace's true contents (the MSC cue number, act 2's original group mode) were not knowable to me, so I guessed 'msc go 9' and accepted 'Start first and enter' as right.",
+    "Clicks while an inspector was still scrolling sometimes landed on the old position."
+  ]
+}

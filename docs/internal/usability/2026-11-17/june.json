@@ -1,0 +1,290 @@
+{
+  "person": "june",
+  "verdict": "with-workarounds",
+  "verdictWhy": "One GO does fire the sound, the desk's cue 12 and the lantern, and the Rig page tells me at a glance what is there and what is not. But the assistant I came for knew a short list of sentences, and for the desk, the lantern's breathing and the second lantern I ended up doing it by hand in the inspector. I would run The Lighthouse on it, once a friend has checked my cues.",
+  "ratings": {
+    "learn": 3,
+    "speed": 3,
+    "clarity": 3,
+    "trust": 3
+  },
+  "tasks": [
+    {
+      "id": "folder",
+      "outcome": "done",
+      "notes": "Start from a folder, then the helper's one button proposed 6 cues and said exactly what it guessed (file order, dropped FINAL/v2, did not loop the lamp hum, did not read script.md). Accepted."
+    },
+    {
+      "id": "talk",
+      "outcome": "gave-up",
+      "notes": "Helper said plainly it has no model and listed what it knows. 'fade out cue 1 over 3' adds a separate Fade cue after the sound, not an ending fade. Settings > Assistant shows the choices but I could not find how many steps a real model takes; picking Anthropic left the drop-down saying Built-in helper and gave a raw SDK error."
+    },
+    {
+      "id": "script",
+      "outcome": "gave-up",
+      "notes": "Found nowhere to tell the show script.md is its script: not in the menus, Settings > Show, the Rig page or the helper's list. A 'Make cues from script.md' button appeared once (with the wrong provider) and then disappeared."
+    },
+    {
+      "id": "desk",
+      "outcome": "done-with-trouble",
+      "notes": "My own sentence got the canned list. 'add an ETC Ion at 127.0.0.1' worked but named it 'N ETC Ion'. The helper's suggested 'Fire cue' cue failed ('list must be a number'). Made the Device cue by hand plus auto-continue on Foghorn; one GO sent /eos/cue/1/12/fire."
+    },
+    {
+      "id": "lantern",
+      "outcome": "done",
+      "notes": "'look for props' found lantern_a, Accept gave a Rig row 'answering · 1 ms · firmware 1.0 · signal'. Try: Identify made the stand-in print '/ec/identify blinks white for 2 s'."
+    },
+    {
+      "id": "cue",
+      "outcome": "done-with-trouble",
+      "notes": "Helper said 'Lantern a has no command breathe. It has: ... Effect ...' but did not offer to use Effect. By hand: Device cue, Lantern a, Effect (breathe by default), auto-continue on Lamp hum; GO sent /ec/effect breathe."
+    },
+    {
+      "id": "ready",
+      "outcome": "done",
+      "notes": "Assistant and Rig page agreed (6 of 7, desk not answering on the bench). After stopping the lantern the Rig row turned red in about 35-40 s: 'not answering (last heard 44 s ago) ... Check its power, and that it is on the show's network.' In Edit view only a dot on the Rig tab."
+    },
+    {
+      "id": "firmware",
+      "outcome": "done-with-trouble",
+      "notes": "Helper could not ('no device called my second lantern...'). Rig > Add a device > From a model > Prop light, renamed Lantern B, Write firmware... A clear dialog; README is good. Wi-Fi password only in secrets.h, never asked for. But it is written to props/prop_light and answers as 'prop_light', not Lantern B."
+    },
+    {
+      "id": "more",
+      "outcome": "not-possible",
+      "notes": "Helper gave its standard list. Its next suggestion, 'hand the show over', writes AGENTS.md and says to open a terminal and type 'claude'. Nothing says whether a sensor is possible with the kit at all."
+    }
+  ],
+  "findings": [
+    {
+      "title": "Settings shows 'Built-in helper, ready' while the assistant is really switched to a provider with no key, and the error is raw SDK text",
+      "severity": "major",
+      "kind": "bug",
+      "area": "settings",
+      "task": "talk",
+      "expected": "If I choose Anthropic (Claude), the drop-down shows it and asks for a key; if it snaps back, nothing changed.",
+      "happened": "The drop-down went back to 'Built-in helper' and Status said 'ready', but the panel header then said 'anthropic' and my next message was answered with 'Could not resolve authentication method. Expected one of apiKey, authToken, credentials, config, or profile to be set. Or for the \"Authorization\" header to be explicitly omitted', plus 'Something went wrong. Report it?' in the status bar for the rest of the session. Run once; the drop-down not holding a choice may be the test rig's lock, but the header and the error are the app's.",
+      "evidence": [
+        "012.png",
+        "015.png"
+      ],
+      "steps": "Open Settings > Assistant, choose 'Anthropic (Claude)' in Who answers with no key set, close Settings, send any message to the assistant.",
+      "suggestion": "Say 'Anthropic needs a key: Settings > Keys' instead of the SDK's message, and never show one provider while another answers."
+    },
+    {
+      "title": "No way to tell the show which file is its script",
+      "severity": "major",
+      "kind": "missing",
+      "area": "other",
+      "task": "script",
+      "expected": "Somewhere (Settings > Show, the Rig page, or the assistant) to say script.md is the script and see which @cue marks have no cue.",
+      "happened": "Nothing in the menus, Settings > Show or the Rig page mentions a script. The helper answered 'use script.md as the script' with its standard list, which has no script line. Its first reply had said 'I did not read script.md', so it knows the file is there.",
+      "evidence": [
+        "019.png",
+        "020.png"
+      ],
+      "steps": "Start from a folder holding a script.md; look for any place to set it as the script.",
+      "suggestion": "If this needs a model, have the helper say so in words when the folder holds a script."
+    },
+    {
+      "title": "The helper's own suggestion 'Add a cue: Fire cue to N ETC Ion' fails with 'list must be a number'",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "network",
+      "task": "desk",
+      "expected": "A button the assistant offers works, or asks me for the cue number.",
+      "happened": "Clicking it, and 'add a cue that sends fire cue 12 to N ETC Ion', and '... fire cue list 1 cue 12 ...' all replied 'That would not send: list must be a number.' In the inspector the same command shows Cue list '1' as a grey placeholder and sends /eos/cue/1/12/fire without my typing a list.",
+      "evidence": [
+        "027.png",
+        "048.png"
+      ],
+      "steps": "Built-in helper: 'add an ETC Ion at 127.0.0.1', Accept, then click the suggestion 'Add a cue: Fire cue to N ETC Ion'. Run three times with different wording.",
+      "suggestion": "Use the same default list as the inspector, or ask for the cue number."
+    },
+    {
+      "title": "'add an ETC Ion' names the device 'N ETC Ion'",
+      "severity": "minor",
+      "kind": "bug",
+      "area": "network",
+      "task": "desk",
+      "expected": "A device called 'ETC Ion'.",
+      "happened": "Proposal: 'Add the device N ETC Ion'. The n of 'an' became part of the name, and it then shows on every Rig row, suggestion and drop-down. Run once.",
+      "evidence": [
+        "027.png"
+      ],
+      "steps": "Built-in helper: type 'add an ETC Ion at 127.0.0.1'.",
+      "suggestion": ""
+    },
+    {
+      "title": "Firmware for a renamed prop is still called prop_light, folder and answering name",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "network",
+      "task": "firmware",
+      "expected": "Renamed to Lantern B, the files go in props/lantern_b and the board answers as lantern_b, like my first lantern answers as lantern_a.",
+      "happened": "The dialog said 'Written to props/prop_light/'; config.h has PROP_NAME \"prop_light\". A third lantern from the same model would get the same folder and name.",
+      "evidence": [
+        "081.png"
+      ],
+      "steps": "Rig > Add a device > From a model > Prop light; rename it; Write firmware...",
+      "suggestion": ""
+    },
+    {
+      "title": "The firmware dialog's Pin shows 5 as a grey placeholder, not a value",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "network",
+      "task": "firmware",
+      "expected": "Either 5 is filled in, or the box is empty.",
+      "happened": "Pin showed a grey '5' next to LEDs with a white '30'; I could not tell if 5 would be used, so I typed it. The same grey placeholders (Cue list '1', Look '1') are in the Device cue inspector.",
+      "evidence": [
+        "081.png"
+      ],
+      "steps": "Open Write firmware... for a Prop light device.",
+      "suggestion": ""
+    },
+    {
+      "title": "The firmware steps leave out the USB driver, finding the port and the BOOT button",
+      "severity": "minor",
+      "kind": "missing",
+      "area": "help",
+      "task": "firmware",
+      "expected": "Steps I can follow tonight from the Arduino IDE.",
+      "happened": "README step 3 says 'Choose the board and the port' but not how to tell which port is the board, nor that some boards need a CP210x/CH340 driver or BOOT held down to upload. 'esptool.py read_flash 0 ALL before.bin' is given with no word on where esptool comes from. Otherwise the steps, the wiring notes (separate 5 V supply, 1.8 A) and the 2.4 GHz warning are good.",
+      "evidence": [],
+      "steps": "Write firmware for any kit light; read props/<name>/README.md.",
+      "suggestion": ""
+    },
+    {
+      "title": "'fade out cue 1 over 3' adds a separate Fade cue instead of a fade at the sound's end",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "inspector",
+      "task": "talk",
+      "expected": "The sound ends with a 3 second fade, as I asked.",
+      "happened": "Proposal 'Add a 3 s fade-out after 1' with a new cue 'fade Sea wash out': another GO for every sound.",
+      "evidence": [],
+      "steps": "Built-in helper: 'fade out cue 1 over 3'.",
+      "suggestion": ""
+    },
+    {
+      "title": "When the helper can't do something it lists its sentences but doesn't point to the screen that can",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "help",
+      "task": "cue",
+      "expected": "'I cannot; do it with Effect > breathe on a Device cue' or 'add the lantern on the Rig page first'.",
+      "happened": "'Lantern a has no command breathe. It has: Look, Colour, Level, Effect...' (breathe is under Effect). 'write firmware for my second lantern' gave 'The show has no device called my second lantern...' with no hint to add one. The distance sensor got the standard list.",
+      "evidence": [
+        "070.png"
+      ],
+      "steps": "Built-in helper with a kit light added: 'add a cue that sends breathe to Lantern a'.",
+      "suggestion": ""
+    },
+    {
+      "title": "First opening of the assistant does not say what it can do",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "help",
+      "task": "folder",
+      "expected": "On first open, the list of things to ask.",
+      "happened": "It said 'An empty show.' and one button 'Start from a folder of sounds…'. I only saw the list of sentences after a failed request.",
+      "evidence": [
+        "002.png"
+      ],
+      "steps": "Fresh start, click Ask the assistant.",
+      "suggestion": ""
+    },
+    {
+      "title": "The hand-over for coding agents is the dead end for a non-programmer",
+      "severity": "minor",
+      "kind": "confusing",
+      "area": "help",
+      "task": "more",
+      "expected": "Can the kit read a distance sensor or not; if not, plainly.",
+      "happened": "The suggested 'hand the show over' proposes AGENTS.md and CLAUDE.md and says to cd into a path (cut off at the bubble's right edge) and type 'claude'. Nothing about sensors.",
+      "evidence": [
+        "087.png"
+      ],
+      "steps": "Built-in helper: 'hand the show over'.",
+      "suggestion": ""
+    },
+    {
+      "title": "Assistant's readiness says '(checked 15:49:31)' long after",
+      "severity": "polish",
+      "kind": "confusing",
+      "area": "network",
+      "task": "ready",
+      "expected": "The time of this answer.",
+      "happened": "Every 'is everything ready?' said 'checked 15:49:31', even 7 minutes later when it included the lantern that had just stopped. The content was current; the time made me doubt it.",
+      "evidence": [
+        "070.png"
+      ],
+      "steps": "Ask 'is everything ready?' twice a few minutes apart.",
+      "suggestion": ""
+    },
+    {
+      "title": "A lost lantern is shown only on the Rig page; the cue that uses it says nothing",
+      "severity": "polish",
+      "kind": "missing",
+      "area": "cue-list",
+      "task": "ready",
+      "expected": "The 'Lantern breathes' row marked when its lantern is gone.",
+      "happened": "In Edit view the only sign was a small red dot on the Rig tab. It took about 35-40 s to turn red, which is fine.",
+      "evidence": [
+        "070.png"
+      ],
+      "steps": "Device cue to a kit prop; stop the prop; look at the cue list after a minute.",
+      "suggestion": ""
+    },
+    {
+      "title": "Rig page and props: found, identified and checked in plain words",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "network",
+      "task": "lantern",
+      "expected": "",
+      "happened": "'look for props' found the lantern at once; the row says 'answering · 1 ms · firmware 1.0 · signal -52 dBm', Try: Identify blinked it, and a stopped lantern turns red with 'last heard 44 s ago'. Exactly what I want before the house opens.",
+      "evidence": [
+        "048.png",
+        "070.png"
+      ],
+      "steps": "",
+      "suggestion": ""
+    },
+    {
+      "title": "The assistant says what it guessed and what it did not do",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "import",
+      "task": "folder",
+      "expected": "",
+      "happened": "'6 cues in file-name order ... without words like FINAL or v3. Lamp hum loop is called a loop. I did not make it loop. I did not read script.md.' And for the desk: 'I took that from your words, so reject this if it is something else.' Every change waited for Accept.",
+      "evidence": [
+        "005.png"
+      ],
+      "steps": "",
+      "suggestion": ""
+    },
+    {
+      "title": "Firmware: the Wi-Fi password stays out of the app",
+      "severity": "praise",
+      "kind": "praise",
+      "area": "network",
+      "task": "firmware",
+      "expected": "",
+      "happened": "The dialog says 'The Wi-Fi password goes in secrets.h, never in the show'; the app never asked for it; secrets.h has CHANGE-ME and a .gitignore. The README says honestly it has never run on a board.",
+      "evidence": [
+        "081.png"
+      ],
+      "steps": "",
+      "suggestion": ""
+    }
+  ],
+  "rig": [
+    "The assistant is the canned built-in helper, so the tasks that lean on it (talk, script, desk, cue, more) mostly test its fixed sentence list.",
+    "Help > Manual opens a website the rig cannot show, and the manual file named in the brief was not on disk.",
+    "The Who answers drop-down did not keep my choice, perhaps the rig's lock on the demo assistant.",
+    "The bench desk stand-in (osc listen) does not answer /eos/ping, so the desk always showed 'not answering'."
+  ]
+}
