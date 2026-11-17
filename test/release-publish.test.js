@@ -130,5 +130,8 @@ test('Windows: refuses a dirty build, a Mac release.json, one signed with a test
   const { dir, release } = builtWin();
   const b = bucket({ lose: `Endless-Cues-${V}-win-x64-setup.exe` });
   await assert.rejects(publishDownloads({ release, dir, base: BASE, ...b }), /answers with nothing/);
+  // a cache still serving the file it replaces: refused, and told how to clear it
+  const c = bucket(); c.size = async () => 99;
+  await assert.rejects(publishDownloads({ ...builtWin(), base: BASE, ...c }), /answers with 99 bytes.*purge that address/);
   assert.equal(b.order.length, 1, 'it stops at the first that is not there');
 });

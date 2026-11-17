@@ -68,8 +68,10 @@ finds no `latest.yml`, and says the server has no version for this computer yet.
 2. Try it on Windows: `endless_cues_service/winbox/winbox install dist-win.noindex/<x64 installer>` installs it on the
    test box and runs the installed app through the end-to-end check.
 3. `node bin/release.js publish --win` (or `--channel test`, `--dry-run`) uploads the installers, each checked by its
-   size where it is served. It refuses a build with uncommitted changes, or one signed with a test certificate;
-   unsigned is allowed, since nothing installs it unasked.
+   size where it is served, through Cloudflare's cache as a downloader gets it. It refuses a build with uncommitted
+   changes, or one signed with a test certificate; unsigned is allowed, since nothing installs it unasked. Publishing
+   over files of the same names (the same version signed, say) leaves the old ones in the cache for up to four
+   hours: publish then says so, and Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge clears those addresses.
 4. `node bin/release.js site --base https://downloads.endlesscues.com/` writes Windows beside the Mac: buttons
    (`/download/windows`, `/download/windows-arm64`), the SmartScreen note, and the checksums (`Get-FileHash`).
    A platform with no build here keeps what the site already offers, so the Mac and Windows can be released apart.

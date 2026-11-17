@@ -228,7 +228,7 @@ async function publishDownloads({ release: r, dir, channel = 'latest', base = DO
     uploaded.push(key);
     const at = `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
     const got = await size(at);
-    if (got !== f.bytes) refuse(`${at} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}.`);
+    if (got !== f.bytes) refuse(`${at} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}.${got == null ? '' : ' A cache may still hold an older file of that name: purge that address (Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge), then publish again.'}`);
   }
   return { uploaded };
 }
@@ -259,7 +259,7 @@ function feedPointingAt(text, base) {
  *   dir       the folder its files are in
  *   channel   'latest' (everyone) or 'test'
  *   upload(key, file, { contentType, cacheControl })   puts one file in the bucket (rejects on failure)
- *   size(url)        resolves to the byte count that address answers with (null: not there)
+ *   size(url)        resolves to the byte count that address answers with, through any cache (null: not there)
  *   text(url)        resolves to what that address answers with, past any cache (null: not there)
  * Resolves to { uploaded: [keys in order] }, or throws an Error whose message says why nothing (more) was sent.
  */
@@ -300,7 +300,7 @@ async function publishRelease({ release: r, dir, channel = 'latest', base = DOWN
     await put(key, path.join(dir, f.file), { contentType: f.file.endsWith('.dmg') ? 'application/x-apple-diskimage' : f.file.endsWith('.zip') ? 'application/zip' : 'application/octet-stream' });
     if (dryRun) continue;
     const got = await size(url(key));
-    if (got !== f.bytes) refuse(`${url(key)} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}. The feed was not changed: no app has been offered this version.`);
+    if (got !== f.bytes) refuse(`${url(key)} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}.${got == null ? '' : ' A cache may still hold an older file of that name: purge that address (Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge), then publish again.'} The feed was not changed: no app has been offered this version.`);
   }
   // 2. the feed, last; never cached, so a new version is offered as soon as it is there
   const feedKey = folder + FEED_FILE;
@@ -337,7 +337,14 @@ async function publish(flags) {
     if (x.status !== 0) throw new Error(`the upload of ${key} failed (cf ${args.join(' ')})`);
   };
   const fresh = (u) => `${u}${u.includes('?') ? '&' : '?'}check=${Date.now()}`;
-  const size = async (u) => { const x = await fetch(fresh(u), { method: 'HEAD' }); return x.ok ? Number(x.headers.get('content-length')) : null; };
+  // (as a downloader gets it: the plain address, through Cloudflare's cache, which can still hold an older file of the
+  // same name for hours; the first byte alone answers with the whole file's size)
+  const size = async (u) => {
+    const x = await fetch(u, { headers: { range: 'bytes=0-0' } });
+    if (!x.ok) return null;
+    const whole = /\/(\d+)$/.exec(x.headers.get('content-range') || '');
+    return whole ? Number(whole[1]) : Number(x.headers.get('content-length'));
+  };
   const text = async (u) => { const x = await fetch(fresh(u), { headers: { 'cache-control': 'no-cache' } }); return x.ok ? x.text() : null; };
   console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${win ? ' for Windows' : ''} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
   if (win) {
