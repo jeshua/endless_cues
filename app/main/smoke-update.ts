@@ -10,16 +10,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { makeDemo } from '../../examples/make-demo';
+import type { Smoke } from './smoke';
 
-async function run({ host, win, check, until, page, sleep, shot: take }) {
-  const shot = async (name) => { try { if (take) await take(name); } catch { /* no picture */ } };
+async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const shot = async (name: string) => { try { if (take) await take(name); } catch { /* no picture */ } };
   const updates = require('./updates').current();
   const fake = updates.testHooks();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const text = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? [...el.children].map((c) => c.textContent.replace(/\\s+/g, ' ').trim()).join(' | ') : null; })()`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const text = (sel: string) => page<string | null>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? [...el.children].map((c) => c.textContent.replace(/\\s+/g, ' ').trim()).join(' | ') : null; })()`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
   const notice = () => host.snapshot(false).notice;
-  const noticeText = () => { const n = notice(); return n ? (n.text || String(n)) : ''; };
+  const noticeText = () => { const n: unknown = notice(); return n ? ((n as { text?: string }).text || String(n)) : ''; };
 
   host.cmd({ op: 'panic', hard: true });
   await until(() => !host.isSounding(), 4000);
@@ -65,7 +66,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   const sounding = await until(() => host.isSounding(), 3000);
   if (sounding) {
     check('sound playing hides the line', await until(async () => !(await has('[data-update]')), 2000));
-    const r = await page(`window.ec.app({ op: 'update-restart' })`);
+    const r = await page<{ error?: string }>(`window.ec.app({ op: 'update-restart' })`);
     check('…and Restart now is refused while sound plays', /nothing playing/.test(r.error || '') && fake.installs === 0, r);
     host.cmd({ op: 'panic', hard: true });
     await until(() => !host.isSounding(), 4000);
@@ -80,7 +81,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   await shot('update-settings');
   check('Settings covers the title bar, so the newer version is said in Settings ▸ General too', await until(() => has('[data-settings-update] [data-update="ready"] [data-update-restart]'), 3000));
   await page(`window.ec.app({ op: 'update-settings', test: true })`);
-  check('Test versions on: the setting is kept, and what was downloaded stays offered', updates.settings().test === true && (await page(`window.ec.app({ op: 'update-state' })`)).step === 'ready');
+  check('Test versions on: the setting is kept, and what was downloaded stays offered', updates.settings().test === true && (await page<{ step?: string }>(`window.ec.app({ op: 'update-state' })`)).step === 'ready');
   await page(`window.ec.app({ op: 'update-settings', test: false })`);
   await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
   await sleep(150);

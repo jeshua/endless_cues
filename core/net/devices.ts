@@ -21,10 +21,19 @@
  * any time, which becomes the device's `test`). A model's commands are copied into the device when it is
  * made, so a model changing later never changes a show.
  */
-const num = (key, label, def, help) => ({ key, label, kind: 'number', default: def, help });
-const text = (key, label, def, help) => ({ key, label, kind: 'text', default: def, help });
+import type { DeviceAlive, DeviceCommand, DeviceParam, DeviceReport } from '../show/types';
 
-const DEVICES = {
+/** A device template: what a patch or a device in a show is started from. */
+export interface DeviceModel {
+  label: string; kind?: string; port: number; protocol: 'udp' | 'tcp'; notes?: string; test?: string; answers?: boolean;
+  listenPort?: number; alive?: DeviceAlive; reports?: DeviceReport[]; resend?: number; tryCommand?: string;
+  commands: DeviceCommand[];
+}
+
+const num = (key: string, label: string, def: number, help?: string): DeviceParam => ({ key, label, kind: 'number', default: def, help });
+const text = (key: string, label: string, def: string, help?: string): DeviceParam => ({ key, label, kind: 'text', default: def, help });
+
+const DEVICES: Record<string, DeviceModel> = {
   generic: {
     label: 'Generic OSC', kind: 'other', port: 8000, protocol: 'udp',
     notes: 'Anything that takes OSC. Type the message on the cue.',
@@ -133,16 +142,16 @@ const DEVICES = {
 // ── the prop kit (docs/specs/15-assistant-and-rig.md, section 6.1): a light or a switch on an ESP32 ──
 // Both listen on UDP 53100, answer /ec/hello with /ec/here <name> <kind> <fw> <state> <uptime> <signal> <battery>,
 // and act once on a message that ends with an id (#a41f07), which is what `resend` relies on.
-const PROP_HERE = [
+const PROP_HERE: DeviceReport[] = [
   { key: 'fw', label: 'Firmware', from: '/ec/here', arg: 2 },
   { key: 'state', label: 'Doing', from: '/ec/here', arg: 3 },
   { key: 'signal', label: 'Signal', from: '/ec/here', arg: 5, unit: 'dBm', warnBelow: -70 },
   { key: 'battery', label: 'Battery', from: '/ec/here', arg: 6, unit: '%', warnBelow: 25, none: -1 },
 ];
-const PROP = { port: 53100, protocol: 'udp', kind: 'prop', test: '/ec/hello', answers: true, tryCommand: 'identify', resend: 3,
+const PROP: Omit<DeviceModel, 'label' | 'commands'> = { port: 53100, protocol: 'udp', kind: 'prop', test: '/ec/hello', answers: true, tryCommand: 'identify', resend: 3,
   alive: { how: 'ask', send: '/ec/hello', reply: '/ec/here', every: 2 }, reports: PROP_HERE };
-const lim = (p, min, max, whole) => ({ ...p, min, max, ...(whole ? { whole: true } : {}) });
-Object.assign(DEVICES, {
+const lim = (p: DeviceParam, min: number, max: number, whole?: boolean): DeviceParam => ({ ...p, min, max, ...(whole ? { whole: true } : {}) });
+Object.assign(DEVICES, <Record<string, DeviceModel>>{
   'ec-prop-light': {
     label: 'Prop light (the Endless Cues kit)', ...PROP,
     notes: 'A strip of addressable LEDs on an ESP32 running the kit’s prop-light firmware. It comes up in its own look, carries on alone, and answers “are you there?” by name.',
@@ -171,11 +180,11 @@ Object.assign(DEVICES, {
 
 /** The message a command makes from its parameters. With `fade`, that parameter becomes "#v#" (a faded value).
  *  (One function with a device in a show: core/rig/devices.js `compose`. A template never checked a value, so here none is refused.) */
-function compose(deviceId, commandId, values = {}, { fade = false } = {}) {
+function compose(deviceId: string, commandId: string, values: Record<string, unknown> = {}, { fade = false } = {}): string | null {
   const dev = DEVICES[deviceId];
   if (!dev) return null;
   const cmd = dev.commands.find((c) => c.id === commandId);
-  const r = require('../rig/devices').compose({ name: dev.label, commands: dev.commands }, commandId, values, { fade: fade && !!(cmd && cmd.fade), strict: false });
+  const r = (require('../rig/devices') as typeof import('../rig/devices')).compose({ name: dev.label, commands: dev.commands }, commandId, values, { fade: fade && !!(cmd && cmd.fade), strict: false });
   return r.ok ? r.message : null;
 }
 

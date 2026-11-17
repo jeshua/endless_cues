@@ -14,11 +14,11 @@
  */
 const PORT = 6454;
 const ID = Buffer.from('Art-Net\0', 'latin1');
-const OP = { poll: 0x2000, pollReply: 0x2100, dmx: 0x5000 };
+const OP: Record<string, number> = { poll: 0x2000, pollReply: 0x2100, dmx: 0x5000 };
 const PROTOCOL = 14;
 const MAX_UNIVERSE = 32767;
 
-function header(op, length) {
+function header(op: number, length: number): Buffer {
   const b = Buffer.alloc(length);
   ID.copy(b, 0);
   b.writeUInt16LE(op, 8);                  // the OpCode is the one field sent low byte first
@@ -30,7 +30,7 @@ function header(op, length) {
  * arrive out of order back in order (0 says "no sequence"); `data` is 1–512 levels and is sent
  * padded to an even length, as the specification asks.
  */
-function artDmx({ universe = 0, sequence = 0, physical = 0, data }) {
+function artDmx({ universe = 0, sequence = 0, physical = 0, data }: { universe?: number; sequence?: number; physical?: number; data?: ArrayLike<number> | null }): Buffer {
   if (!(Number.isInteger(universe) && universe >= 0 && universe <= MAX_UNIVERSE)) throw new Error(`Art-Net universe ${universe}: 0 to ${MAX_UNIVERSE}`);
   const src = Buffer.from(data || []);
   if (src.length < 1 || src.length > 512) throw new Error(`ArtDmx carries 1 to 512 levels (got ${src.length})`);
@@ -55,14 +55,14 @@ function artPoll({ flags = 0, priority = 0 } = {}) {
   return b;
 }
 
-const put = (b, text, at, size) => { b.write(String(text || '').slice(0, size - 1), at, size - 1, 'latin1'); };   // (a name is null-terminated: one byte fewer than its field)
+const put = (b: Buffer, text: unknown, at: number, size: number) => { b.write(String(text || '').slice(0, size - 1), at, size - 1, 'latin1'); };   // (a name is null-terminated: one byte fewer than its field)
 
 /**
  * ArtPollReply: this app, described as a controller (Style 0x01) that puts DMX onto the network.
  * A reply has room for four ports; `universes` (port addresses) beyond the first four that share
  * its Net and Sub-Net are not declared (a node needs them only to list what a controller sends).
  */
-function artPollReply({ ip = '0.0.0.0', mac = '00:00:00:00:00:00', shortName = 'Endless Cues', longName = 'Endless Cues', report = '', universes = [], version = 1 } = {}) {
+function artPollReply({ ip = '0.0.0.0', mac = '00:00:00:00:00:00', shortName = 'Endless Cues', longName = 'Endless Cues', report = '', universes = [] as number[], version = 1 } = {}): Buffer {
   const b = header(OP.pollReply, 239);
   const quad = String(ip).split('.').map((x) => Number(x) & 0xff);
   for (let i = 0; i < 4; i++) b[10 + i] = quad[i] || 0;
@@ -95,26 +95,26 @@ function artPollReply({ ip = '0.0.0.0', mac = '00:00:00:00:00:00', shortName = '
 }
 
 /** What kind of Art-Net packet a buffer is: 'poll' | 'pollReply' | 'dmx' | 'other' | null (not Art-Net). */
-function kindOf(buf) {
+function kindOf(buf: unknown): string | null {
   if (!Buffer.isBuffer(buf) || buf.length < 10 || !buf.subarray(0, 8).equals(ID)) return null;
   const op = buf.readUInt16LE(8);
   return Object.keys(OP).find((k) => OP[k] === op) || 'other';
 }
 
-const str = (buf, at, size) => { const s = buf.subarray(at, at + size); const end = s.indexOf(0); return s.subarray(0, end < 0 ? size : end).toString('latin1').trim(); };
+const str = (buf: Buffer, at: number, size: number) => { const s = buf.subarray(at, at + size); const end = s.indexOf(0); return s.subarray(0, end < 0 ? size : end).toString('latin1').trim(); };
 
 /** A node's answer to a poll, as the list of devices shows it. null when the buffer is not one. */
-function parsePollReply(buf) {
+function parsePollReply(buf: Buffer) {
   if (kindOf(buf) !== 'pollReply' || buf.length < 207) return null;
   const ports = Math.min(4, buf.readUInt16BE(172));
   const base = ((buf[18] & 0x7f) << 8) | ((buf[19] & 0x0f) << 4);
-  const outputs = [];
+  const outputs: number[] = [];
   for (let i = 0; i < ports; i++) if (buf[174 + i] & 0x80) outputs.push(base | (buf[190 + i] & 0x0f));    // a port that outputs DMX from the network: its SwOut
   return { ip: [...buf.subarray(10, 14)].join('.'), shortName: str(buf, 26, 18), longName: str(buf, 44, 64), report: str(buf, 108, 64), style: buf[200], ports, outputs };
 }
 
 /** An ArtDmx packet read back (tests, and the monitor): { universe, sequence, data } or null. */
-function parseDmx(buf) {
+function parseDmx(buf: Buffer) {
   if (kindOf(buf) !== 'dmx' || buf.length < 20) return null;
   const n = buf.readUInt16BE(16);
   return { universe: ((buf[15] & 0x7f) << 8) | buf[14], sequence: buf[12], physical: buf[13], data: Buffer.from(buf.subarray(18, 18 + n)) };

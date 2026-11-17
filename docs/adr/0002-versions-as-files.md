@@ -8,7 +8,7 @@ The show needs history: checkpoints, a readable diff between any two, going back
 
 ## Decision
 
-Versions are whole snapshots of `show.json`, content-addressed, in `versions/` inside the show folder, with an index (`core/show/versions.js`). Diffs are computed from two snapshots by our own differ, which speaks cues and fields rather than lines (`core/show/diff.js`).
+Versions are whole snapshots of `show.json`, content-addressed, in `versions/` inside the show folder, with an index (`core/show/versions.ts`). Diffs are computed from two snapshots by our own differ, which speaks cues and fields rather than lines (`core/show/diff.ts`).
 
 ## Why not a CMS for this
 

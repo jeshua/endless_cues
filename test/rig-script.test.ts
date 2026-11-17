@@ -7,9 +7,11 @@ import * as path from 'path';
 import * as script from '../core/rig/script';
 import * as check from '../core/rig/check';
 import { build } from './helpers';
+import type { Op } from '../core/show/ops';
+import type { ShowDoc } from '../core/show/types';
 
 const TEXT = ['# The Storm', '', 'ACT ONE', '', 'MARA', 'I never asked for rain.', '…and the sky answered.', '<!-- @cue 12 Thunder -->', '', '## Scene 2', 'A door, somewhere.', '@cue 12.5', '@cue A7   Door slam  ', 'Not a mark: write @cue 9 in the middle of a line.', '', 'SCENE 3: the shore', '<!-- a note for the director -->', '@CUE 31 Waves'].join('\n');
-const folderWith = (files) => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-script-')); for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text); return dir; };
+const folderWith = (files: Record<string, string | Buffer>) => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-script-')); for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text); return dir; };
 
 test('a script’s marks: the number, the name, the line it is called on and the section it is in', () => {
   const dir = folderWith({ 'script.md': TEXT });
@@ -49,9 +51,9 @@ test('a script that is not there, is not text, or is not in a folder says so; on
 test('the Rig’s row for the script, from the folder alone', () => {
   const dir = folderWith({ 'script.md': TEXT });
   const b = build([{ op: 'show.set', path: 'settings.rig.script', value: 'script.md' }, { op: 'cue.add', cue: { type: 'memo', number: '12' } }, { op: 'cue.add', cue: { type: 'memo', number: 'A7' } }, { op: 'cue.add', cue: { type: 'memo', number: '31' } }]);
-  const row = (doc, d = dir) => check.items(doc, check.folderFacts(d, doc)).find((i) => i.id === 'show.script');
+  const row = (doc: ShowDoc, d = dir) => check.items(doc, check.folderFacts(d, doc)).find((i) => i.id === 'show.script')!;
   assert.deepEqual([row(b.doc).state, row(b.doc).text, row(b.doc).label], ['look', '12.5 (line 12) has no cue.', 'Every script mark has a cue']);
-  const all = build([{ op: 'show.set', path: 'settings.rig.script', value: 'script.md' }, ...['12', '12.5', 'A7', '31'].map((number) => ({ op: 'cue.add', cue: { type: 'memo', number } }))]);
+  const all = build([{ op: 'show.set', path: 'settings.rig.script', value: 'script.md' }, ...['12', '12.5', 'A7', '31'].map((number): Op => ({ op: 'cue.add', cue: { type: 'memo', number } }))]);
   assert.deepEqual([row(all.doc).state, row(all.doc).text], ['ready', '4 marks']);
   const gone = build([{ op: 'show.set', path: 'settings.rig.script', value: 'lost.md' }]);
   assert.deepEqual([row(gone.doc).state, row(gone.doc).text], ['look', 'lost.md cannot be read']);

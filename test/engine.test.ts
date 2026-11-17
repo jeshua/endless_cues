@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, build } from './helpers';
+import type { Rig, Built, SoundLine } from './helpers';
+import type { CueSpec } from '../core/show/ops';
+import type { EngineOptions } from '../core/engine/cue-engine';
 
 const basic = () => build([
   { op: 'cue.add', ref: 'a', cue: { type: 'audio', number: '1', name: 'Preshow', file: 'media/pre.wav', bus: 'music', gainDb: -6 } },
@@ -156,7 +159,7 @@ test('Fade to crossfades inside the track where a skip jumps; paused, it only sk
   r.engine.setDuration('a.wav', 120);
   r.engine.go(); r.advance(10);
   r.engine.fadeTo(s.id('a'), 60, 1.5);
-  const mv = r.audio.calls.at(-1);
+  const mv = r.audio.calls.at(-1)!;
   assert.equal(mv[0], 'move');
   assert.equal(mv[2].sync.xf, 1.5);
   assert.equal(mv[2].sync.blend, 'fade');
@@ -165,7 +168,7 @@ test('Fade to crossfades inside the track where a skip jumps; paused, it only sk
   assert.ok(Math.abs(r.engine.active()[0].elapsed - 61.2) < 0.2);
   r.engine.pause(s.id('a'));
   r.engine.fadeTo(s.id('a'), 30);
-  assert.deepEqual(r.audio.calls.at(-1).slice(0, 3), ['seek', s.id('a'), 30]);
+  assert.deepEqual(r.audio.calls.at(-1)!.slice(0, 3), ['seek', s.id('a'), 30]);
 });
 
 test('reloading an edited list keeps the playhead and what is sounding', () => {
@@ -241,7 +244,7 @@ test('Load to Time counts through a pre-wait, into a group, and back from the en
   ]);
   const r = rig(s.doc);
   r.engine.setDuration('a.wav', 100); r.engine.setDuration('b.wav', 60); r.engine.setDuration('c.wav', 60);
-  const from = (ref) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(ref)).at(-1)[2].from;
+  const from = (ref: string) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(ref)).at(-1)![2].from;
   r.engine.loadToTime(6);
   r.engine.go();
   assert.equal(from('a'), 12, '6 s in: past the 4 s pre-wait, 2 s into the sound, which starts at 10');
@@ -254,7 +257,7 @@ test('Load to Time counts through a pre-wait, into a group, and back from the en
   assert.equal(from('c3'), 0);
   r.engine.reset();
   r.engine.loadToTime(-10);                        // ten seconds before cue 1 ends: 4 + (100 − 10) = 94 long
-  assert.equal(r.engine.loaded.at, 84);
+  assert.equal(r.engine.loaded!.at, 84);
 });
 
 test('a vamp: the click goes round with its track, and a Devamp lets both go', () => {
@@ -273,9 +276,9 @@ test('a vamp: the click goes round with its track, and a Devamp lets both go', (
   const regions = r.audio.calls.filter((c) => c[0] === 'setRegion' && c[2] === 16 && c[3] === 24).map((c) => c[1]).sort();
   assert.deepEqual(regions, [s.id('c'), s.id('t')].sort());
   r.advance(15);                                    // 0:20: inside the section, going round
-  assert.ok(r.engine.active().find((a) => a.id === s.id('t')).holding);
+  assert.ok((r.engine.active().find((a) => a.id === s.id('t')) as SoundLine).holding);
   r.engine.go();                                    // the Devamp
-  for (const id of [s.id('t'), s.id('c')]) assert.equal(r.engine.active().find((a) => a.id === id).holding, false);
+  for (const id of [s.id('t'), s.id('c')]) assert.equal((r.engine.active().find((a) => a.id === id) as SoundLine).holding, false);
   assert.deepEqual(r.audio.calls.filter((c) => c[0] === 'setRegion').slice(-2).map((c) => [c[2], c[3]]), [[null, null], [null, null]]);
 });
 
@@ -309,14 +312,14 @@ test('a counted section goes round that many times by itself, the click with it,
   const armed = r.audio.calls.filter((c) => c[0] === 'setRegion' && c[2] === 16 && c[3] === 24).map((c) => c[1]).sort();
   assert.deepEqual(armed, [s.id('c'), s.id('t')].sort());
   r.advance(35);                                    // 16 + 8 + 8 + 3: the third pass
-  const a = r.engine.active().find((x) => x.id === s.id('t'));
+  const a = r.engine.active().find((x) => x.id === s.id('t')) as SoundLine;
   assert.ok(a.holding);
   assert.deepEqual(a.count, { of: 3, pass: 3 });
   r.advance(2);                                     // let go in the last pass: it plays out and goes on
-  for (const id of [s.id('t'), s.id('c')]) assert.equal(r.engine.active().find((x) => x.id === id).holding, false);
-  assert.ok(Math.abs(r.engine.positionOf(r.engine.running.get(s.id('t'))) - 21) < 0.01);
+  for (const id of [s.id('t'), s.id('c')]) assert.equal((r.engine.active().find((x) => x.id === id) as SoundLine).holding, false);
+  assert.ok(Math.abs(r.engine.positionOf(r.engine.running.get(s.id('t'))!) - 21) < 0.01);
   r.advance(5);                                     // 0:26 in the file: past the section, not round again
-  assert.ok(Math.abs(r.engine.positionOf(r.engine.running.get(s.id('t'))) - 26) < 0.01);
+  assert.ok(Math.abs(r.engine.positionOf(r.engine.running.get(s.id('t'))!) - 26) < 0.01);
 });
 
 test('a play count plays a sound that many times', () => {
@@ -324,25 +327,25 @@ test('a play count plays a sound that many times', () => {
   const r = rig(s.doc);
   r.engine.setDuration('ring.wav', 2);
   r.engine.go();
-  assert.equal(r.audio.calls.find((c) => c[0] === 'play')[2].exact, true);
+  assert.equal(r.audio.calls.find((c) => c[0] === 'play')![2].exact, true);
   r.engine.setExact(s.id('a'), true);
   assert.deepEqual(r.audio.calls.filter((c) => c[0] === 'setRegion').map((c) => [c[2], c[3]]), [[0, 2]]);
   r.advance(4.5);
-  assert.deepEqual(r.engine.active()[0].count, { of: 3, pass: 3 });
+  assert.deepEqual((r.engine.active()[0] as SoundLine).count, { of: 3, pass: 3 });
   r.advance(1);                                     // in the third pass it is let go, to end at its end
-  assert.deepEqual(r.audio.calls.filter((c) => c[0] === 'setRegion').at(-1).slice(2), [null, null]);
+  assert.deepEqual(r.audio.calls.filter((c) => c[0] === 'setRegion').at(-1)!.slice(2), [null, null]);
   assert.equal(r.engine.lengthOf(s.id('a')), 6);
 });
 
 test('a playlist group plays one child after another; repeat, shuffle, crossfade, and a stop ends it', () => {
-  const make = (props) => build([
+  const make = (props: Partial<CueSpec>) => build([
     { op: 'cue.add', ref: 'g', cue: { type: 'group', number: '1', name: 'Walk-in', mode: 'playlist', ...props } },
     { op: 'cue.add', ref: 'a', parent: '@g', cue: { type: 'audio', file: 'a.wav' } },
     { op: 'cue.add', ref: 'b', parent: '@g', cue: { type: 'audio', file: 'b.wav' } },
     { op: 'cue.add', ref: 'c', parent: '@g', cue: { type: 'audio', file: 'c.wav' } },
   ]);
-  const start = (props, opts) => { const s = make(props); const r = rig(s.doc, opts); for (const f of ['a', 'b', 'c']) r.engine.setDuration(`${f}.wav`, 10); r.engine.go(); return { s, r }; };
-  const playing = (x) => [...x.r.engine.running.keys()].map((id) => ['a', 'b', 'c'].find((k) => x.s.id(k) === id));
+  const start = (props: Partial<CueSpec>, opts?: Partial<EngineOptions>) => { const s = make(props); const r = rig(s.doc, opts); for (const f of ['a', 'b', 'c']) r.engine.setDuration(`${f}.wav`, 10); r.engine.go(); return { s, r }; };
+  const playing = (x: { s: Built; r: Rig }) => [...x.r.engine.running.keys()].map((id) => ['a', 'b', 'c'].find((k) => x.s.id(k) === id));
 
   let x = start({});
   assert.deepEqual(playing(x), ['a']);
@@ -377,10 +380,10 @@ test('a fade out with an End at lands on the End at, and the sound stops there',
   r.engine.setDuration('a.wav', 200);
   r.engine.go();
   r.advance(22.9);                                  // 0:34.9 in the file: not yet
-  assert.equal(r.engine.active()[0].fadingTo, null);
+  assert.equal((r.engine.active()[0] as SoundLine).fadingTo, null);
   r.advance(0.2);
-  assert.deepEqual(r.audio.calls.at(-1).slice(0, 3), ['fade', s.id('a'), -60]);
-  assert.equal(r.engine.active().find((x) => x.kind === 'audio').fadingTo, -60);
+  assert.deepEqual(r.audio.calls.at(-1)!.slice(0, 3), ['fade', s.id('a'), -60]);
+  assert.equal((r.engine.active().find((x) => x.kind === 'audio') as SoundLine).fadingTo, -60);
   r.advance(5);
   assert.equal(r.engine.running.size, 0);
 });
@@ -394,10 +397,10 @@ test('a region set to hold goes round by itself until it is let go', () => {
   r.engine.setDuration('track.wav', 48);
   r.engine.go(); r.engine.setExact(s.id('t'), true);
   r.advance(60);                                    // long past where a count would have let go
-  const a = r.engine.active()[0];
+  const a = r.engine.active()[0] as SoundLine;
   assert.ok(a.holding); assert.equal(a.count, null);
   r.engine.go();                                    // the Devamp
-  assert.equal(r.engine.active()[0].holding, false);
+  assert.equal((r.engine.active()[0] as SoundLine).holding, false);
 });
 
 test('a group that starts its first child: each GO enters it, a child’s continue carries on, and the playhead waits', () => {
@@ -447,5 +450,5 @@ test('fade and stop others on any cue: a sound takes out what was playing; a Fad
   r.engine.go(); r.engine.go();                     // c starts; the Fade moves c and takes b out
   r.advance(2.5);
   assert.deepEqual([...r.engine.running.keys()], [s.id('c')]);
-  assert.equal(r.engine.running.get(s.id('c')).db, -10);
+  assert.equal(r.engine.running.get(s.id('c'))!.db, -10);
 });

@@ -40,40 +40,51 @@ import * as Lanes from '../audio/lanes';
 import * as lightCommands from '../light/commands';
 import * as timecode from '../timecode/timecode';
 import * as cart from '../show/cart';
+import type { Cue, CueFields, CueType, Region } from '../show/types';
+
+/** An object read from the workspace's archive: whatever keys the file holds, each read where it is used (text(), secs(), Number()). */
+type Archived = Record<string, any>;
+/** One thing that did not come across, cue by cue ({ id: our cue's id, or null for a list, a patch or the show }). */
+export interface ImportIssue { id: string | null; cue: string; why: string }
+type Note = (q: Archived, why: string) => void;
+/** A cue as it is made, before the targets that were not kept are taken off (a target here is null until then). */
+interface Made extends Omit<CueFields, 'target'> { id: string; type: CueType; target?: string | null; children?: Made[]; [field: string]: unknown }
+/** A level matrix here: one row per channel of the file, { output: dB }. */
+type Rows = Record<string, number>[];
 
 const SILENT_DB = -60;
 /** QLab stores a level as a linear gain: 1 is 0 dB. */
-const toDb = (gain) => { const g = Number(gain); if (!(g > 0)) return SILENT_DB; return Math.max(SILENT_DB, Math.round(200 * Math.log10(g)) / 10); };
+const toDb = (gain: unknown) => { const g = Number(gain); if (!(g > 0)) return SILENT_DB; return Math.max(SILENT_DB, Math.round(200 * Math.log10(g)) / 10); };
 
 // QLab's group modes (its OSC dictionary's /mode)
-const GROUP_MODE = { 0: 'cue list', 1: 'Start First and Enter', 2: 'Start First', 3: 'Timeline', 4: 'Start Random', 5: 'cart', 6: 'Playlist' };
+const GROUP_MODE: Record<number, string> = { 0: 'cue list', 1: 'Start First and Enter', 2: 'Start First', 3: 'Timeline', 4: 'Start Random', 5: 'cart', 6: 'Playlist' };
 // its 20 colour names → our nine
-const COLOR = {
+const COLOR: Record<string, string> = {
   red: 'red', orange: 'orange', yellow: 'yellow', green: 'green', blue: 'blue', purple: 'purple',
   berry: 'pink', magenta: 'pink', fuchsia: 'pink', pink: 'pink', rose: 'pink', coral: 'red', peach: 'orange', ochre: 'orange', gold: 'yellow',
   lime: 'green', forest: 'green', olive: 'green', teal: 'teal', cyan: 'teal', ocean: 'teal', aqua: 'teal', indigo: 'blue', cerulean: 'blue', sky: 'blue',
   lilac: 'purple', violet: 'purple', grey: 'grey', gray: 'grey', taupe: 'grey', brown: 'orange',
 };
 // the cue classes that have a cue of ours of the same kind
-const SIMPLE = { StartCue: 'start', StopCue: 'stop', PauseCue: 'pause', GotoCue: 'goto', GoToCue: 'goto', ArmCue: 'arm', DisarmCue: 'disarm', DevampCue: 'devamp', MemoCue: 'memo' };
+const SIMPLE: Record<string, Cue['type']> = { StartCue: 'start', StopCue: 'stop', PauseCue: 'pause', GotoCue: 'goto', GoToCue: 'goto', ArmCue: 'arm', DisarmCue: 'disarm', DevampCue: 'devamp', MemoCue: 'memo' };
 // the ones that have none yet
-const UNSUPPORTED = {
+const UNSUPPORTED: Record<string, string> = {
   MicCue: 'Mic', LightCue: 'Light', MIDICue: 'MIDI', MIDIFileCue: 'MIDI File',
   TimecodeCue: 'Timecode', ScriptCue: 'Script', TargetCue: 'Target', ResetCue: 'Reset',
 };
 
-const text = (v) => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' && typeof v.NSString === 'string' ? v.NSString : String(v));
-const secs = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0; };
+const text = (v: any): string => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' && typeof v.NSString === 'string' ? v.NSString : String(v));
+const secs = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0; };
 
 /** The main level of a QLab level matrix: row 0, column 0 (with its trim). */
-function mainLevel(matrix) {
-  const entries = (matrix && matrix.entries) || {};
+function mainLevel(matrix: Archived | null | undefined) {
+  const entries: Archived = (matrix && matrix.entries) || {};
   for (const e of Object.values(entries)) if (e && e.row === 0 && e.column === 0) return toDb(Number(e.initialLevel) * (Number(e.trimLevel) || 1));
   return 0;
 }
 /** Whether a matrix has any level besides the main one off unity (a mix of its own, which one level cannot keep). */
-function routed(matrix) {
-  const entries = (matrix && matrix.entries) || {};
+function routed(matrix: Archived | null | undefined) {
+  const entries: Archived = (matrix && matrix.entries) || {};
   let odd = false;
   for (const e of Object.values(entries)) {
     if (!e || (e.row === 0 && e.column === 0)) continue;
@@ -90,7 +101,7 @@ function routed(matrix) {
  * outputs pass through an output patch on their way to the device; here they are taken as the device's outputs of
  * the same numbers, and the report says so. Gangs are not kept.
  */
-function ownOutputs(q, cue, note) {
+function ownOutputs(q: Archived, cue: Made, note: Note) {
   const own = routing.fromQlab(q.levels && q.levels.entries, { toDb, channels: cue.file ? routing.wavChannels(cue.file) : 0 });
   const panned = own && panOfMatrix(own.matrix);
   if (panned) {
@@ -112,9 +123,9 @@ function ownOutputs(q, cue, note) {
  * file's left to 1 and right to 2, at levels of their own) as a pan and what is left on the level: { pan, db }, or
  * null when it does anything else (core/audio/lanes.js panOfGains: equal power, as the pan here plays).
  */
-function panOfMatrix(matrix) {
-  const lin = (db) => Math.pow(10, Number(db) / 20), only = (row, k) => row && Object.keys(row).length === k.length && k.every((x) => row[x] !== undefined);
-  let l, r;
+function panOfMatrix(matrix: Rows) {
+  const lin = (db: unknown) => Math.pow(10, Number(db) / 20), only = (row: Rows[number] | undefined, k: string[]) => row && Object.keys(row).length === k.length && k.every((x) => row[x] !== undefined);
+  let l: number, r: number;
   if (matrix.length === 1 && only(matrix[0], ['1', '2'])) { l = lin(matrix[0]['1']); r = lin(matrix[0]['2']); }
   else if (matrix.length === 2 && only(matrix[0], ['1']) && only(matrix[1], ['2'])) { l = lin(matrix[0]['1']); r = lin(matrix[1]['2']); }
   else return null;
@@ -122,7 +133,7 @@ function panOfMatrix(matrix) {
 }
 
 /** One point of a curve, however the archive wrote it: {x, y}, [x, y], or Cocoa's "{0.25, 0.8}". */
-function pointOf(p) {
+function pointOf(p: any): [number, number] | null {
   if (Array.isArray(p) && p.length >= 2) return [Number(p[0]), Number(p[1])];
   if (typeof p === 'string' || (p && typeof p.NSString === 'string')) { const m = /^\{\s*(-?[\d.eE+-]+)\s*,\s*(-?[\d.eE+-]+)\s*\}$/.exec(text(p).trim()); return m ? [Number(m[1]), Number(m[2])] : null; }
   if (p && typeof p === 'object') { const x = p.x ?? p.time ?? p.t, y = p.y ?? p.level ?? p.value; return x == null || y == null ? null : [Number(x), Number(y)]; }
@@ -136,38 +147,38 @@ function pointOf(p) {
  * stretch, 0–1; level, a gain where 1 is the cue's own level), and gives up (null) on anything else, in which
  * case the report says the envelope must be drawn again.
  */
-function envelopeOf(q, from, end) {
+function envelopeOf(q: Archived, from: number, end: number): [number, number][] | null {
   if (!(end > from)) return null;
   for (const [key, v] of Object.entries(q)) {
     if (!/integratedfade|fadeenvelope|fadecurve|fadepoints/i.test(key) || !v || typeof v !== 'object') continue;
     const list = Array.isArray(v) ? v : Array.isArray(v.points) ? v.points : Array.isArray(v.curve) ? v.curve : null;
     if (!list || list.length < 2) continue;
     const pts = list.map(pointOf);
-    if (pts.some((p) => !p || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || p[0] < -0.001 || p[0] > 1.001 || p[1] < 0 || p[1] > 4)) continue;
-    return pts.sort((a, b) => a[0] - b[0]).map(([x, y]) => [Math.round((from + x * (end - from)) * 1000) / 1000, toDb(y)]);
+    if (pts.some((p: [number, number] | null) => !p || !Number.isFinite(p[0]) || !Number.isFinite(p[1]) || p[0] < -0.001 || p[0] > 1.001 || p[1] < 0 || p[1] > 4)) continue;
+    return (pts as [number, number][]).sort((a, b) => a[0] - b[0]).map(([x, y]): [number, number] => [Math.round((from + x * (end - from)) * 1000) / 1000, toDb(y)]);
   }
   return null;
 }
 
 /** A QLab MIDI cue's message, in the words a MIDI cue here is written in ('' when it is one this does not send). */
-function midiText(q) {
+function midiText(q: Archived): string {
   const ch = Number(q.channel) > 1 ? ` ch ${Number(q.channel)}` : '';
   if (q.messageType === 1) {
     const b1 = Number(q.byte1) || 0, b2 = Number(q.byte2) || 0;
     // (status 2 is key pressure, 5 the channel's pressure, 6 pitch bend: read from a workspace QLab 5.6 saved. Where a
     // bend's fourteen bits are kept is a guess: `byteCombo` if the cue has one, else the two bytes, low then high.)
     const combo = Number.isFinite(Number(q.byteCombo)) && q.byteCombo !== null && q.byteCombo !== undefined ? Number(q.byteCombo) + (Number(q.byteCombo) < 0 ? 8192 : 0) : (b1 & 0x7f) | ((b2 & 0x7f) << 7);
-    return { 0: `note off ${b1}${ch}`, 1: `note ${b1} ${b2}${ch}`, 2: `key pressure ${b1} ${b2}${ch}`, 3: `cc ${b1} ${b2}${ch}`, 4: `pc ${b1}${ch}`, 5: `pressure ${b1}${ch}`, 6: `bend ${Math.max(0, Math.min(16383, Math.round(combo)))}${ch}` }[q.status] || '';
+    return ({ 0: `note off ${b1}${ch}`, 1: `note ${b1} ${b2}${ch}`, 2: `key pressure ${b1} ${b2}${ch}`, 3: `cc ${b1} ${b2}${ch}`, 4: `pc ${b1}${ch}`, 5: `pressure ${b1}${ch}`, 6: `bend ${Math.max(0, Math.min(16383, Math.round(combo)))}${ch}` } as Record<number, string>)[q.status] || '';
   }
   if (q.messageType === 2) {
-    const command = Object.keys(midi.MSC_COMMANDS).find((k) => midi.MSC_COMMANDS[k] === Number(q.command));
-    const format = Object.keys(midi.MSC_FORMATS).find((k) => midi.MSC_FORMATS[k] === Number(q.commandFormat));
+    const command = (Object.keys(midi.MSC_COMMANDS) as (keyof typeof midi.MSC_COMMANDS)[]).find((k) => midi.MSC_COMMANDS[k] === Number(q.command));
+    const format = (Object.keys(midi.MSC_FORMATS) as (keyof typeof midi.MSC_FORMATS)[]).find((k) => midi.MSC_FORMATS[k] === Number(q.commandFormat));
     if (!command || !format) return '';
     if (command === 'fire') return `msc fire ${Number(q.macro) || 0}${Number(q.deviceID) !== 127 ? ` dev ${Number(q.deviceID) || 0}` : ''}${format !== 'lighting' ? ` ${format}` : ''}`;
     const num = /^[\d.]+$/.test(text(q.qNumber)) ? ` ${text(q.qNumber)}` : '', list = num && /^[\d.]+$/.test(text(q.qList)) ? ` list ${text(q.qList)}` : '';
     return `msc ${command}${num}${list}${Number(q.deviceID) !== 127 ? ` dev ${Number(q.deviceID) || 0}` : ''}${format !== 'lighting' ? ` ${format}` : ''}`;
   }
-  if (q.messageType === 3) { const raw = text(q.rawString).replace(/[^0-9a-fA-F]/g, '').toUpperCase(); return raw.length >= 2 && raw.length % 2 === 0 ? `F0 ${raw.match(/../g).join(' ')} F7`.replace(/^F0 F0/, 'F0').replace(/F7 F7$/, 'F7') : ''; }
+  if (q.messageType === 3) { const raw = text(q.rawString).replace(/[^0-9a-fA-F]/g, '').toUpperCase(); return raw.length >= 2 && raw.length % 2 === 0 ? `F0 ${(raw.match(/../g) || []).join(' ')} F7`.replace(/^F0 F0/, 'F0').replace(/F7 F7$/, 'F7') : ''; }
   return '';
 }
 
@@ -177,13 +188,13 @@ function midiText(q) {
  * has not been seen in a real workspace (`lightCommandText` is its OSC name for them), so any text on the cue whose
  * every line reads as a light command is taken. '' when there is none.
  */
-function lightText(q) {
-  const reads = (v) => {
+function lightText(q: Archived): string {
+  const reads = (v: string | null): v is string => {
     if (typeof v !== 'string' || !v.includes('=')) return false;
     const cmds = lightCommands.parse(v);
     return cmds.length > 0 && cmds.every((c) => !c.error || /pulled from another cue/.test(c.error));
   };
-  const flat = (v) => (Array.isArray(v) && v.length && v.every((x) => typeof text(x) === 'string' && text(x).includes('=')) ? v.map(text).join('\n') : typeof v === 'string' ? v : v && typeof v === 'object' && typeof v.NSString === 'string' ? v.NSString : null);
+  const flat = (v: any): string | null => (Array.isArray(v) && v.length && v.every((x) => typeof text(x) === 'string' && text(x).includes('=')) ? v.map(text).join('\n') : typeof v === 'string' ? v : v && typeof v === 'object' && typeof v.NSString === 'string' ? v.NSString : null);
   for (const k of ['lightCommandText', 'commandText', 'lightCommands', 'commands']) { const v = flat(q[k]); if (reads(v)) return v.trim(); }
   for (const [k, raw] of Object.entries(q)) { if (['name', 'notes', 'number', 'uniqueID', 'colorName', '$type'].includes(k)) continue; const v = flat(raw); if (reads(v)) return v.trim(); }
   return '';
@@ -195,49 +206,49 @@ function lightText(q) {
  * a start written as text or as hours, minutes, seconds and frames is taken; output type 1 (or anything naming
  * LTC) is taken for LTC, anything else for MTC; a frame rate is taken from whichever field holds 24, 25, 29.97 or 30.
  */
-function timecodeOf(q) {
-  const out = { timecode: '01:00:00:00', fps: '30', output: 'mtc' }, unsure = [];
-  const st = q.startTimecode, p2 = (n) => String(Math.max(0, Math.round(Number(n) || 0))).padStart(2, '0');
+function timecodeOf(q: Archived) {
+  const out: { timecode: string; fps: '24' | '25' | '29.97df' | '30'; output: 'mtc' | 'ltc'; channel?: number; duration?: number } = { timecode: '01:00:00:00', fps: '30', output: 'mtc' }, unsure: string[] = [];
+  const st = q.startTimecode, p2 = (n: unknown) => String(Math.max(0, Math.round(Number(n) || 0))).padStart(2, '0');
   const parts = Array.isArray(st) && st.length >= 4 ? st.slice(0, 4)
     : st && typeof st === 'object' && !('NSString' in st) ? [st.hours ?? st.hour ?? st.h, st.minutes ?? st.minute ?? st.m, st.seconds ?? st.second ?? st.s, st.frames ?? st.frame ?? st.f] : null;
-  const asText = parts && parts.every((x) => Number.isFinite(Number(x))) ? parts.map(p2).join(':') : typeof st === 'string' || (st && st.NSString) ? text(st).trim().replace(/;/g, ':') : '';
+  const asText = parts && parts.every((x: unknown) => Number.isFinite(Number(x))) ? parts.map(p2).join(':') : typeof st === 'string' || (st && st.NSString) ? text(st).trim().replace(/;/g, ':') : '';
   if (timecode.parse(asText)) out.timecode = timecode.format(timecode.parse(asText), '30'); else unsure.push('its start time');
   const rate = [q.framerate, q.frameRate, q.fps, q.smpteFormat, q.timecodeFormat, q.format, st && st.framerate, st && st.format].map(Number).find((n) => [24, 25, 29.97, 30].some((r) => Math.abs(n - r) < 0.011));
-  if (rate) out.fps = Math.abs(rate - 29.97) < 0.011 ? '29.97df' : String(Math.round(rate)); else unsure.push('its frame rate');
+  if (rate) out.fps = Math.abs(rate - 29.97) < 0.011 ? '29.97df' : String(Math.round(rate)) as '24' | '25' | '30'; else unsure.push('its frame rate');
   if (Number(q.outputType) === 1 || /ltc/i.test(text(q.outputType))) { out.output = 'ltc'; out.channel = Math.max(1, Math.round(Number(q.LTCChannel) || 1)); }
   if (secs(q.duration)) out.duration = secs(q.duration);
   if (timecode.whyNot(timecode.parse(out.timecode), out.fps)) { out.timecode = '01:00:00:00'; unsure.push('its start time'); }
   return { cue: out, unsure: [...new Set(unsure)] };
 }
 
-function importQlab(buffer, { file = '' } = {}) {
-  let root;
-  try { root = unarchive(buffer); } catch (err) { throw new Error(`This is not a QLab workspace this can read (${err.message}).`); }
+function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
+  let root: Archived;
+  try { root = unarchive(buffer) as Archived; } catch (err) { throw new Error(`This is not a QLab workspace this can read (${(err as Error).message}).`); }
   if (!root || typeof root !== 'object' || !root.cueLists) throw new Error('This is not a QLab 4 or 5 workspace (it has no cue lists). QLab 3 and earlier files are not read: open and save them in QLab 4 or 5 first.');
   const v4 = /^4\./.test(String(root.QLabShortVersionString || '')) || /\.qlab4(backup)?$/i.test(file);
-  const endAtFileEnd = [];             // (QLab 4) cues whose End at may be nothing but the end of the file
-  const top = Buffer.isBuffer(root.cueLists) ? unarchive(root.cueLists) : root.cueLists;
+  const endAtFileEnd: string[] = [];             // (QLab 4) cues whose End at may be nothing but the end of the file
+  const top: Archived = Buffer.isBuffer(root.cueLists) ? unarchive(root.cueLists) as Archived : root.cueLists;
   const baseDir = file ? path.dirname(file) : '';
   const title = text(root.workspaceName) || (file ? path.basename(file).replace(/\.qlab\d(backup)?$/i, '') : 'Imported show');
   const doc = show.newShow(title);
-  const issues = [];
-  const ids = new Map();              // QLab uniqueID → our id
-  const made = new Map();             // QLab uniqueID → our cue
-  const kinds = {};
-  const lightNames = new Set();       // the instruments and groups the Light cues name: the patch they need here
-  const label = (q) => `${text(q.number) ? text(q.number) + ' ' : ''}${text(q.name) || (q.$type || 'cue').replace(/Cue$/, '')}`.trim();
-  const note = (q, why) => issues.push({ id: ids.get(q.uniqueID) || null, cue: label(q), why });
-  const each = (q, fn) => { fn(q); for (const k of q.cues || []) each(k, fn); };
+  const issues: ImportIssue[] = [];
+  const ids = new Map<unknown, string>();   // QLab uniqueID → our id
+  const made = new Map<unknown, Made>();     // QLab uniqueID → our cue
+  const kinds: Record<string, number> = {};
+  const lightNames = new Set<string>();       // the instruments and groups the Light cues name: the patch they need here
+  const label = (q: Archived) => `${text(q.number) ? text(q.number) + ' ' : ''}${text(q.name) || (q.$type || 'cue').replace(/Cue$/, '')}`.trim();
+  const note: Note = (q, why) => issues.push({ id: ids.get(q.uniqueID) || null, cue: label(q), why });
+  const each = (q: Archived, fn: (q: Archived) => void) => { fn(q); for (const k of q.cues || []) each(k, fn); };
   for (const l of top.cues || []) for (const q of l.cues || []) each(q, (c) => ids.set(c.uniqueID, show.newId()));
 
   // ── settings ────────────────────────────────────────────────────────────
-  const settings = root.settings || {};
-  const general = settings.General || {};
+  const settings: Archived = root.settings || {};
+  const general: Archived = settings.General || {};
   if (Number(general.minTimeBetweenGOs) >= 0) doc.settings.go.doubleGoProtection = secs(general.minTimeBetweenGOs);
   if (Number(general.panicDuration) >= 0) doc.settings.go.panicFade = secs(general.panicDuration);
-  const patchIds = new Map();
+  const patchIds = new Map<unknown, string>();
   // QLab 4: the network patches are the OSC settings' numbered destinations (a cue names one by its number, from 1)
-  (((settings.OSC || {}).clientState) || []).forEach((d, i) => {
+  (((settings.OSC || {}).clientState) || []).forEach((d: Archived | null, i: number) => {
     if (!d || !text(d.host)) return;
     const id = show.newId('patch');
     patchIds.set(`v4:${i + 1}`, id);
@@ -246,9 +257,9 @@ function importQlab(buffer, { file = '' } = {}) {
     doc.settings.network.patches.push({ id, name: /^\[object|^$/.test(name) ? `Patch ${i + 1}` : name, host: text(d.host) === 'localhost' ? '127.0.0.1' : text(d.host), port: Number(d.port) || 0, protocol: d.useTcp ? 'tcp' : 'udp', framing: 'slip', device: 'generic' });
   });
   for (const p of (settings.Network || {}).networkPatches || []) {
-    const d = (p && p.data) || {};
-    const dests = d.clientStates || [];
-    const first = dests[0] || {};
+    const d: Archived = (p && p.data) || {};
+    const dests: Archived[] = d.clientStates || [];
+    const first: Archived = dests[0] || {};
     const id = show.newId('patch');
     patchIds.set(d.uniqueID, id);
     const host = text(first.host) === 'localhost' ? '127.0.0.1' : text(first.host);
@@ -258,7 +269,7 @@ function importQlab(buffer, { file = '' } = {}) {
   }
 
   // ── cues ────────────────────────────────────────────────────────────────
-  const common = (q, cue) => {
+  const common = (q: Archived, cue: Made) => {
     if (text(q.number)) cue.number = text(q.number);
     if (text(q.name)) cue.name = text(q.name);
     if (text(q.notes)) cue.notes = text(q.notes);
@@ -286,10 +297,10 @@ function importQlab(buffer, { file = '' } = {}) {
     if (q.fadeAndStopOthers && cue.type !== 'group') cue.fadeOthers = secs(q.fadeAndStopOthersTime) || 0.01;
     return cue;
   };
-  const targetOf = (q) => ids.get(q.cueTargetUniqueID || (q.cueTarget && q.cueTarget.uniqueID)) || null;
-  const targetCue = (q) => (q.cueTarget && typeof q.cueTarget === 'object' ? q.cueTarget : null);
+  const targetOf = (q: Archived) => ids.get(q.cueTargetUniqueID || (q.cueTarget && q.cueTarget.uniqueID)) || null;
+  const targetCue = (q: Archived): Archived | null => (q.cueTarget && typeof q.cueTarget === 'object' ? q.cueTarget : null);
 
-  function fileOf(q) {
+  function fileOf(q: Archived): string {
     const a = q.fileTarget;
     if (!a || typeof a !== 'object') return '';
     const rel = text(a.relativePath) || text(q.relativePath), last = text(a.lastKnownPath);      // (QLab 4 keeps the path beside the workspace on the cue)
@@ -300,8 +311,8 @@ function importQlab(buffer, { file = '' } = {}) {
     // show folder that has been zipped, uploaded or downloaded often comes back with ' : ? turned into _.)
     if (rel && baseDir) {
       const want = path.resolve(baseDir, rel), dir = path.dirname(want);
-      const plain = (n) => n.normalize('NFKD').toLowerCase().replace(/[^a-z0-9.]+/g, '_');
-      let names = []; try { names = fs.readdirSync(dir); } catch { /* no such folder */ }
+      const plain = (n: string) => n.normalize('NFKD').toLowerCase().replace(/[^a-z0-9.]+/g, '_');
+      let names: string[] = []; try { names = fs.readdirSync(dir); } catch { /* no such folder */ }
       const hits = names.filter((n) => plain(n) === plain(path.basename(want)));
       if (hits.length === 1) { note(q, `its file was found under a slightly different name (“${hits[0]}” for “${path.basename(want)}”): check it is the right one`); return path.join(dir, hits[0]); }
     }
@@ -310,9 +321,9 @@ function importQlab(buffer, { file = '' } = {}) {
 
   /** A Video, Text or Camera cue's place on the stage, where the file has it under the names QLab's OSC dictionary
    *  uses (opacity, translation, scale, rotation, layer, fillStage). Returns what was found, in words. */
-  function geometry(q, cue) {
-    const found = [];
-    const n = (...keys) => { for (const k of keys) { const v = k.split('.').reduce((o, p) => (o && typeof o === 'object' ? o[p] : undefined), q); if (typeof v === 'number' && Number.isFinite(v)) return v; } return null; };
+  function geometry(q: Archived, cue: Made) {
+    const found: string[] = [];
+    const n = (...keys: string[]) => { for (const k of keys) { const v = k.split('.').reduce((o: any, p) => (o && typeof o === 'object' ? o[p] : undefined), q); if (typeof v === 'number' && Number.isFinite(v)) return v; } return null; };
     const opacity = n('opacity');
     if (opacity !== null && opacity >= 0 && opacity <= 1) { if (opacity < 1) cue.opacity = Math.round(opacity * 1000) / 10; found.push('opacity'); }
     const x = n('translationX', 'translation.x'), y = n('translationY', 'translation.y');
@@ -328,11 +339,11 @@ function importQlab(buffer, { file = '' } = {}) {
     return found;
   }
 
-  function convert(q) {
-    const id = ids.get(q.uniqueID);
+  function convert(q: Archived): Made {
+    const id = ids.get(q.uniqueID) as string;
     const type = q.$type;
     kinds[type] = (kinds[type] || 0) + 1;
-    let cue;
+    let cue: Made;
     if (type === 'GroupCue') {
       cue = common(q, { id, type: 'group' });
       if (q.groupMode === 6) { cue.mode = 'playlist'; if (q.playlistShuffle) cue.shuffle = true; if (q.playlistLoop) cue.repeat = true; if (q.playlistCrossfade && secs(q.playlistCrossfadeDuration)) cue.crossfade = secs(q.playlistCrossfadeDuration); }
@@ -352,12 +363,12 @@ function importQlab(buffer, { file = '' } = {}) {
       if (v4 && cue.cutAt && !len) endAtFileEnd.push(id);       // (QLab 4 does not say how long the file is: this End at may be its own end)
       if (q.infiniteLoop) cue.loop = true;
       else if (Number(q.playCount) > 1) cue.plays = Math.round(Number(q.playCount));
-      const slices = (q.slices || []).filter((s) => s && Number(s.time) > 0);
+      const slices = (q.slices || []).filter((s: Archived) => s && Number(s.time) > 0);
       if (slices.length) {
         // QLab's slices: each ends at its marker and has a play count (or loops until devamped); the last runs to the end
-        cue.markers = slices.map((s, i) => ({ at: secs(s.time), name: `Slice ${i + 2}` }));
-        const ends = [...slices.map((s) => ({ end: secs(s.time), n: Number(s.playCount) || 1, inf: !!s.infiniteLoop })), { end: cue.cutAt || len, n: Number((q.lastSlice || {}).playCount) || 1, inf: !!(q.lastSlice || {}).infiniteLoop }];
-        const loops = [];
+        cue.markers = slices.map((s: Archived, i: number) => ({ at: secs(s.time), name: `Slice ${i + 2}` }));
+        const ends = [...slices.map((s: Archived) => ({ end: secs(s.time), n: Number(s.playCount) || 1, inf: !!s.infiniteLoop })), { end: cue.cutAt || len, n: Number((q.lastSlice || {}).playCount) || 1, inf: !!(q.lastSlice || {}).infiniteLoop }];
+        const loops: Region[] = [];
         let from = cue.from || 0;
         ends.forEach((s, i) => { if (s.end > from && (s.inf || s.n > 1)) loops.push({ start: from, end: s.end, name: `Slice ${i + 1}`, ...(s.inf ? { hold: true } : { count: s.n }) }); from = s.end || from; });
         if (loops.length) cue.loops = loops;
@@ -376,15 +387,15 @@ function importQlab(buffer, { file = '' } = {}) {
       if ((q.effects || []).length) note(q, `had ${q.effects.length} audio effect${q.effects.length === 1 ? '' : 's'}: not carried over`);
       ownOutputs(q, cue, note);
       // a click sent to its own outputs with the main level down would arrive silent, and nobody told
-      if (cue.plays > 1 && cue.loops) { delete cue.plays; note(q, 'had a play count and slices: the slices’ counts are kept, the play count of the whole is not'); }
-      if (cue.gainDb <= SILENT_DB && Object.values((q.levels && q.levels.entries) || {}).some((e) => e && e.row === 0 && e.column > 0 && Number(e.initialLevel) > 0)) note(q, 'played only on outputs of its own, with its main level down: it is silent until you raise its level (the inspector’s Level; its outputs are under Own outputs)');
+      if (Number(cue.plays) > 1 && cue.loops) { delete cue.plays; note(q, 'had a play count and slices: the slices’ counts are kept, the play count of the whole is not'); }
+      if (Number(cue.gainDb) <= SILENT_DB && Object.values<Archived>((q.levels && q.levels.entries) || {}).some((e: Archived) => e && e.row === 0 && e.column > 0 && Number(e.initialLevel) > 0)) note(q, 'played only on outputs of its own, with its main level down: it is silent until you raise its level (the inspector’s Level; its outputs are under Own outputs)');
     } else if (type === 'FadeCue') {
       cue = common(q, { id, type: 'fade', target: targetOf(q), duration: secs(q.duration), stopTarget: !!(q.stopTargetWhenDone || (q.fade && q.fade.stopTargetWhenDone)) });
-      const main = Object.values((q.fade && q.fade.entries) || {}).find((e) => e && e.row === 0 && e.column === 0 && e.live !== false);
-      const others = Object.values((q.fade && q.fade.entries) || {}).filter((e) => e && !(e.row === 0 && e.column === 0) && e.live !== false).length;
+      const main: Archived | undefined = Object.values<Archived>((q.fade && q.fade.entries) || {}).find((e: Archived) => e && e.row === 0 && e.column === 0 && e.live !== false);
+      const others = Object.values<Archived>((q.fade && q.fade.entries) || {}).filter((e: Archived) => e && !(e.row === 0 && e.column === 0) && e.live !== false).length;
       cue.relative = q.mode === 1 || (q.fade && q.fade.fadeType === 'relative');
       if (main) cue.db = toDb(main.endValue);
-      else { cue.db = cue.relative ? 0 : mainLevel(targetCue(q) && targetCue(q).levels); note(q, 'does not fade its target’s main level: what it faded is not carried over'); }
+      else { cue.db = cue.relative ? 0 : mainLevel(targetCue(q) && targetCue(q)!.levels); note(q, 'does not fade its target’s main level: what it faded is not carried over'); }
       if (cue.relative) note(q, 'is a relative fade: check its amount (it is measured from the target’s own level here)');
       if (others) note(q, `also faded ${others} other level${others === 1 ? '' : 's'} (outputs or crosspoints): only the main level is kept`);
       if (q.doRate && Number(q.rate) > 0) { cue.rate = Math.max(0.25, Math.min(4, Math.round(Number(q.rate) * 1000) / 1000)); note(q, `also fades its target’s rate to ${cue.rate}: check it`); }
@@ -416,7 +427,7 @@ function importQlab(buffer, { file = '' } = {}) {
         cue = common(q, { id, type: 'network', message: osc.trim() });
         if (patchIds.has(q.networkPatchID)) cue.patch = patchIds.get(q.networkPatchID);
         else if (patchIds.has(`v4:${Number(q.patch)}`)) cue.patch = patchIds.get(`v4:${Number(q.patch)}`);
-        if (q.fadeType === 1) { cue.fadeFrom = Number(q.startValue) || 0; cue.fadeTo = Number(q.endValue) || 0; cue.duration = secs(q.duration); if (!cue.message.includes('#v#')) note(q, 'is a faded message with no #v# in it'); }
+        if (q.fadeType === 1) { cue.fadeFrom = Number(q.startValue) || 0; cue.fadeTo = Number(q.endValue) || 0; cue.duration = secs(q.duration); if (!cue.message!.includes('#v#')) note(q, 'is a faded message with no #v# in it'); }
         else if (q.fadeType === 2) note(q, 'was a 2D fade: only the message is kept');
         else if (secs(q.duration)) note(q, `re-sent its message for ${secs(q.duration)} s: it is sent once here`);
       } else {
@@ -501,11 +512,11 @@ function importQlab(buffer, { file = '' } = {}) {
     const name = text(l.name) || `List ${doc.lists.length + 1}`;
     if (l.syncToTimecode) issues.push({ id: null, cue: name, why: 'chased timecode: turn that on again in Settings ▸ Integrations ▸ Network ▸ Timecode, and give its cues their timecode triggers (a QLab cue’s trigger time is not read)' });
     let unique = name; for (let n = 2; doc.lists.some((x) => x.name === unique); n++) unique = `${name} ${n}`;
-    const cues = (l.cues || []).map(convert);
+    const cues = (l.cues || []).map(convert) as Cue[];   // (a target not kept is taken off below, before the show is read)
     // a cue cart: the grid's size, and each cue on the button it was on (a position this cannot read takes the first free button)
     const isCart = l.groupMode === 5;
-    if (isCart) (l.cues || []).forEach((q, i) => { const p = cartCell(q.cartPosition); if (p && cues[i]) cues[i].cell = `${p[0]},${p[1]}`; });
-    doc.lists.push({ id: show.newId('list'), name: unique, ...(isCart ? { cart: cart.cleanCart({ rows: l.cartRows, columns: l.cartColumns }) } : {}), cues });
+    if (isCart) (l.cues || []).forEach((q: Archived, i: number) => { const p = cartCell(q.cartPosition); if (p && cues[i]) cues[i].cell = `${p[0]},${p[1]}`; });
+    doc.lists.push({ id: show.newId('list'), name: unique, ...(isCart ? { cart: cart.cleanCart({ rows: l.cartRows, columns: l.cartColumns })! } : {}), cues });
   }
   if (!doc.lists.length) doc.lists.push({ id: show.newId('list'), name: 'Main', cues: [] });
 
@@ -516,8 +527,8 @@ function importQlab(buffer, { file = '' } = {}) {
 
   const r = show.normalise(doc);
   let cues = 0; show.walk(r.doc, () => cues++);
-  const missing = [];
-  show.walk(r.doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file && !fs.existsSync(c.file) && !missing.includes(c.file)) missing.push(c.file); });
+  const missing: string[] = [];
+  show.walk(r.doc, (c: Cue) => { if ((c.type === 'audio' || c.type === 'video') && c.file && !fs.existsSync(c.file) && !missing.includes(c.file)) missing.push(c.file); });
   const version = text(root.QLabShortVersionString);
   const report = {
     source: file ? path.basename(file) : '', qlabVersion: version, title, endAtFileEnd,
@@ -532,18 +543,18 @@ function importQlab(buffer, { file = '' } = {}) {
 
 /** Where a cue sat in a QLab cart: [row, column] counted from 1, as QLab's own /cartPosition gives it (0: not placed).
  *  QLab writes it as a pair; a point written as text ("{2, 3}") or as { row, column } is read too. */
-function cartCell(v) {
+function cartCell(v: any) {
   if (v && typeof v === 'object' && !Array.isArray(v) && !('row' in v)) v = [v.x ?? v.X, v.y ?? v.Y];
   return cart.parseCell(Array.isArray(v) ? v.map(Number) : v);
 }
 
 /** The issues, grouped: one line per kind of thing that did not come across. */
-function summarise(issues, missing, cues) {
-  const groups = new Map();
+function summarise(issues: ImportIssue[], missing: string[], cues: number) {
+  const groups = new Map<string, { why: string; cues: string[] }>();
   for (const i of issues) {
     const key = i.why.replace(/\d+(\.\d+)?/g, 'N').replace(/\(.*?\)/g, '').replace(/“.*?”/g, '');
     if (!groups.has(key)) groups.set(key, { why: i.why, cues: [] });
-    groups.get(key).cues.push(i.cue);
+    groups.get(key)!.cues.push(i.cue);
   }
   const lines = [...groups.values()].sort((a, b) => b.cues.length - a.cues.length)
     .map((g) => (g.cues.length === 1 ? `${g.cues[0]}: ${g.why}.` : `${g.cues.length} cues (${g.cues.slice(0, 3).join('; ')}${g.cues.length > 3 ? '…' : ''}): ${g.why}.`));
@@ -553,6 +564,8 @@ function summarise(issues, missing, cues) {
 }
 
 /** Whether a file looks like a QLab workspace (by its name). */
-const isQlabFile = (p) => /\.qlab[45](backup)?$/i.test(String(p || ''));
+const isQlabFile = (p: unknown) => /\.qlab[45](backup)?$/i.test(String(p || ''));
 
 export { envelopeOf, importQlab, isQlabFile, toDb, midiText, timecodeOf, panOfMatrix };
+
+export type QlabImport = ReturnType<typeof importQlab>;

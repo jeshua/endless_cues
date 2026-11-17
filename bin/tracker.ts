@@ -4,15 +4,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const text = fs.readFileSync(path.join(__dirname, '../docs/qlab-tracker.md'), 'utf8');
-const stages = [];
+interface Stage { name: string; done: number; part: number; todo: number }
+const stages: Stage[] = [];
 for (const line of text.split('\n')) {
   const h = line.match(/^## (.+)/);
   if (h) { stages.push({ name: h[1], done: 0, part: 0, todo: 0 }); continue; }
   const m = line.match(/^- \[(x|~| )\]/);
-  if (m && stages.length) stages[stages.length - 1][{ x: 'done', '~': 'part', ' ': 'todo' }[m[1]]]++;
+  if (m && stages.length) stages[stages.length - 1][({ x: 'done', '~': 'part', ' ': 'todo' } as const)[m[1] as 'x' | '~' | ' ']]++;
 }
-const all = { name: 'All', done: 0, part: 0, todo: 0 };
-for (const s of stages) for (const k of ['done', 'part', 'todo']) all[k] += s[k];
+const all: Stage = { name: 'All', done: 0, part: 0, todo: 0 };
+for (const s of stages) for (const k of ['done', 'part', 'todo'] as const) all[k] += s[k];
 const w = Math.max(...stages.map((s) => s.name.length));
 for (const s of [...stages, all]) {
   const n = s.done + s.part + s.todo;

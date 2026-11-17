@@ -10,24 +10,35 @@ import { mirror } from '../core/net/mirror';
 import { rig, build } from './helpers';
 import * as oscControl from '../app/main/modules/osc-control';
 import * as backupLink from '../app/main/modules/backup-link';
+import type { HostApi, HostCommand, HostResult } from '../app/main/host';
+import type { OscMessage } from '../core/net/osc';
+import type { Hub } from '../core/net/hub';
+import type { MirroredResult } from '../core/net/mirror';
+import type { ShowDoc } from '../core/show/types';
+
+/** A transport command as the fake host reads one. */
+type Cmd = { op: string; id?: string; number?: string; hard?: boolean; fade?: boolean; secs?: number; step?: number };
+type MessageFn = Parameters<Hub['onMessage']>[0];
+type ModuleContext = Parameters<typeof backupLink.create>[0];
+type FakeHost = ReturnType<typeof fakeHost>;
 
 /** A host as a module sees one: a real engine behind `cmd` and `snapshot` (the transport commands only). */
-function fakeHost(doc) {
+function fakeHost(doc: ShowDoc) {
   const r = rig(doc);
-  const idOf = (c) => c.id || (c.number != null ? (show.findByNumber(doc, c.number) || {}).id : null) || null;
-  const notices = [];
+  const idOf = (c: Cmd) => c.id || (c.number != null ? (show.findByNumber(doc, c.number) || {}).id : null) || null;
+  const notices: string[] = [];
   let lastGo = -Infinity;
-  const run = (c) => {
+  const run = (c: Cmd): HostResult | null => {
     const e = r.engine;
     if ((c.number != null || c.id != null) && ['pause', 'resume', 'toggle', 'stop', 'fire', 'start'].includes(c.op) && !e.byId.has(idOf(c))) return { error: 'no such cue' };
     switch (c.op) {
       case 'go': if (r.now() - lastGo < 0.3) return { ignored: 'double GO' }; lastGo = r.now(); e.go(); break;
-      case 'start': e.start(idOf(c)); break;
-      case 'fire': e.fire(idOf(c)); break;
-      case 'stop': e.stopCue(idOf(c)); break;
+      case 'start': e.start(idOf(c)!); break;
+      case 'fire': e.fire(idOf(c)!); break;
+      case 'stop': e.stopCue(idOf(c)!); break;
       case 'pause': e.pause(idOf(c)); break;
       case 'resume': e.resume(idOf(c)); break;
-      case 'toggle': { const id = idOf(c); if (e.isPaused(id)) e.resume(id); else e.pause(id); break; }
+      case 'toggle': { const id = idOf(c)!; if (e.isPaused(id)) e.resume(id); else e.pause(id); break; }
       case 'panic': e.panic(); if (c.hard) e.panic(); break;
       case 'fadeall': e.fadeAll(Number(c.secs) || 5); break;
       case 'reset': e.reset(); break;
@@ -39,9 +50,9 @@ function fakeHost(doc) {
     }
     return null;
   };
-  return { rig: r, engine: r.engine, notices, showId: () => doc.id, notice: (t) => notices.push(t),
-           cmd(c) { try { return run(c) || { ok: true }; } catch (err) { return { error: err.message }; } },
-           snapshot() { const e = r.engine.snapshot(); delete e.cues; delete e.poem; return { rev: 1, doc, engine: e, show: { title: doc.title }, problems: [], mode: 'show' }; } };
+  return { rig: r, engine: r.engine, notices, showId: () => doc.id, notice: (t: string) => notices.push(t),
+           cmd(c: Cmd): HostResult { try { return run(c) || { ok: true }; } catch (err) { return { error: (err as Error).message }; } },
+           snapshot() { const e: Partial<ReturnType<typeof r.engine.snapshot>> & { poem?: unknown } = r.engine.snapshot(); delete e.cues; delete e.poem; return { rev: 1, doc, engine: e, show: { title: doc.title }, problems: [], mode: 'show' }; } };
 }
 
 const aShow = () => build([
@@ -55,27 +66,27 @@ const aShow = () => build([
 function pair({ passcode = '' } = {}) {
   const s = aShow();
   const main = fakeHost(s.doc), backup = fakeHost(JSON.parse(JSON.stringify(s.doc)));
-  const control = oscControl.create({ log() {}, changed() {}, host: backup });
-  control.start({ enabled: true, passcode });
-  const wire = [];
+  const control = oscControl.create({ log() {}, changed() {}, host: backup as unknown as HostApi });
+  control.start({ enabled: true, passcode } as Parameters<typeof control.start>[0]);
+  const wire: string[] = [];
   let lose = false;
   const net = {
-    send(patch, text) { wire.push(text); if (!lose) control.onOsc(osc.decode(osc.encode(text)), { address: '10.0.0.2', port: 53001 }, () => {}); return { ok: true }; },
+    send(patch: string, text: string) { wire.push(text); if (!lose) control.onOsc(osc.decode(osc.encode(text))!, { address: '10.0.0.2', port: 53001 }, () => {}); return { ok: true }; },
     status: () => ({ patches: { backup: { state: 'answering', text: 'answering' } } }),
     onMessage: () => () => {},
   };
-  const beats = [];
-  const link = backupLink.create({ host: main, net, every: (fn) => { beats.push(fn); return beats.length; }, never() {} });
-  link.start({ enabled: true, role: 'main', patch: 'backup', passcode });
+  const beats: (() => void)[] = [];
+  const link = backupLink.create({ host: main, net, every: (fn: () => void) => { beats.push(fn); return beats.length; }, never() {} } as unknown as ModuleContext);
+  link.start({ enabled: true, role: 'main', patch: 'backup', passcode } as Parameters<typeof link.start>[0]);
   // the main's `cmd`, as host.js runs it: the command, then the modules told of it
-  const cmd = (c) => { const before = { playhead: main.engine.playhead }; const r = main.cmd(c); link.onCommand(c, r, before, { playhead: main.engine.playhead }); return r; };
-  const state = (h) => ({ playhead: h.engine.playhead, running: [...h.engine.running.keys()].sort(), paused: [...h.engine.running].filter(([, r]) => r.pausedAt != null).map(([k]) => k).sort(), waits: h.engine.active().filter((a) => a.kind === 'wait').map((a) => a.id).sort() });
-  const advance = (secs) => { main.rig.advance(secs); backup.rig.advance(secs); };
-  return { s, main, backup, cmd, wire, link, beats, state, advance, lose: (on) => { lose = on; } };
+  const cmd = (c: Cmd) => { const before = { playhead: main.engine.playhead }; const r = main.cmd(c); link.onCommand(c as HostCommand, r, before, { playhead: main.engine.playhead }); return r; };
+  const state = (h: FakeHost) => ({ playhead: h.engine.playhead, running: [...h.engine.running.keys()].sort(), paused: [...h.engine.running].filter(([, r]) => r.pausedAt != null).map(([k]) => k).sort(), waits: h.engine.active().filter((a) => a.kind === 'wait').map((a) => a.id).sort() });
+  const advance = (secs: number) => { main.rig.advance(secs); backup.rig.advance(secs); };
+  return { s, main, backup, cmd, wire, link, beats, state, advance, lose: (on: boolean) => { lose = on; } };
 }
 
 test('a command becomes the OSC that makes another computer do the same', () => {
-  assert.deepEqual(mirror({ op: 'go' }, { before: { playhead: 'c_1' }, after: { playhead: 'c_2' }, result: { ok: true } }), ['/playheadID/c_1', '/go', '/playheadID/c_2']);
+  assert.deepEqual(mirror({ op: 'go' }, { before: { playhead: 'c_1' }, after: { playhead: 'c_2' }, result: { ok: true } as MirroredResult }), ['/playheadID/c_1', '/go', '/playheadID/c_2']);
   assert.deepEqual(mirror({ op: 'go' }, { before: { playhead: 'c_1' }, after: { playhead: 'c_1' }, result: { ignored: 'double GO' } }), [], 'a GO that did not happen is not passed on');
   assert.deepEqual(mirror({ op: 'stop', id: 'c_1', fade: true }, { before: { playhead: 'x' }, after: { playhead: 'x' } }), ['/cue_id/c_1/panic']);
   assert.deepEqual(mirror({ op: 'panic', hard: true }), ['/hardStop']);
@@ -86,7 +97,7 @@ test('a command becomes the OSC that makes another computer do the same', () => 
 
 test('the backup follows the main through a run: GO, a sequence, a pause, a cue started by hand, panic', () => {
   const p = pair();
-  const same = (what) => assert.deepEqual(p.state(p.backup), p.state(p.main), what);
+  const same = (what: string) => assert.deepEqual(p.state(p.backup), p.state(p.main), what);
   p.cmd({ op: 'go' }); same('GO: the sound, the wait that continues from it, and the playhead');
   assert.deepEqual(p.state(p.backup).running, [p.s.id('a')]);
   p.advance(1);
@@ -125,12 +136,12 @@ test('the link gives the backup its passcode first, and each end says whether it
   assert.deepEqual(p.link.status().ok, true);
   assert.match(p.link.status().text, /the backup is answering/);
   // the backup's side: it only watches, and says so when the main goes quiet
-  let t = 1000, heard = null;
-  const ticks = [];
-  const b = backupLink.create({ host: p.backup, net: { onMessage: (fn) => { heard = fn; return () => {}; }, status: () => ({ patches: {} }) }, now: () => t, every: (fn) => { ticks.push(fn); return 1; }, never() {} });
-  b.start({ enabled: true, role: 'backup' });
+  let t = 1000, heard: MessageFn | null = null;
+  const ticks: (() => void)[] = [];
+  const b = backupLink.create({ host: p.backup, net: { onMessage: (fn: MessageFn) => { heard = fn; return () => {}; }, status: () => ({ patches: {} }) }, now: () => t, every: (fn: () => void) => { ticks.push(fn); return 1; }, never() {} } as unknown as ModuleContext);
+  b.start({ enabled: true, role: 'backup' } as Parameters<typeof b.start>[0]);
   assert.match(b.status().text, /waiting to hear the main/);
-  assert.equal(heard({ address: '/thump', args: [] }), false, 'it never takes a message from the module that obeys it');
+  assert.equal((heard as unknown as (msg: OscMessage) => unknown)({ address: '/thump', args: [] }), false, 'it never takes a message from the module that obeys it');
   assert.deepEqual(b.status(), { ok: true, text: 'following the main · 1 heard' });
   t += 5000; ticks[0]();
   assert.equal(b.status().ok, false);

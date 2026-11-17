@@ -4,10 +4,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, build } from './helpers';
 import * as show from '../core/show/show';
+import type { Rig } from './helpers';
+import type { CueEngine, EngineAudio } from '../core/engine/cue-engine';
+import type { CueSpec, Op, Place } from '../core/show/ops';
 
-const A = (ref, extra = {}) => ({ type: 'audio', ref, name: ref, file: `media/${ref}.wav`, ...extra });
-const add = (cue, more = {}) => ({ op: 'cue.add', ref: cue.ref, cue, ...more });
-const last = (r, op) => r.audio.calls.filter((c) => c[0] === op).at(-1);
+/** A line of Active Cues that is a sound (it has a duck). */
+type SoundRow = Extract<ReturnType<CueEngine['active']>[number], { duck: unknown }>;
+
+const A = (ref: string, extra: Partial<CueSpec> = {}): CueSpec => ({ type: 'audio', ref, name: ref, file: `media/${ref}.wav`, ...extra });
+const add = (cue: CueSpec, more: Place = {}): Op => ({ op: 'cue.add', ref: cue.ref, cue, ...more });
+const last = (r: Rig, op: string) => r.audio.calls.filter((c) => c[0] === op).at(-1)!;
 
 const twoLists = () => build([
   { op: 'list.add', name: 'Preshow' },
@@ -47,7 +53,7 @@ test('a Start cue aimed at a list is that list’s GO; a Fade and a Stop aimed a
   assert.ok(r.audio.playing.has(s.id('p1')), 'the Preshow list’s first cue went');
   assert.equal(r.engine.heads.get('Preshow'), s.id('p3'), 'and its playhead moved on, past what follows');
   assert.equal(r.engine.listName, 'Main');
-  assert.equal(r.engine.lastGo.id, s.id('goPre'), 'the operator’s GO was the Start cue');
+  assert.equal(r.engine.lastGo!.id, s.id('goPre'), 'the operator’s GO was the Start cue');
   r.engine.go();                                             // fadePre
   assert.deepEqual(last(r, 'fade'), ['fade', s.id('p1'), -60, 2, undefined]);
   assert.ok(!r.audio.calls.some((c) => c[0] === 'fade' && c[1] === s.id('a1')), 'the Main list’s sound is not touched');
@@ -97,13 +103,13 @@ test('start one at random deals every child once before any comes again', () => 
   let seed = 7;
   const r = rig(s.doc, { random: () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; } });
   const picks = [];
-  for (let i = 0; i < 12; i++) { r.engine.fire(s.id('g')); picks.push(r.audio.calls.filter((c) => c[0] === 'play').at(-1)[1]); }
+  for (let i = 0; i < 12; i++) { r.engine.fire(s.id('g')); picks.push(r.audio.calls.filter((c) => c[0] === 'play').at(-1)![1]); }
   for (let round = 0; round < 3; round++) assert.equal(new Set(picks.slice(round * 4, round * 4 + 4)).size, 4, `round ${round + 1} plays all four`);
   assert.notEqual(picks[3], picks[4], 'a round does not open with the one the last closed on');
   assert.notEqual(picks[7], picks[8]);
   r.engine.toggleArm(s.id('x'));
   const armed = [];
-  for (let i = 0; i < 6; i++) { r.engine.fire(s.id('g')); armed.push(r.audio.calls.filter((c) => c[0] === 'play').at(-1)[1]); }
+  for (let i = 0; i < 6; i++) { r.engine.fire(s.id('g')); armed.push(r.audio.calls.filter((c) => c[0] === 'play').at(-1)![1]); }
   assert.ok(!armed.includes(s.id('x')), 'a disarmed child is never dealt');
 });
 
@@ -117,7 +123,7 @@ test('a second trigger: nothing, stop, fade out, devamp; and restart by default'
     add(A('vamp', { number: '6', loop: true, secondTrigger: 'devamp' })),
   ]);
   const r = rig(s.doc, { panicFade: 2 });
-  const plays = (ref) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(ref)).length;
+  const plays = (ref: string) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(ref)).length;
   r.engine.start(s.id('plain')); r.engine.start(s.id('plain'));
   assert.equal(plays('plain'), 2, 'left alone, a second trigger starts it again');
   r.engine.start(s.id('once')); r.engine.start(s.id('once'));
@@ -158,16 +164,16 @@ test('a cue ducks the others while it runs, and they come back when it ends', ()
     add(A('boost', { number: '4', duckOthers: 3 })),
   ]);
   const r = rig(s.doc);
-  const ducks = []; r.audio.duck = (key, db, secs) => ducks.push([key, db, secs]);
+  const ducks: [string, number, number][] = []; (r.audio as EngineAudio).duck = (key, db, secs) => ducks.push([key, db, secs]);
   r.engine.go();
   r.engine.go();
   assert.deepEqual(ducks, [[s.id('music'), -12, 0.5]], 'the music goes down; the cue’s own sound does not');
-  assert.equal(r.engine.active().find((a) => a.id === s.id('music')).duck, -12);
-  assert.equal(r.audio.playing.get(s.id('music')).db, -6, 'its own level is not touched');
+  assert.equal((r.engine.active().find((a) => a.id === s.id('music')) as SoundRow).duck, -12);
+  assert.equal(r.audio.playing.get(s.id('music'))!.db, -6, 'its own level is not touched');
   r.engine.go();                                             // a sound started under the duck is one of the others
   assert.deepEqual(ducks.at(-1), [s.id('late'), -12, 0]);
   r.engine.go();                                             // a boost on top: the two add up
-  const held = () => Object.fromEntries(r.engine.active().filter((a) => a.kind === 'audio').map((a) => [a.name, a.duck]));
+  const held = () => Object.fromEntries(r.engine.active().filter((a): a is SoundRow => a.kind === 'audio').map((a) => [a.name, a.duck]));
   assert.deepEqual(held(), { music: -9, voice: 3, late: -9, boost: -12 });
   assert.deepEqual(ducks.slice(-3), [[s.id('music'), -9, 1], [s.id('voice'), 3, 1], [s.id('late'), -9, 1]]);
   r.audio.playing.delete(s.id('voice')); r.engine.audioEnded(s.id('voice'));
@@ -225,7 +231,7 @@ test('a Load cue loads any cue, counted through its pre-wait; a negative time is
     add({ type: 'load', ref: 'l2', target: '@scene', at: 6 }),
     add({ type: 'load', ref: 'l3', target: '@song', at: '-10' }),
   ]);
-  assert.equal(show.index(s.doc).byId.get(s.id('l3')).at, -10, 'a Load cue’s time may be negative');
+  assert.equal(show.index(s.doc).byId.get(s.id('l3'))!.at, -10, 'a Load cue’s time may be negative');
   const r = rig(s.doc);
   r.engine.setDuration('media/song.wav', 100); r.engine.setDuration('media/bed.wav', 60);
   r.engine.fire(s.id('l1'));
@@ -235,9 +241,9 @@ test('a Load cue loads any cue, counted through its pre-wait; a negative time is
   r.engine.go();
   assert.equal(last(r, 'play')[2].from, 32, '30 s into the cue, which starts 2 s into its file');
   r.engine.go();
-  assert.equal(r.audio.calls.find((c) => c[0] === 'play' && c[1] === s.id('bed'))[2].from, 6);
+  assert.equal(r.audio.calls.find((c) => c[0] === 'play' && c[1] === s.id('bed'))![2].from, 6);
   assert.ok(!r.engine.waits.has(s.id('past')), 'a child whose moment has passed is skipped');
-  assert.equal(r.engine.waits.get(s.id('sting')).total, 4, 'one still to come waits what is left');
+  assert.equal(r.engine.waits.get(s.id('sting'))!.total, 4, 'one still to come waits what is left');
   assert.deepEqual(r.engine.snapshot().loads, {}, 'used once');
   r.engine.fire(s.id('l3'));                                 // song is no longer standing by: 98 s long, so 88 s in
   r.engine.start(s.id('song'));
@@ -262,7 +268,7 @@ test('a Reset cue puts its target back: stopped, unloaded, armed as written, a F
   assert.deepEqual(last(r, 'fade'), ['fade', s.id('music'), -3, 0, undefined], 'the sound the Fade moved is back at its own level');
   assert.ok(!r.engine.fades.has(s.id('dip')), 'and the Fade is no longer running');
   r.advance(5);
-  assert.equal(r.audio.playing.get(s.id('music')).db, -3);
+  assert.equal(r.audio.playing.get(s.id('music'))!.db, -3);
   r.engine.toggleArm(s.id('sfx'));                           // armed by hand, loaded, started
   r.engine.loadToTime(5, s.id('sfx'));
   r.engine.start(s.id('sfx'));
@@ -289,9 +295,9 @@ test('a Target cue re-aims another cue, until Reset or an edit', () => {
   r.engine.fire(s.id('out'));
   assert.equal(last(r, 'fade')[1], s.id('two'));
   r.engine.load(show.toEngineDoc(s.doc));
-  assert.equal(r.engine.byId.get(s.id('out')).target, s.id('two'), 'a reload of the same show keeps it');
+  assert.equal(r.engine.byId.get(s.id('out'))!.target, s.id('two'), 'a reload of the same show keeps it');
   r.engine.reset();
-  assert.equal(r.engine.byId.get(s.id('out')).target, s.id('one'), 'Reset puts it back');
+  assert.equal(r.engine.byId.get(s.id('out'))!.target, s.id('one'), 'Reset puts it back');
 });
 
 test('a Devamp can start the next cue as the loop ends: a region, and a sound that loops whole', () => {
@@ -309,7 +315,7 @@ test('a Devamp can start the next cue as the loop ends: a region, and a sound th
   r.engine.go();
   r.engine.setExact(s.id('track'), true);
   r.advance(23);                                             // 5 s into its second pass of 10–18
-  assert.equal(Math.round(r.engine.positionOf(r.engine.running.get(s.id('track')))), 15);
+  assert.equal(Math.round(r.engine.positionOf(r.engine.running.get(s.id('track'))!)), 15);
   r.engine.go();                                             // the Devamp
   assert.equal(r.engine.playhead, s.id('more'), 'the playhead passes the cue that will start');
   assert.ok(!r.audio.playing.has(s.id('hit')));

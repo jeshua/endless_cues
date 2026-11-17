@@ -40,7 +40,7 @@ test('a desk is made safe to keep: values in range, nonsense dropped; no crossfa
 
 test('a Mix cue keeps a desk beside its levels', () => {
   const { doc, id } = build([{ op: 'cue.add', ref: 'm', cue: { type: 'mix', levels: { music: -6 }, desk: { buses: { music: { filter: -2 } }, crossfader: 1 }, duration: 4 } }]);
-  const cue = doc.lists[0].cues.find((c) => c.id === id('m'));
+  const cue = doc.lists[0].cues.find((c) => c.id === id('m'))!;
   assert.deepStrictEqual(cue.desk, { buses: { music: { filter: -1 } }, crossfader: 1 });
   assert.ok(cueTypes.TYPES.mix.fields.some((f) => f.key === 'desk'));
 });
@@ -71,7 +71,7 @@ test('a button answers a key, a note on, or a controller pressed; never the rele
 });
 
 test('a controller moves a control across its travel, its rest in the middle where it has one', () => {
-  const cc = (to, value) => map.actionOf(to, { type: 'cc', value });
+  const cc = (to: string, value: number) => map.actionOf(to, { type: 'cc', value }) as Extract<ReturnType<typeof map.actionOf>, { value: number }>;
   assert.deepStrictEqual(cc('fader:music', 0), { op: 'desk-live', key: 'db', value: -60, name: 'music' });
   assert.deepStrictEqual(cc('fader:music', 127), { op: 'desk-live', key: 'db', value: 12, name: 'music' });
   assert.ok(Math.abs(cc('fader:music', 85).value) <= 1.5, 'unity is about two thirds up');

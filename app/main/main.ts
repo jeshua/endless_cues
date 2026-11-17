@@ -16,6 +16,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createHost } from './host';
+import type { HostCommand, HostResult } from './host';
+import type { Relay } from './preload';
 import { createAssistant, COMPATIBLE, CLI, findBinary } from '../../core/assistant/assistant';
 import { createBridge } from '../../core/assistant/mcp';
 import * as cueTypes from '../../core/show/cue-types';
@@ -26,6 +28,100 @@ import { makeDemo } from '../../examples/make-demo';
 import { showFolderFrom } from '../../core/show/picked';
 import { createReports } from './report';
 import { createAppUpdates } from './updates';
+import type { ReportCommand, Reports } from './report';
+import type { UpdateCommand } from './updates';
+import type { UpdateConfig } from '../../core/update/updates';
+
+/** This computer's settings (config.json in userData): never a show's. */
+export interface AppConfig extends UpdateConfig {
+  lastShow?: string | null;
+  recent?: string[];
+  audioDevice?: string;
+  audioDeviceLabel?: string;
+  skipLights?: boolean;
+  /** outputs held back for a rehearsal: { osc, midi, timecode, dmx } */
+  overrides?: Record<string, boolean>;
+  remoteSalt?: string;
+  /** which show folders are this computer's own (core/show/trust.js) */
+  shows?: Record<string, string | true>;
+  assistant?: AssistantSettings;
+  keys?: KeyOver;
+  theme?: string;
+  view?: ViewSettings;
+  folds?: Record<string, string[]>;
+  listZoom?: Record<string, number>;
+  /** the stage's display (app/main/stage.js) */
+  stage?: { open?: boolean; display?: string | null; label?: string };
+  clientId?: string;
+}
+/** How the window is drawn on this computer: the row size, the Live view, the assistant's face and its hint. */
+export interface ViewSettings { rowSize?: string; live?: boolean; qirx?: boolean; qirxHint?: boolean; [key: string]: unknown }
+/** The assistant as this computer has it set up; its keys sealed by the keychain, under the provider they belong to. */
+interface AssistantSettings {
+  provider?: string; endpoint?: string; baseURL?: string; model?: string; cloudEmail?: string; autoApply?: boolean; agents?: boolean;
+  secrets?: Record<string, string>; models?: Record<string, { model: string; baseURL: string }>;
+}
+/** The assistant's configuration as the code uses it (core/assistant/assistant.js `config`): keys in the clear, in memory only. */
+interface AssistantRun {
+  provider: string; endpoint: string; baseURL: string; model: string; autoApply: boolean; agents: boolean; mcpServer: typeof mcpServer;
+  version: string; email: string; cloudSignedOut: () => void; token?: string; apiKey?: string;
+}
+/** A change to it, from Settings ▸ Assistant (keys in the clear, on their way to being sealed). */
+type AssistantChange = Partial<Omit<AssistantSettings, 'secrets' | 'models' | 'provider'>> & { provider?: string | null; token?: string; apiKey?: string };
+/** An item of the right-click menu on a cue (the window says what to show; `id` comes back when it is picked). */
+export interface CueMenuItem { id?: string; label?: string; sep?: boolean; enabled?: boolean; checked?: boolean; submenu?: CueMenuItem[] }
+/** What only the app shell can do (`window.ec.app`): file dialogs, opening shows, this computer's settings. */
+export type AppCommand =
+  | { op: 'open' | 'new' | 'demo' | 'relink' | 'save-as' | 'recent' | 'reveal' | 'log' | 'issue' | 'issue-dismiss' | 'log-reveal' | 'backups-reveal' | 'pick-picture' }
+  | { op: 'cloud-sign-in' | 'cloud-cancel' | 'cloud-sign-out' | 'cloud-usage' }
+  | { op: 'open-path'; path: string }
+  | { op: 'import-qlab' | 'start-in-folder' | 'template-save' | 'template-new' | 'settings-export' | 'settings-import' | 'playlog-export'; path?: string }
+  | { op: 'copy-text'; text: string }
+  | { op: 'own-window'; inspector?: boolean; list?: string; name?: string }
+  | { op: 'cue-menu'; items: CueMenuItem[] }
+  | ({ op: 'import' } & ImportPlace)
+  | { op: 'native-edit'; what: string }
+  | { op: 'pick-sound'; accept?: string }
+  | { op: 'keys'; keys: KeyOver | null }
+  | { op: 'view'; view: Partial<ViewSettings> }
+  | { op: 'folds'; dir: string; ids?: string[] }
+  | { op: 'list-zoom'; dir: string; z?: number }
+  | { op: 'theme'; theme: string }
+  | { op: 'assistant-config'; config?: AssistantChange & Record<string, unknown> }
+  | ReportCommand
+  | UpdateCommand;
+/** Where sounds added from the dialog go (the list's + Sounds, a track's + Sounds). */
+interface ImportPlace { after?: string | null; bus?: string | null; list?: string | null; cell?: string | null }
+/** A person's own keys: { actionId: [combo…] }. */
+export type KeyOver = Record<string, string[] | undefined>;
+/** What the window is told of the app once, as it opens (`window.ec.init`). */
+export interface AppInfo {
+  version: string; build: { commit?: string; date?: string; [key: string]: unknown } | null; platform: NodeJS.Platform; smoke: boolean;
+  keys: KeyOver;
+  view: { rowSize: string; live: boolean; qirx: boolean; qirxHint: boolean };
+  types: typeof cueTypes.TYPES; typeOrder: typeof cueTypes.TYPE_ORDER; common: typeof cueTypes.COMMON; colors: typeof cueTypes.COLORS; palette: typeof cueTypes.PALETTE;
+  devices: ReturnType<typeof import('../../core/net/devices').list>;
+  sound: {
+    tools: Chain['TOOLS']; eq: Chain['EQ_BANDS']; presets: Chain['PRESETS']; offer: Chain['OFFER']; sweepable: Chain['SWEEPABLE'];
+    kinds: Kinds['KINDS']; kindOrder: Kinds['KIND_ORDER']; kindDefaults: Record<string, ReturnType<Kinds['defaultsOf']>>; ducking: Kinds['DUCKING'];
+  };
+  rig: { fields: RigDevices['FIELDS']; commandFields: RigDevices['COMMAND_FIELDS']; paramFields: RigDevices['PARAM_FIELDS']; aliveFields: RigDevices['ALIVE_FIELDS']; reportFields: RigDevices['REPORT_FIELDS']; kinds: RigDevices['KINDS']; vias: RigDevices['VIAS'] };
+  kit: { options: typeof import('../../core/kit/kit').OPTIONS } | null;
+  fixtures: boolean;
+  theme: string; themes: string[];
+  // (a test window has only the built-in helper: no more than provider and providers)
+  assistant: Pick<ReturnType<typeof assistantInfo>, 'provider' | 'providers'> & Partial<ReturnType<typeof assistantInfo>>;
+  updates: ReturnType<Updates['settings']> | null;
+}
+type Chain = typeof import('../../core/audio/chain');
+type Kinds = typeof import('../../core/audio/kinds');
+type RigDevices = typeof import('../../core/rig/devices');
+type Host = ReturnType<typeof createHost>;
+type Item = Electron.MenuItemConstructorOptions;
+type Assistant = ReturnType<typeof createAssistant>;
+type Updates = ReturnType<typeof createAppUpdates>;
+// (a test run's right-click menu: what would have been shown, and what to pick from it)
+declare global { var ecCueMenu: { items: CueMenuItem[]; picks: (string | null)[] } | undefined }
 
 const SMOKE = process.argv.some((a) => a.startsWith('--smoke'));
 // A virtual user's session (test/users): the app as the smoke test runs it, driven through app/main/drive.js.
@@ -35,7 +131,7 @@ const TEST = SMOKE || !!DRIVE;
 const RENDERER = path.join(__dirname, '../renderer');
 import VERSION_json from '../../package.json'; const VERSION = VERSION_json.version;
 // A packaged build carries which commit it was made from and when (bin/release.js writes it; a run from source has none)
-let BUILD = null;
+let BUILD: AppInfo['build'] = null;
 try { BUILD = require('../build-info.json'); } catch { /* run from source */ }
 const SOUND_EXT = ['wav', 'aif', 'aiff', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus'];
 const MAC = process.platform === 'darwin';
@@ -60,7 +156,7 @@ else if (!MAC && !TEST) app.on('second-instance', (_e, argv) => {
   if (p) openFromDesktop(p);
 });
 /** The show (or QLab workspace) named on a command line: a ….ecshow folder, the show.json inside one, or a workspace file. */
-function showArg(args) {
+function showArg(args: string[]) {
   const p = args.find((a) => !a.startsWith('-') && /(\.ecshow[\\/]?|[\\/]show\.json|\.qlab[45](backup)?)$/i.test(a) && fs.existsSync(a));
   return p ? path.resolve(p) : null;
 }
@@ -73,17 +169,17 @@ app.on('web-contents-created', (_e, wc) => navigation.guard(wc, { open: (url) =>
 
 // ── per-computer settings ───────────────────────────────────────────────
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
-let config = {};
+let config: AppConfig = {};
 function loadConfig() { try { config = JSON.parse(fs.readFileSync(configPath(), 'utf8')); } catch { config = {}; } }
-function saveConfig(change) {
+function saveConfig(change: Partial<AppConfig>) {
   Object.assign(config, change);
-  try { fs.mkdirSync(path.dirname(configPath()), { recursive: true }); fs.writeFileSync(configPath(), JSON.stringify(config, null, 2)); } catch (err) { log(`[config] ${err.message}`); }
+  try { fs.mkdirSync(path.dirname(configPath()), { recursive: true }); fs.writeFileSync(configPath(), JSON.stringify(config, null, 2)); } catch (err) { log(`[config] ${(err as Error).message}`); }
 }
 
-const logLines = [];
+const logLines: string[] = [];
 // something gone wrong, for the status bar's "Report it?" (core/report/issues.js): the window is told, and asks
-const issues = require('../../core/report/issues').createIssues();
-function log(line) {
+const issues = (require('../../core/report/issues') as typeof import('../../core/report/issues')).createIssues();
+function log(line: string) {
   const text = `${new Date().toISOString().slice(11, 23)} ${line}`;
   logLines.push(text); if (logLines.length > 2000) logLines.shift();
   try { if (issues.seen(text) && win && !win.isDestroyed()) win.webContents.send('ec-menu', 'issue'); } catch { /* before the window: it asks when it opens */ }
@@ -93,27 +189,27 @@ function log(line) {
 
 // The assistant's keys are this computer's, never a show's, and are kept encrypted by the OS keychain
 // (safeStorage) when it offers one. `secrets` in config.json is { name: base64 ciphertext }.
-const SECRET_FIELDS = ['token', 'apiKey'];
-function sealed(value) { return safeStorage.isEncryptionAvailable() ? `enc:${safeStorage.encryptString(value).toString('base64')}` : `plain:${value}`; }
-function unsealed(stored) {
+const SECRET_FIELDS = ['token', 'apiKey'] as const;
+function sealed(value: string) { return safeStorage.isEncryptionAvailable() ? `enc:${safeStorage.encryptString(value).toString('base64')}` : `plain:${value}`; }
+function unsealed(stored: string | undefined) {
   if (!stored) return '';
   try { return stored.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64')) : stored.replace(/^plain:/, ''); } catch { return ''; }
 }
 /** The assistant's configuration as the code uses it (keys in the clear, in memory only). */
 function assistantConfig() {
-  const a = config.assistant || { provider: 'off' };
-  const out = { provider: a.provider || 'off', endpoint: a.endpoint || '', baseURL: a.baseURL || '', model: a.model || '', autoApply: !!a.autoApply, agents: !!a.agents, mcpServer,
+  const a: AssistantSettings = config.assistant || { provider: 'off' };
+  const out: AssistantRun = { provider: a.provider || 'off', endpoint: a.endpoint || '', baseURL: a.baseURL || '', model: a.model || '', autoApply: !!a.autoApply, agents: !!a.agents, mcpServer,
                 version: VERSION, email: a.cloudEmail || '', cloudSignedOut: () => setTimeout(cloudForget, 0) };
   for (const f of SECRET_FIELDS) out[f] = unsealed((a.secrets || {})[`${a.provider}:${f}`]);
   return out;
 }
 /** Change it: a key that is given is sealed under the provider it belongs to; switching provider keeps each one's own key and model. */
-function setAssistantConfig(change) {
-  const a = { ...(config.assistant || {}) };
+function setAssistantConfig(change: AssistantChange) {
+  const a: AssistantSettings = { ...(config.assistant || {}) };
   a.secrets = { ...(a.secrets || {}) };
   a.models = { ...(a.models || {}) };
   if (change.provider) { if (a.provider) a.models[a.provider] = { model: a.model || '', baseURL: a.baseURL || '' }; a.provider = change.provider; Object.assign(a, { model: '', baseURL: '' }, a.models[change.provider] || {}); }
-  for (const k of ['endpoint', 'baseURL', 'model', 'cloudEmail']) if (k in change) a[k] = String(change[k] || '').trim();
+  for (const k of ['endpoint', 'baseURL', 'model', 'cloudEmail'] as const) if (k in change) a[k] = String(change[k] || '').trim();
   if ('autoApply' in change) a.autoApply = !!change.autoApply;
   if ('agents' in change) a.agents = !!change.agents;
   for (const f of SECRET_FIELDS) if (f in change) { if (change[f]) a.secrets[`${a.provider}:${f}`] = sealed(String(change[f]).trim()); else delete a.secrets[`${a.provider}:${f}`]; }
@@ -136,7 +232,7 @@ import * as cloud from '../../core/assistant/cloud';
 // (a test run never reaches the service: a port nothing listens on, so no network is what it meets)
 const cloudEndpoint = () => (TEST ? 'http://127.0.0.1:9' : process.env.EC_CLOUD_ENDPOINT || (config.assistant || {}).endpoint || cloud.ENDPOINT);
 const cloudClient = () => cloud.client({ endpoint: cloudEndpoint(), version: VERSION });
-let cloudFlow = null;
+let cloudFlow: ReturnType<typeof cloud.signIn> | null = null;
 /** Sign in: a code, the browser, then the token (sealed, this computer's) once it is confirmed there. */
 function cloudSignIn() {
   if (!TEST && (config.assistant || {}).provider === 'cloud' && assistantConfig().token) return { ok: true, signedIn: true };     // (already: nothing to do)
@@ -180,33 +276,34 @@ async function cloudUsage() {
     assistant.setAccount({ usage });
     return { usage };
   } catch (err) {
-    if (err.status === 401) cloudForget();
-    return { usage: null, error: cloud.said(err) };
+    if ((err as cloud.CloudError).status === 401) cloudForget();
+    return { usage: null, error: cloud.said(err as cloud.CloudError) };
   }
 }
 
 // ── the door for coding agents (Claude Code, Codex): bin/ec-mcp.js talks to the app through this ──────────
 const MCP_SCRIPT = path.join(__dirname, '../../bin/ec-mcp.js');
-let bridge = null;
+let bridge: ReturnType<typeof createBridge> | null = null;
 /** How an agent this app starts reaches our tools: this same program, run as plain Node, running the MCP server. */
 // (a driven session that may use the network has a door of its own, in its own settings folder: a real model can then be tried in it without touching the door of an app a person has open)
 const DRIVE_DOOR = DRIVE_NET ? path.join(path.resolve(DRIVE), 'settings', 'agent-bridge.json') : null;
-function mcpServer(session, client) { return { command: process.execPath, args: [MCP_SCRIPT, '--session', session, '--client', client, '--no-instructions'], env: { ELECTRON_RUN_AS_NODE: '1', ...(DRIVE_DOOR ? { EC_BRIDGE_FILE: DRIVE_DOOR } : {}) } }; }
+function mcpServer(session: string, client: string) { return { command: process.execPath, args: [MCP_SCRIPT, '--session', session, '--client', client, '--no-instructions'], env: { ELECTRON_RUN_AS_NODE: '1', ...(DRIVE_DOOR ? { EC_BRIDGE_FILE: DRIVE_DOOR } : {}) } }; }
 /** Open the door while it is wanted (agents allowed, or the assistant is one of them), shut it otherwise. */
 async function syncBridge() {
   const a = config.assistant || {};
-  const want = TEST ? !!(DRIVE_DOOR && assistant && CLI[assistant.config.provider]) : (!!a.agents || !!CLI[a.provider]);
+  const want = TEST ? !!(DRIVE_DOOR && assistant && CLI[assistant.config.provider!]) : (!!a.agents || !!CLI[a.provider!]);
   if (want && !(bridge && bridge.running)) {
     bridge = createBridge({ ...(DRIVE_DOOR ? { file: DRIVE_DOOR } : {}), call: (session, name, input, client) => host.agentCall(session, name, input, client), log: (l) => log(`[bridge] ${l}`) });
-    try { await bridge.start(); log('[bridge] open for coding agents on this computer'); } catch (err) { log(`[bridge] could not open: ${err.message}`); }
+    try { await bridge.start(); log('[bridge] open for coding agents on this computer'); } catch (err) { log(`[bridge] could not open: ${(err as Error).message}`); }
   } else if (!want && bridge && bridge.running) { bridge.stop(); log('[bridge] closed'); }
 }
 
-let win = null;
-let host = null;
-let assistant = null;
-let reports = null;               // Report a problem (app/main/report.js)
-let updates = null;               // new versions (app/main/updates.js)
+let win: BrowserWindow | null = null;
+// (made as the app is ready, before any window or menu that uses them)
+let host!: Host;
+let assistant!: Assistant;
+let reports!: Reports;            // Report a problem (app/main/report.js)
+let updates: Updates | null = null;               // new versions (app/main/updates.js)
 let quitAskedAt = 0;
 let quitting = false;               // a quit that nothing has refused is under way: windows may close
 
@@ -222,9 +319,9 @@ function createWindow() {
   });
   win.loadURL('ec://app/index.html');
   host.addView(win.webContents);
-  if (!TEST) win.once('ready-to-show', () => win.show());
+  if (!TEST) win.once('ready-to-show', () => win!.show());
   win.webContents.on('render-process-gone', (_e, d) => { log(`[window] the window's page died (${d.reason}); reloading`); setTimeout(() => { if (win && !win.isDestroyed()) win.reload(); }, 300); });
-  win.webContents.on('console-message', (e) => { if (e.level === 'error' || e.level === 3 || SMOKE) log(`[page] ${e.message}`); });
+  win.webContents.on('console-message', (e) => { if (e.level === 'error' || Number(e.level) === 3 || SMOKE) log(`[page] ${e.message}`); });
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   // (a stage left up on the projector with no window to run it from would be worse than a dark one)
   // Closing the main window is quitting: the hidden audio window would otherwise keep the app alive with nothing
@@ -237,9 +334,9 @@ function createWindow() {
 // ── more windows on the same show ───────────────────────────────────────
 // A list (or a cart) or the inspector in a window of its own: the same page with a word in its address saying what
 // to draw, and one more view of the host. Closing one changes nothing; the show lives in the host.
-const ownWindows = new Map();       // 'list:<id>' | 'inspector' -> BrowserWindow
-function everyWindow() { return [win, ...ownWindows.values()].filter((w) => w && !w.isDestroyed()); }
-function openOwnWindow(kind, { list = '', name = '' } = {}) {
+const ownWindows = new Map<string, BrowserWindow>();       // 'list:<id>' | 'inspector' -> BrowserWindow
+function everyWindow() { return [win, ...ownWindows.values()].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()); }
+function openOwnWindow(kind: 'inspector' | 'list', { list = '', name = '' } = {}) {
   const key = kind === 'inspector' ? 'inspector' : `list:${list}`;
   const had = ownWindows.get(key);
   if (had && !had.isDestroyed()) { if (!TEST) had.focus(); return had; }
@@ -254,7 +351,7 @@ function openOwnWindow(kind, { list = '', name = '' } = {}) {
   const wc = w.webContents;
   if (!TEST) w.once('ready-to-show', () => w.show());
   wc.on('render-process-gone', () => setTimeout(() => { if (!w.isDestroyed()) w.reload(); }, 300));
-  wc.on('console-message', (e) => { if (e.level === 'error' || e.level === 3 || SMOKE) log(`[page] ${e.message}`); });
+  wc.on('console-message', (e) => { if (e.level === 'error' || Number(e.level) === 3 || SMOKE) log(`[page] ${e.message}`); });
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   ownWindows.set(key, w);
   const told = () => { if (kind === 'inspector' && win && !win.isDestroyed()) win.webContents.send('ec-relay', { inspectorOut: ownWindows.has('inspector') }); };
@@ -265,25 +362,25 @@ function openOwnWindow(kind, { list = '', name = '' } = {}) {
 
 // ── opening and saving shows ────────────────────────────────────────────
 const SHOWS_DIR = () => path.join(app.getPath('documents'), 'Endless Cues');
-function openShow(dir) {
+function openShow(dir: string): HostResult {
   try { host.open(dir); return { ok: true }; }
-  catch (err) { log(`[show] could not open ${dir}: ${err.stack || err}`); dialog.showErrorBox('Could not open the show', `${dir}\n\n${err.message}`); return { error: err.message }; }
+  catch (err) { log(`[show] could not open ${dir}: ${(err as Error).stack || err}`); dialog.showErrorBox('Could not open the show', `${dir}\n\n${(err as Error).message}`); return { error: (err as Error).message }; }
 }
-async function pickShow() {
+async function pickShow(): Promise<HostResult> {
   // a show is a package on a Mac (chosen like a file) and a folder everywhere else, or when it is not named .ecshow:
   // both are allowed (Windows and Linux show a folder chooser for this pair), and picked.js says which was meant
-  const r = await dialog.showOpenDialog(win, { title: 'Open a show', defaultPath: SHOWS_DIR(), properties: ['openFile', 'openDirectory'], message: 'Choose a show (….ecshow)' });
+  const r = await dialog.showOpenDialog(win!, { title: 'Open a show', defaultPath: SHOWS_DIR(), properties: ['openFile', 'openDirectory'], message: 'Choose a show (….ecshow)' });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
   const p = showFolderFrom(r.filePaths[0]);
-  return p.error ? { error: p.error } : openShow(p.dir);
+  return 'error' in p ? { error: p.error } : openShow(p.dir);
 }
-async function saveShowAs() {
+async function saveShowAs(): Promise<HostResult> {
   fs.mkdirSync(SHOWS_DIR(), { recursive: true });
-  const r = await dialog.showSaveDialog(win, { title: 'Save the show as', defaultPath: path.join(SHOWS_DIR(), `${host.document.doc.title || 'Untitled'}.ecshow`), buttonLabel: 'Save', nameFieldLabel: 'Show name:' });
+  const r = await dialog.showSaveDialog(win!, { title: 'Save the show as', defaultPath: path.join(SHOWS_DIR(), `${host.document.doc.title || 'Untitled'}.ecshow`), buttonLabel: 'Save', nameFieldLabel: 'Show name:' });
   if (r.canceled || !r.filePath) return { canceled: true };
   const dir = r.filePath.endsWith('.ecshow') ? r.filePath : `${r.filePath}.ecshow`;
   if (fs.existsSync(path.join(dir, 'show.json'))) return { error: 'There is already a show there.' };
-  try { host.saveAs(dir); return { ok: true }; } catch (err) { return { error: err.message }; }
+  try { host.saveAs(dir); return { ok: true }; } catch (err) { return { error: (err as Error).message }; }
 }
 /** Start from a Folder…: any folder becomes a show (a show.json is written beside what is in it; nothing is moved
  *  or copied). A folder that is already a show is opened as it is. The sounds in it are not made into cues: the
@@ -292,16 +389,16 @@ async function saveShowAs() {
 // (the pickers for sounds, pictures and a folder to look in go inside a show, which a Mac shows as one file: a show's
 // media are where people keep their sounds; `treatPackageAsDirectory` is macOS's and ignored elsewhere)
 async function findMissing() {
-  const r = await dialog.showOpenDialog(win, { title: 'Look for the missing sounds in', properties: ['openDirectory', 'treatPackageAsDirectory'] });
+  const r = await dialog.showOpenDialog(win!, { title: 'Look for the missing sounds in', properties: ['openDirectory', 'treatPackageAsDirectory'] });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
   const x = host.cmd({ op: 'relink', dir: r.filePaths[0] });
   host.notice(x.error || `${x.found} of ${x.missing} missing sound${x.missing === 1 ? '' : 's'} found there${x.found ? ' (not saved until you save)' : ''}.`, 7000);
   return x;
 }
 
-async function startInFolder(dir) {
+async function startInFolder(dir?: string): Promise<HostResult> {
   if (!dir) {
-    const r = await dialog.showOpenDialog(win, { title: 'Start from a folder', properties: ['openDirectory', 'createDirectory'], buttonLabel: 'Start here',
+    const r = await dialog.showOpenDialog(win!, { title: 'Start from a folder', properties: ['openDirectory', 'createDirectory'], buttonLabel: 'Start here',
       message: 'The folder your sounds are in becomes the show. Nothing is moved or copied.' });
     if (r.canceled || !r.filePaths[0]) return { canceled: true };
     dir = r.filePaths[0];
@@ -318,21 +415,21 @@ function openDemo() {
   return openShow(dir);
 }
 /** A QLab 5 workspace, read from its file and opened as a new, unsaved show. */
-function importQlabFile(file) {
+function importQlabFile(file: string) {
   try {
-    const { importQlab } = require('../../core/import/qlab');
+    const { importQlab } = require('../../core/import/qlab') as typeof import('../../core/import/qlab');
     const { doc, report } = importQlab(fs.readFileSync(file), { file });
     host.openImported(doc, report);
     return { ok: true, report };
-  } catch (err) { log(`[show] could not import ${file}: ${err.stack || err}`); dialog.showErrorBox('Could not import the workspace', `${file}\n\n${err.message}`); return { error: err.message }; }
+  } catch (err) { log(`[show] could not import ${file}: ${(err as Error).stack || err}`); dialog.showErrorBox('Could not import the workspace', `${file}\n\n${(err as Error).message}`); return { error: (err as Error).message }; }
 }
 async function pickQlab() {
-  const r = await dialog.showOpenDialog(win, { title: 'Import a QLab workspace', properties: ['openFile'], filters: [{ name: 'QLab 4 or 5 workspace', extensions: ['qlab5', 'qlab5backup', 'qlab4', 'qlab4backup'] }] });
+  const r = await dialog.showOpenDialog(win!, { title: 'Import a QLab workspace', properties: ['openFile'], filters: [{ name: 'QLab 4 or 5 workspace', extensions: ['qlab5', 'qlab5backup', 'qlab4', 'qlab4backup'] }] });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
   return importQlabFile(r.filePaths[0]);
 }
-async function importSounds(c = {}) {
-  const r = await dialog.showOpenDialog(win, { title: 'Add sounds', properties: ['openFile', 'multiSelections', 'treatPackageAsDirectory'], filters: [{ name: 'Sound', extensions: SOUND_EXT }] });
+async function importSounds(c: ImportPlace = {}) {
+  const r = await dialog.showOpenDialog(win!, { title: 'Add sounds', properties: ['openFile', 'multiSelections', 'treatPackageAsDirectory'], filters: [{ name: 'Sound', extensions: SOUND_EXT }] });
   if (r.canceled) return { canceled: true };
   return host.cmd({ op: 'import', paths: r.filePaths, after: c.after || null, bus: c.bus || null, list: c.list || null, cell: c.cell || null });
 }
@@ -340,46 +437,46 @@ async function importSounds(c = {}) {
 // ── templates, settings files, the playback log ─────────────────────────
 import * as templates from '../../core/show/show-templates';
 const TEMPLATES_DIR = () => path.join(app.getPath('userData'), 'templates');
-const writeText = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
+const writeText = (file: string, text: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 /** Where to write: the path given (a test run, which has no dialogs), or the one the person chooses. */
-async function saveTo(given, options) {
+async function saveTo(given: string | undefined, options: Electron.SaveDialogOptions) {
   if (given) return given;
   if (TEST) return null;
-  const r = await dialog.showSaveDialog(win, options);
+  const r = await dialog.showSaveDialog(win!, options);
   return r.canceled || !r.filePath ? null : r.filePath;
 }
-async function openFrom(given, options) {
+async function openFrom(given: string | undefined, options: Electron.OpenDialogOptions) {
   if (given) return given;
   if (TEST) return null;
-  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], ...options });
+  const r = await dialog.showOpenDialog(win!, { properties: ['openFile'], ...options });
   return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
 }
 /** This show kept as a template: its cues, lists and settings, to start other shows from (never its passcodes). */
-async function saveTemplate(given) {
+async function saveTemplate(given?: string) {
   fs.mkdirSync(TEMPLATES_DIR(), { recursive: true });
   let file = await saveTo(given, { title: 'Save this show as a template', defaultPath: path.join(TEMPLATES_DIR(), `${host.document.doc.title || 'Template'}.ectemplate`), buttonLabel: 'Save Template', filters: [{ name: 'Endless Cues template', extensions: ['ectemplate'] }] });
   if (!file) return { canceled: true };
   if (!/\.ectemplate$/i.test(file)) file += '.ectemplate';
-  try { writeText(file, JSON.stringify(host.templateOf(path.basename(file).replace(/\.ectemplate$/i, '')), null, 2) + '\n'); } catch (err) { return { error: err.message }; }
+  try { writeText(file, JSON.stringify(host.templateOf(path.basename(file).replace(/\.ectemplate$/i, '')), null, 2) + '\n'); } catch (err) { return { error: (err as Error).message }; }
   buildMenu();
   host.notice(`Saved as the template “${path.basename(file).replace(/\.ectemplate$/i, '')}”: File ▸ New Show from Template.`, 6000);
   return { ok: true, file };
 }
-async function newFromTemplate(given) {
+async function newFromTemplate(given?: string) {
   const file = await openFrom(given, { title: 'New show from a template', defaultPath: TEMPLATES_DIR(), filters: [{ name: 'Endless Cues template', extensions: ['ectemplate'] }] });
   if (!file) return { canceled: true };
   try { host.openTemplate(templates.showFrom(templates.read(file))); return { ok: true }; }
-  catch (err) { if (!TEST) dialog.showErrorBox('Could not open the template', `${file}\n\n${err.message}`); return { error: err.message }; }
+  catch (err) { if (!TEST) dialog.showErrorBox('Could not open the template', `${file}\n\n${(err as Error).message}`); return { error: (err as Error).message }; }
 }
-async function exportSettings(given) {
+async function exportSettings(given?: string) {
   let file = await saveTo(given, { title: 'Export this show’s settings', defaultPath: path.join(app.getPath('documents'), `${host.document.doc.title || 'Show'} settings.ecsettings`), filters: [{ name: 'Endless Cues settings', extensions: ['ecsettings'] }] });
   if (!file) return { canceled: true };
   if (!/\.ecsettings$/i.test(file)) file += '.ecsettings';
-  try { writeText(file, JSON.stringify(host.settingsFile(), null, 2) + '\n'); } catch (err) { return { error: err.message }; }
+  try { writeText(file, JSON.stringify(host.settingsFile(), null, 2) + '\n'); } catch (err) { return { error: (err as Error).message }; }
   host.notice('Settings exported: buses, patches, GO, MIDI and modules (no passcodes or keys).', 6000);
   return { ok: true, file };
 }
-async function importSettings(given) {
+async function importSettings(given?: string) {
   const file = await openFrom(given, { title: 'Import settings into this show', filters: [{ name: 'Endless Cues settings', extensions: ['ecsettings', 'json'] }] });
   if (!file) return { canceled: true };
   let data;
@@ -388,19 +485,19 @@ async function importSettings(given) {
   if (r && !r.error) host.notice(r.changed ? `Settings from “${data.from || path.basename(file)}” are in this show, not saved yet (undo puts the old ones back).` : 'Those settings are the ones this show already has.', 7000);
   return r;
 }
-async function exportPlaylog(given) {
-  const d = new Date(), p2 = (n) => String(n).padStart(2, '0');
+async function exportPlaylog(given?: string) {
+  const d = new Date(), p2 = (n: number) => String(n).padStart(2, '0');
   const file = await saveTo(given, { title: 'Export the playback log', defaultPath: path.join(app.getPath('documents'), `${host.document.doc.title || 'Show'} playback log ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}.csv`), filters: [{ name: 'CSV', extensions: ['csv'] }] });
   if (!file) return { canceled: true };
-  try { writeText(file, host.playlogCsv()); } catch (err) { return { error: err.message }; }
+  try { writeText(file, host.playlogCsv()); } catch (err) { return { error: (err as Error).message }; }
   return { ok: true, file };
 }
-const failed = (title) => (r) => { if (r && r.error && !TEST) dialog.showErrorBox(title, r.error); };
+const failed = (title: string) => (r: HostResult | undefined) => { if (r && r.error && !TEST) dialog.showErrorBox(title, r.error); };
 
 // How the window is drawn on this computer (config.json's `view`): the row size, and whether the Live view is shown.
 // The Live view (the mixing desk, tempo finding, warp) is off until it is asked for: docs/specs/00-defaults.md.
 const liveView = () => !!(config.view || {}).live;
-function setView(change) {
+function setView(change: Partial<ViewSettings> | null | undefined) {
   const v = { ...(config.view || {}), ...(change && typeof change === 'object' ? change : {}) };
   if (SMOKE || TEST) config.view = v; else saveConfig({ view: v });
   buildMenu();
@@ -411,21 +508,21 @@ function setView(change) {
 function buildMenu() {
   const kept = templates.list(TEMPLATES_DIR());
   const held = Object.fromEntries(host.snapshot(false).overrides.map((o) => [o.id, o]));
-  const hold = (id) => ({ label: `Hold Back ${held[id].label.replace(' out', ' Out')}`, type: 'checkbox', checked: held[id].on, click: () => { host.cmd({ op: 'override', what: id }); buildMenu(); } });
+  const hold = (id: string): Item => ({ label: `Hold Back ${held[id].label.replace(' out', ' Out')}`, type: 'checkbox', checked: held[id].on, click: () => { host.cmd({ op: 'override', what: id }); buildMenu(); } });
   const recent = (config.recent || []).filter((p) => fs.existsSync(path.join(p, 'show.json')));
-  const send = (action) => () => { if (win && !win.isDestroyed()) win.webContents.send('ec-menu', action); };
+  const send = (action: string) => () => { if (win && !win.isDestroyed()) win.webContents.send('ec-menu', action); };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(MAC ? [{ label: APP_NAME, submenu: [
       { role: 'about' }, { type: 'separator' },
       { label: 'Settings…', accelerator: KEY('settings'), click: send('settings') },
       { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' },
-    ] }] : []),
+    ] }] satisfies Item[] : []),
     { label: 'File', submenu: [
       { label: 'New Show', accelerator: KEY('newShow'), click: () => host.openUntitled() },
       { label: 'Open…', accelerator: KEY('open'), click: () => pickShow().then((r) => r && r.error && dialog.showErrorBox('Open', r.error)) },
       { label: 'Open Recent', submenu: recent.length ? recent.map((p) => ({ label: path.basename(p), click: () => openShow(p) })) : [{ label: 'None', enabled: false }] },
       { label: 'Open the Demo Show', click: openDemo },
-      { label: 'New Show from Template', submenu: [...kept.map((t) => ({ label: t.name, click: () => newFromTemplate(t.file) })), ...(kept.length ? [{ type: 'separator' }] : []), { label: 'Choose a Template File…', click: () => newFromTemplate() }] },
+      { label: 'New Show from Template', submenu: [...kept.map((t) => ({ label: t.name, click: () => newFromTemplate(t.file) })), ...(kept.length ? [{ type: 'separator' }] satisfies Item[] : []), { label: 'Choose a Template File…', click: () => newFromTemplate() }] },
       { label: 'Import a QLab Workspace…', click: () => pickQlab() },
       { label: 'Start from a Folder…', click: () => startInFolder().then((r) => r && r.error && dialog.showErrorBox('Start from a folder', r.error)) },
       { type: 'separator' },
@@ -441,7 +538,7 @@ function buildMenu() {
       { type: 'separator' },
       { label: 'Add Sounds…', accelerator: KEY('addSounds'), click: () => importSounds() },
       { label: MAC ? 'Show in Finder' : 'Show in Folder', click: () => { if (host.document.showDir) shell.showItemInFolder(path.join(host.document.showDir, 'show.json')); } },
-      ...(MAC ? [] : [{ type: 'separator' }, { label: 'Settings…', accelerator: KEY('settings'), click: send('settings') }, { role: 'quit' }]),
+      ...(MAC ? [] : [{ type: 'separator' }, { label: 'Settings…', accelerator: KEY('settings'), click: send('settings') }, { role: 'quit' }] satisfies Item[]),
     ] },
     // the roles act on a text field being typed in; in the list, the page's own keys do undo / redo
     // Cut, Copy and Paste are the page's to decide: text in a field being typed in, cues anywhere else
@@ -489,7 +586,7 @@ function buildMenu() {
       { role: 'minimize' }, { role: 'zoom' }, { type: 'separator' },
       { label: 'This List in Its Own Window', accelerator: KEY('ownList'), click: send('own-list') },
       { label: 'Inspector in Its Own Window', accelerator: KEY('ownInspector'), click: () => openOwnWindow('inspector') },
-      ...(MAC ? [{ type: 'separator' }, { role: 'front' }] : [{ type: 'separator' }, { role: 'close' }]),
+      ...(MAC ? [{ type: 'separator' }, { role: 'front' }] satisfies Item[] : [{ type: 'separator' }, { role: 'close' }] satisfies Item[]),
     ] },
     { role: 'help', submenu: [
       { label: 'Keyboard Shortcuts', click: send('help-keys') },
@@ -498,9 +595,9 @@ function buildMenu() {
       { label: 'Report a Problem…', click: send('report') },
       { label: 'Check for Updates…', click: () => { if (updates) updates.check(); } },
       // (macOS has About in the app's own menu; Windows and Linux have no such menu)
-      ...(MAC ? [] : [{ type: 'separator' }, { role: 'about' }]),
+      ...(MAC ? [] : [{ type: 'separator' }, { role: 'about' }] satisfies Item[]),
     ] },
-  ]));
+  ] satisfies Item[]));
 }
 
 app.whenReady().then(async () => {
@@ -517,37 +614,37 @@ app.whenReady().then(async () => {
   });
 
   assistant = createAssistant({ config: TEST ? { provider: 'demo' } : assistantConfig(), log: (l) => log(`[assistant] ${l}`), changed: () => host && host.cmd({ op: 'state' }) });
-  if (!TEST && (config.assistant || {}).cloudEmail) assistant.setAccount({ email: config.assistant.cloudEmail });
+  if (!TEST && (config.assistant || {}).cloudEmail) assistant.setAccount({ email: config.assistant!.cloudEmail });
   host = createHost({ BrowserWindow, ipcMain, getConfig: () => config, saveConfig: (c) => { if (!SMOKE) { saveConfig(c); if ('recent' in c || 'overrides' in c) buildMenu(); } }, log, smoke: TEST, net: DRIVE_NET, assistant, trash: (p) => shell.trashItem(p), screen, userDir: app.getPath('userData') });
 
   // the keys, asked for once by the preload before the page's modules load (core/ui/keys.js)
   ipcMain.on('ec-ui-tables', (e) => { e.returnValue = { keys: uiKeys.forPage() }; });
-  ipcMain.handle('ec-init', () => ({ version: VERSION, build: BUILD, platform: process.platform, smoke: SMOKE,
+  ipcMain.handle('ec-init', (): AppInfo => ({ version: VERSION, build: BUILD, platform: process.platform, smoke: SMOKE,
     keys: config.keys || {},
-    view: { rowSize: ['compact', 'normal', 'large'].includes((config.view || {}).rowSize) ? config.view.rowSize : 'normal', live: liveView(),
+    view: { rowSize: ['compact', 'normal', 'large'].includes((config.view || {}).rowSize!) ? config.view!.rowSize! : 'normal', live: liveView(),
       // the assistant's face in the side panel (docs/brand-assistant.md): there unless it has been hidden; its one hint, until it has been clicked
       qirx: (config.view || {}).qirx !== false, qirxHint: (config.view || {}).qirxHint !== false },
-    types: cueTypes.TYPES, typeOrder: cueTypes.TYPE_ORDER, common: cueTypes.COMMON, colors: cueTypes.COLORS, palette: cueTypes.PALETTE, devices: require('../../core/net/devices').list(),
+    types: cueTypes.TYPES, typeOrder: cueTypes.TYPE_ORDER, common: cueTypes.COMMON, colors: cueTypes.COLORS, palette: cueTypes.PALETTE, devices: (require('../../core/net/devices') as typeof import('../../core/net/devices')).list(),
     // sound design (the tools, the eq's bands, the built-in presets) and the kinds of sound, for the inspector and Settings
-    sound: (() => { const C = require('../../core/audio/chain'), K = require('../../core/audio/kinds'); return { tools: C.TOOLS, eq: C.EQ_BANDS, presets: C.PRESETS, offer: C.OFFER, sweepable: C.SWEEPABLE, kinds: K.KINDS, kindOrder: K.KIND_ORDER, kindDefaults: Object.fromEntries(K.KIND_ORDER.map((k) => [k, K.defaultsOf(k)])), ducking: K.DUCKING }; })(),
+    sound: (() => { const C = require('../../core/audio/chain') as Chain, K = require('../../core/audio/kinds') as Kinds; return { tools: C.TOOLS, eq: C.EQ_BANDS, presets: C.PRESETS, offer: C.OFFER, sweepable: C.SWEEPABLE, kinds: K.KINDS, kindOrder: K.KIND_ORDER, kindDefaults: Object.fromEntries(K.KIND_ORDER.map((k) => [k, K.defaultsOf(k)])), ducking: K.DUCKING }; })(),
     // the Rig: the tables a device is drawn and edited from (core/rig/devices.js; the models are `devices` above), and
     // what the prop kit can be told when it writes firmware (absent in a build without the kit)
-    rig: (() => { const R = require('../../core/rig/devices'); return { fields: R.FIELDS, commandFields: R.COMMAND_FIELDS, paramFields: R.PARAM_FIELDS, aliveFields: R.ALIVE_FIELDS, reportFields: R.REPORT_FIELDS, kinds: R.KINDS, vias: R.VIAS }; })(),
-    kit: (() => { try { return { options: require('../../core/kit/kit').OPTIONS }; } catch { return null; } })(),
+    rig: (() => { const R = require('../../core/rig/devices') as RigDevices; return { fields: R.FIELDS, commandFields: R.COMMAND_FIELDS, paramFields: R.PARAM_FIELDS, aliveFields: R.ALIVE_FIELDS, reportFields: R.REPORT_FIELDS, kinds: R.KINDS, vias: R.VIAS }; })(),
+    kit: (() => { try { return { options: (require('../../core/kit/kit') as typeof import('../../core/kit/kit')).OPTIONS }; } catch { return null; } })(),
     // a test run may lay invented Rig states over what the host pushes, to look at pages no equipment is here to make (app/renderer/Rig.js `layFixture`)
     fixtures: TEST,
-    theme: THEMES.includes(config.theme) ? config.theme : 'lab', themes: THEMES,
+    theme: THEMES.includes(config.theme!) ? config.theme! : 'lab', themes: THEMES,
     assistant: TEST ? { provider: 'demo', providers: {} } : assistantInfo(),
     updates: updates ? updates.settings() : null }));
-  ipcMain.handle('ec-cmd', (_e, c) => host.cmd(c));
+  ipcMain.handle('ec-cmd', (_e, c: HostCommand) => host.cmd(c));
   // a word from one of this show's windows to the others (the selection, for an inspector in a window of its own)
-  ipcMain.on('ec-relay', (e, m) => { for (const w of everyWindow()) if (w.webContents !== e.sender) w.webContents.send('ec-relay', m); });
+  ipcMain.on('ec-relay', (e, m: Relay) => { for (const w of everyWindow()) if (w.webContents !== e.sender) w.webContents.send('ec-relay', m); });
   // Report a problem: nothing is sent until the person presses Send in the form
   reports = createReports({ app, mainWindow: () => win, host, getConfig: () => config, saveConfig, log, logLines: () => logLines.slice(-400), version: VERSION, test: TEST, notice: (t, ms) => host.notice(t, ms) });
-  ipcMain.handle('ec-app', async (_e, c) => {
-    if (c && /^report-/.test(String(c.op))) return reports.handle(c);
-    if (c && /^update-/.test(String(c.op))) return updates.handle(c);
-    switch (c && c.op) {
+  ipcMain.handle('ec-app', async (_e, c: AppCommand) => {
+    if (c && /^report-/.test(String(c.op))) return reports.handle(c as ReportCommand);
+    if (c && /^update-/.test(String(c.op))) return updates!.handle(c as UpdateCommand);
+    switch (c?.op) {
       case 'open': return pickShow();
       case 'open-path': return openShow(c.path);
       case 'new': host.openUntitled(); return { ok: true };
@@ -571,24 +668,24 @@ app.whenReady().then(async () => {
         // (a test run has no screen for a menu: it keeps what would have been shown, and may be handed what to pick)
         if (TEST || !win) { global.ecCueMenu = { items: c.items || [], picks: (global.ecCueMenu || {}).picks || [] }; return { picked: global.ecCueMenu.picks.shift() || null }; }
         return new Promise((resolve) => {
-          let done = false; const end = (picked) => { if (!done) { done = true; resolve({ picked }); } };
+          let done = false; const end = (picked: string | null | undefined) => { if (!done) { done = true; resolve({ picked }); } };
           // (an item may hold a submenu (Colour ▸ …), and may be ticked: the colour a cue has now)
-          const item = (it) => (it.sep ? { type: 'separator' } : it.submenu ? { label: String(it.label), enabled: it.enabled !== false, submenu: it.submenu.map(item) }
+          const item = (it: CueMenuItem): Item => (it.sep ? { type: 'separator' } : it.submenu ? { label: String(it.label), enabled: it.enabled !== false, submenu: it.submenu.map(item) }
             : { label: String(it.label), enabled: it.enabled !== false, ...(it.checked !== undefined ? { type: 'checkbox', checked: !!it.checked } : {}), click: () => end(it.id) });
           const menu = Menu.buildFromTemplate((c.items || []).map(item));
-          menu.popup({ window: win, callback: () => setTimeout(() => end(null), 80) });
+          menu.popup({ window: win!, callback: () => setTimeout(() => end(null), 80) });
         });
       }
       case 'import': return importSounds(c);
-      case 'native-edit': if (win && ['cut', 'copy', 'paste'].includes(c.what)) win.webContents[c.what](); return { ok: true };
+      case 'native-edit': if (win && ['cut', 'copy', 'paste'].includes(c.what)) win.webContents[c.what as 'cut' | 'copy' | 'paste'](); return { ok: true };
       case 'pick-sound': {
         const midi = c.accept === 'midi';
-        const r = await dialog.showOpenDialog(win, { title: midi ? 'Choose a MIDI file' : 'Choose a sound', properties: ['openFile', 'treatPackageAsDirectory'], filters: [midi ? { name: 'MIDI file', extensions: ['mid', 'midi', 'smf'] } : { name: 'Sound', extensions: SOUND_EXT }] });
+        const r = await dialog.showOpenDialog(win!, { title: midi ? 'Choose a MIDI file' : 'Choose a sound', properties: ['openFile', 'treatPackageAsDirectory'], filters: [midi ? { name: 'MIDI file', extensions: ['mid', 'midi', 'smf'] } : { name: 'Sound', extensions: SOUND_EXT }] });
         return r.canceled || !r.filePaths[0] ? { canceled: true } : { file: host.adopt(r.filePaths[0]) };
       }
       case 'pick-picture': {
         const { VIDEO_EXT, IMAGE_EXT } = require('../../core/video/stage');
-        const r = await dialog.showOpenDialog(win, { title: 'Choose a video or an image', properties: ['openFile', 'treatPackageAsDirectory'], filters: [{ name: 'Video or image', extensions: [...VIDEO_EXT, ...IMAGE_EXT] }] });
+        const r = await dialog.showOpenDialog(win!, { title: 'Choose a video or an image', properties: ['openFile', 'treatPackageAsDirectory'], filters: [{ name: 'Video or image', extensions: [...VIDEO_EXT, ...IMAGE_EXT] }] });
         return r.canceled || !r.filePaths[0] ? { canceled: true } : { file: host.adopt(r.filePaths[0]) };
       }
       case 'recent': return { recent: (config.recent || []).filter((p) => fs.existsSync(path.join(p, 'show.json'))).map((p) => ({ path: p, name: path.basename(p).replace(/\.ecshow$/i, '') })) };
@@ -656,7 +753,7 @@ app.whenReady().then(async () => {
   powerSaveBlocker.start('prevent-display-sleep');
 
   if (DRIVE) require('./drive').open({ dir: path.resolve(DRIVE), win, host, log });
-  if (SMOKE) require('./smoke').run({ app, host, win, log, makeDemo }).then((code) => { host.stop(); app.exit(code); });
+  if (SMOKE) require('./smoke').run({ app, host, win, log, makeDemo }).then((code: number) => { host.stop(); app.exit(code); });
 });
 
 // Quitting with unsaved changes asks what to do with them (they are journalled, so even "Cancel" loses nothing).
@@ -666,7 +763,7 @@ async function askToSave() {
   if (TEST || !host || !host.isDirty()) return true;
   const untitled = !host.document.showDir;
   const n = host.document.unsaved().length;
-  const r = dialog.showMessageBoxSync(win, { type: 'warning', buttons: [untitled ? 'Save…' : 'Save', 'Don’t Save', 'Cancel'], defaultId: 0, cancelId: 2,
+  const r = dialog.showMessageBoxSync(win!, { type: 'warning', buttons: [untitled ? 'Save…' : 'Save', 'Don’t Save', 'Cancel'], defaultId: 0, cancelId: 2,
     message: `Save the ${n} unsaved change${n === 1 ? '' : 's'} to “${host.document.doc.title}”?`, detail: untitled ? 'This show is not in a folder yet.' : 'Changes are kept only when you save.' });
   if (r === 2) return false;
   if (r === 1) { host.document.revert(); return true; }
@@ -693,8 +790,8 @@ app.on('will-quit', () => { if (bridge) bridge.stop(); if (updates) updates.stop
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { if (bridge) bridge.stop(); if (host) host.stop(); app.exit(0); });
 app.on('window-all-closed', () => app.quit());
 // a show opened from the desktop (double-clicked, or dropped on the app's icon): a folder ….ecshow, or the show.json in it
-let openWhenReady = null;
-function openFromDesktop(p) {
+let openWhenReady: string | null = null;
+function openFromDesktop(p: string) {
   const qlab = /\.qlab[45](backup)?$/i.test(p);        // a QLab workspace: read into a new, untitled show (the file itself is never changed)
   const dir = qlab ? p : /show\.json$/i.test(p) ? path.dirname(p) : p.replace(/[\\/]+$/, '');
   if (!qlab && !fs.existsSync(path.join(dir, 'show.json'))) return;

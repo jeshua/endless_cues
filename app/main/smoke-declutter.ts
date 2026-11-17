@@ -10,11 +10,13 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { Smoke, Snap } from './smoke';
+import type { Cue } from '../../core/show/types';
 
-async function run({ host, win, check, until, page, sleep, shot, log }) {
-  const snap = () => host.snapshot();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+async function run({ host, win, check, until, page, sleep, shot, log }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot' | 'log'>) {
+  const snap = () => host.snapshot() as Snap;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-declutter-')), 'Demo.ecshow');
   require('../../examples/make-demo').makeDemo(dir);
   host.cmd({ op: 'panic', hard: true });
@@ -24,22 +26,22 @@ async function run({ host, win, check, until, page, sleep, shot, log }) {
   await until(() => page('document.querySelectorAll(".list tbody tr").length >= 10'), 3000);
   win.setContentSize(1600, 1000); await sleep(250);
   const cues = () => host.document.doc.lists[0].cues;
-  const memo = cues().find((c) => c.type === 'memo');
-  const pick = (id) => page(`(() => { const r = document.querySelector('.list tr[data-cue="${id}"] td.c-name'); if (!r) return false; r.click(); return true; })()`);
+  const memo = cues().find((c) => c.type === 'memo')!;
+  const pick = (id: string) => page<boolean>(`(() => { const r = document.querySelector('.list tr[data-cue="${id}"] td.c-name'); if (!r) return false; r.click(); return true; })()`);
 
   // ── colour: six and "…"; a colour from the wheel is kept as #rrggbb and drawn as chosen ──
   await pick(memo.id);
   await until(() => has('[data-swatches="color"]'), 2000);
-  const sw = await page(`(() => { const s = document.querySelector('[data-swatches="color"]'); return { n: s.querySelectorAll('button').length, any: !!s.querySelector('[data-colour-any] input[type=color]') }; })()`);
+  const sw = await page<{ n: number; any: boolean }>(`(() => { const s = document.querySelector('[data-swatches="color"]'); return { n: s.querySelectorAll('button').length, any: !!s.querySelector('[data-colour-any] input[type=color]') }; })()`);
   check('the inspector offers six colours and “…” for any other', sw.n === 6 && sw.any, sw);
   host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: memo.id, props: { color: '#12AB9C' } }], label: 'colour' });
-  check('a colour from the wheel is kept as #rrggbb', host.document.doc.lists[0].cues.find((c) => c.id === memo.id).color === '#12ab9c');
+  check('a colour from the wheel is kept as #rrggbb', host.document.doc.lists[0].cues.find((c) => c.id === memo.id)!.color === '#12ab9c');
   check('…the list draws it as chosen, and “…” shows it is on', await until(() => page(`(() => { const r = document.querySelector('.list tr[data-cue="${memo.id}"]'); const a = document.querySelector('[data-swatches="color"] [data-colour-any]'); return r && /#12ab9c/i.test(r.getAttribute('style') || '') && a && a.classList.contains('on'); })()`), 2000));
   // the list's right-click: Colour ▸ the six and Other… (a test run has no screen for the menu: it is handed the pick)
   global.ecCueMenu = { items: [], picks: ['color:green'] };
   await page(`document.querySelector('.list tr[data-cue="${memo.id}"]').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`);
-  check('the list’s right-click has Colour ▸ the six and Other…, and a pick sets it', await until(() => cues().find((c) => c.id === memo.id).color === 'green', 2000)
-    && (() => { const m = (global.ecCueMenu.items || []).find((it) => it.label === 'Colour'); return !!m && m.submenu.filter((x) => x.id).length === 7 && m.submenu.some((x) => x.id === 'color:other') && m.submenu.find((x) => x.id === 'color:none'); })(), global.ecCueMenu.items.map((it) => it.label));
+  check('the list’s right-click has Colour ▸ the six and Other…, and a pick sets it', await until(() => cues().find((c) => c.id === memo.id)!.color === 'green', 2000)
+    && (() => { const m = (global.ecCueMenu.items || []).find((it) => it.label === 'Colour'); return !!m && m.submenu!.filter((x) => x.id).length === 7 && m.submenu!.some((x) => x.id === 'color:other') && m.submenu!.find((x) => x.id === 'color:none'); })(), global.ecCueMenu.items.map((it) => it.label));
   check('…and Colour Once Played beside it', (global.ecCueMenu.items || []).some((it) => it.label === 'Colour Once Played' && it.submenu));
 
   // ── the add-cue bar: five types and a + that narrows as you type ──
@@ -47,7 +49,7 @@ async function run({ host, win, check, until, page, sleep, shot, log }) {
   check('the add-cue bar shows Group, Audio, Fade, Stop and Memo, and a +', bar === 'group,audio,fade,stop,memo' && await has('[data-tools-more]'), bar);
   await click('[data-tools-more]');
   check('“+” opens a short list with a field that has the keyboard', await until(() => page(`!!document.querySelector('[data-add-list]') && document.activeElement === document.querySelector('[data-add-list] input')`), 2000));
-  const waits = () => { let n = 0; const walk = (l) => { for (const c of l || []) { if (c.type === 'wait') n++; walk(c.children); } }; walk(cues()); return n; };
+  const waits = () => { let n = 0; const walk = (l: Cue[] | undefined) => { for (const c of l || []) { if (c.type === 'wait') n++; walk(c.children); } }; walk(cues()); return n; };
   const before = waits();
   await page(`(() => { const i = document.querySelector('[data-add-list] input'); i.value = 'wai'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
   check('…typing narrows it', await until(() => page(`[...document.querySelectorAll('[data-add-list] [data-add-pick]')].map((b) => b.dataset.addPick)[0] === 'wait'`), 2000));
@@ -65,13 +67,13 @@ async function run({ host, win, check, until, page, sleep, shot, log }) {
   global.ecCueMenu = { items: [], picks: ['versions'] };
   await click('[data-more-menu]');
   check('⋯ opens a menu of Versions, the light dashboard, the monitor, Network in the side panel and Report, and Versions opens', await until(() => has('.drawer-pane'), 2000)
-    && ['versions', 'lights', 'monitor', 'log', 'side-network', 'report'].every((id) => global.ecCueMenu.items.some((it) => it.id === id)), global.ecCueMenu.items.map((it) => it.id));
+    && ['versions', 'lights', 'monitor', 'log', 'side-network', 'report'].every((id) => global.ecCueMenu!.items.some((it) => it.id === id)), global.ecCueMenu!.items.map((it) => it.id));
   global.ecCueMenu = { items: [], picks: ['versions'] };
   await click('[data-more-menu]');
   await until(async () => !(await has('.drawer-pane')), 2000);
 
   // ── by GO: Panic large; Pause all and Fade all small; Reset only in Edit ──
-  const sizes = await page(`(() => { const h = (s) => { const el = document.querySelector(s); return el ? el.getBoundingClientRect().height : 0; }; return { panic: h('[data-panic]'), pause: h('[data-pause-all]'), fade: h('[data-fade-all]'), reset: h('[data-reset]') }; })()`);
+  const sizes = await page<{ panic: number; pause: number; fade: number; reset: number }>(`(() => { const h = (s) => { const el = document.querySelector(s); return el ? el.getBoundingClientRect().height : 0; }; return { panic: h('[data-panic]'), pause: h('[data-pause-all]'), fade: h('[data-fade-all]'), reset: h('[data-reset]') }; })()`);
   check('Panic is large, Pause all and Fade all small, and Reset is there in Edit', sizes.panic > sizes.pause && sizes.pause > 0 && sizes.fade === sizes.pause && sizes.reset > 0, sizes);
 
   // ── the side panel: one line with nothing playing; Network only once asked for, remembered ──
@@ -86,7 +88,7 @@ async function run({ host, win, check, until, page, sleep, shot, log }) {
 
   // ── empty columns: left out, back with one value, held through Show mode ──
   const hidden = () => page(`(() => { const l = document.querySelector('.list'); return ['target', 'pre', 'dur', 'post'].filter((k) => l.classList.contains('no-' + k)).join(); })()`);
-  const thShown = (k) => page(`getComputedStyle(document.querySelector('.list thead th.c-${k}')).display !== 'none'`);
+  const thShown = (k: string) => page(`getComputedStyle(document.querySelector('.list thead th.c-${k}')).display !== 'none'`);
   check('a column nothing in the list fills (Post-wait in the demo) is not drawn', (await hidden()) === 'post' && !(await thShown('post')) && await thShown('pre'), await hidden());
   host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: memo.id, props: { postWait: 2 } }], label: 'post-wait' });
   check('…and comes back as soon as one cue has a value', await until(async () => (await hidden()) === '' && await thShown('post'), 2000), await hidden());
@@ -119,9 +121,9 @@ async function run({ host, win, check, until, page, sleep, shot, log }) {
   host.cmd({ op: 'revert' });
 
   // ── Pre-wait and Post-wait on Basics only when they matter ──
-  const wait = cues().find((c) => c.type === 'memo');
+  const wait = cues().find((c) => c.type === 'memo')!;
   await pick(wait.id);
-  const onBasics = (k) => page(`(() => { const f = document.querySelector('.inspector [data-field="${k}"]'); return !!f; })()`);
+  const onBasics = (k: string) => page(`(() => { const f = document.querySelector('.inspector [data-field="${k}"]'); return !!f; })()`);
   await until(() => has('.inspector [data-field="name"]'), 2000);
   const moreOpen = await has('.inspector .more') && (await page(`document.querySelector('.inspector .more').textContent.includes('▾')`));
   check('a cue with no waits shows neither on Basics (they are under More)', moreOpen || (!(await onBasics('preWait')) && !(await onBasics('postWait'))));

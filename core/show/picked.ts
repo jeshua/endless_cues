@@ -11,7 +11,7 @@ import * as path from 'path';
 
 const NOT_A_SHOW = 'That folder is not a show (it has no show.json). To make a show in a folder of sounds, choose File ▸ Start from a Folder….';
 
-function showFolderFrom(picked) {
+function showFolderFrom(picked: string): { dir: string } | { error: string } {
   let st;
   try { st = fs.statSync(picked); } catch { return { error: `There is nothing at ${picked}.` }; }
   if (st.isDirectory()) return fs.existsSync(path.join(picked, 'show.json')) ? { dir: picked } : { error: NOT_A_SHOW };

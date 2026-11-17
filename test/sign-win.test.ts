@@ -5,8 +5,8 @@ import { jsignArgs, signatureBytes } from '../build/sign-win.js';
 
 test('Windows signing: Azure Artifact Signing by endpoint, account and profile, the token passed by name only', () => {
   const env = { EC_WIN_SIGNING: ' eus.codesigning.azure.net  my-account my-profile ', EC_WIN_SIGN_TOKEN: 'sekrit' };
-  const args = jsignArgs('C:/x/app.exe', env);
-  const after = (k) => args[args.indexOf(k) + 1];
+  const args = jsignArgs('C:/x/app.exe', env)!;
+  const after = (k: string) => args[args.indexOf(k) + 1];
   assert.equal(after('--storetype'), 'TRUSTEDSIGNING');
   assert.equal(after('--keystore'), 'eus.codesigning.azure.net');
   assert.equal(after('--alias'), 'my-account/my-profile');
@@ -18,7 +18,7 @@ test('Windows signing: Azure Artifact Signing by endpoint, account and profile, 
 });
 
 test('Windows signing: a certificate of your own to try it, by its file; nothing set, nothing to sign with', () => {
-  const args = jsignArgs('a.exe', { EC_WIN_SIGN_P12: '/tmp/t.p12', EC_WIN_SIGN_P12_PASS: 'pw', EC_WIN_SIGNING: 'e a p' });
+  const args = jsignArgs('a.exe', { EC_WIN_SIGN_P12: '/tmp/t.p12', EC_WIN_SIGN_P12_PASS: 'pw', EC_WIN_SIGNING: 'e a p' })!;
   assert.equal(args[args.indexOf('--keystore') + 1], '/tmp/t.p12');
   assert.equal(args[args.indexOf('--storepass') + 1], 'env:EC_WIN_SIGN_P12_PASS');
   assert.ok(!args.includes('--storetype') && !args.includes('pw'));

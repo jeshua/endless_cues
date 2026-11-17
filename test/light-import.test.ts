@@ -22,9 +22,9 @@ test('QLab Light cues are imported as Light cues with their commands and fade ti
   assert.match(report.issues.filter((i) => i.id === c.id).map((i) => i.why).join('|'), /pulled levels from another cue/);
   // one with no commands to be found stays a Memo, as before
   assert.equal(d.type, 'memo');
-  assert.match(report.issues.find((i) => i.id === d.id).why, /was a Light cue: kept as a Memo/);
+  assert.match(report.issues.find((i) => i.id === d.id)!.why, /was a Light cue: kept as a Memo/);
   // the patch is not read: the report says which names the cues need
-  const patch = report.issues.find((i) => i.cue === 'Light patch');
+  const patch = report.issues.find((i) => i.cue === 'Light patch')!;
   assert.match(patch.why, /front, cyc, all, 1 - 3, side/);
   assert.deepEqual(doc.settings.light.instruments, []);
 });
@@ -32,7 +32,7 @@ test('QLab Light cues are imported as Light cues with their commands and fade ti
 test('…and once instruments of those names are patched, the imported cues have no problems', () => {
   const { doc } = load();
   const [a, b] = doc.lists[0].cues;
-  assert.match(show.problems(doc).find((p) => p.id === a.id).why, /no instrument or group “front”/);
+  assert.match(show.problems(doc).find((p) => p.id === a.id)!.why, /no instrument or group “front”/);
   doc.settings.light.instruments = [{ name: 'front', fixture: 'dimmer' }, { name: 'cyc', fixture: 'rgb' }, { name: '1', fixture: 'dimmer' }, { name: '2', fixture: 'dimmer' }];
   assert.deepEqual(show.problems(doc).filter((p) => p.id === a.id || p.id === b.id), []);
 });

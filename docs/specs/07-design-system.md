@@ -1,6 +1,6 @@
 # 07 · Design system
 
-This document describes the design system of the operator's window: the tokens in `app/renderer/styles.css` (values quoted as they are in the file), its three themes, the components built from them in `app/renderer/` (`app.js`, `CueList.js`, `Inspector.js`, `Sidebar.js`, `Drawers.js`, `Settings.js`, `lib.js`), and the interaction rules the code implements. Descriptions were checked against screenshots of the running app in the LAB and OCEAN themes. The web remote's page (`app/main/modules/remote.html`) carries its own fixed palette and is noted where it differs.
+This document describes the design system of the operator's window: the tokens in `app/renderer/styles.css` (values quoted as they are in the file), its three themes, the components built from them in `app/renderer/` (`app.ts`, `CueList.ts`, `Inspector.ts`, `Sidebar.ts`, `Drawers.ts`, `Settings.ts`, `lib.ts`), and the interaction rules the code implements. Descriptions were checked against screenshots of the running app in the LAB and OCEAN themes. The web remote's page (`app/main/modules/remote.html`) carries its own fixed palette and is noted where it differs.
 
 ## 1. Principle: four colours carry meaning
 
@@ -21,7 +21,7 @@ One drawn thing has colours of its own: the assistant's eye (`--qirx-milk`, `--q
 
 ### Themes
 
-There are three themes. Only colours, fonts and the wash change; sizes, spacing and timing are shared. LAB is the default, on `:root`; the others are `:root[data-theme="ocean"]` and `:root[data-theme="graphite"]`. The theme belongs to the computer, not the show: Settings ▸ General calls the shell op `theme` (`ec.app({ op: 'theme', theme })`, saved as `config.theme` in `app/main/main.js`), `ec.init()` returns `theme` and `themes`, and `app.js` sets `document.documentElement.dataset.theme`.
+There are three themes. Only colours, fonts and the wash change; sizes, spacing and timing are shared. LAB is the default, on `:root`; the others are `:root[data-theme="ocean"]` and `:root[data-theme="graphite"]`. The theme belongs to the computer, not the show: Settings ▸ General calls the shell op `theme` (`ec.app({ op: 'theme', theme })`, saved as `config.theme` in `app/main/main.ts`), `ec.init()` returns `theme` and `themes`, and `app.ts` sets `document.documentElement.dataset.theme`.
 
 | Token | LAB (default) | OCEAN | GRAPHITE |
 |---|---|---|---|
@@ -60,7 +60,7 @@ One image sits under every surface: `.wash`, a fixed layer behind the app showin
 
 ### Cue label colours are labels, not states
 
-A cue's `color` is one of `none, red, orange, yellow, green, teal, blue, purple, pink, grey`, drawn from a separate set of tokens that is the same in every theme: `--c-red #e5484d`, `--c-orange #f08a3c`, `--c-yellow #e6c229`, `--c-green #46b56c`, `--c-teal #2bb3a8`, `--c-blue #4a8fe8`, `--c-purple #9a6be0`, `--c-pink #e069a8`, `--c-grey #7b828c`. The inspector and the list's right-click menu offer six (`PALETTE`: none, red, orange, yellow, green, blue) and "…", which opens the system's colour wheel for any other; a colour chosen there is kept as `#rrggbb` and drawn as chosen, and the other names (teal, purple…, from older shows and QLab) stay valid (`cleanColor` in `core/show/cue-types.js`, `colorCss` in `app/renderer/tidy.js`). It appears in exactly two places: a 3 px bar at the row's left edge (`.swatch`) and the picker in the inspector. It never tints the row, the text or a status mark, so a red label cannot be mistaken for a broken cue.
+A cue's `color` is one of `none, red, orange, yellow, green, teal, blue, purple, pink, grey`, drawn from a separate set of tokens that is the same in every theme: `--c-red #e5484d`, `--c-orange #f08a3c`, `--c-yellow #e6c229`, `--c-green #46b56c`, `--c-teal #2bb3a8`, `--c-blue #4a8fe8`, `--c-purple #9a6be0`, `--c-pink #e069a8`, `--c-grey #7b828c`. The inspector and the list's right-click menu offer six (`PALETTE`: none, red, orange, yellow, green, blue) and "…", which opens the system's colour wheel for any other; a colour chosen there is kept as `#rrggbb` and drawn as chosen, and the other names (teal, purple…, from older shows and QLab) stay valid (`cleanColor` in `core/show/cue-types.ts`, `colorCss` in `app/renderer/tidy.ts`). It appears in exactly two places: a 3 px bar at the row's left edge (`.swatch`) and the picker in the inspector. It never tints the row, the text or a status mark, so a red label cannot be mistaken for a broken cue.
 
 ## 2. Type, numbers, sizes
 
@@ -89,7 +89,7 @@ title, GO, the standby name, headings); `--mono` for anything counted. Both fami
 
 **Numbers are mono and tabular.** Anything that counts or is compared down a column uses `.num` or `.mono`: cue
 numbers, times, levels, addresses, OSC messages, version ids, file paths. Times are formatted by `clock()` in
-`lib.js` (`m:ss.t`; a true minus `−` for time remaining), levels by `db()`.
+`lib.ts` (`m:ss.t`; a true minus `−` for time remaining), levels by `db()`.
 
 ### Control heights
 
@@ -202,7 +202,7 @@ only while that module is switched on.
 
 Five cue types (Group, Audio, Fade, Stop, Memo), glyph then label, in `TYPE_ORDER`, then **+**: a short list of
 every other type with a field that has the keyboard; typing narrows it (any type, by its name or summary), ↑ ↓
-choose, Enter adds, Esc closes (`AddCue.js`, `matchTypes` in `tidy.js`). Every type keeps its ⌘ key.
+choose, Enter adds, Esc closes (`AddCue.ts`, `matchTypes` in `tidy.ts`). Every type keeps its ⌘ key.
 "Group selection" appears when two or more cues are selected, "Ungroup" when a group is. The Audio button opens the
 file dialog; the others add a cue after the selection, numbered, and open its name for typing.
 
@@ -227,9 +227,9 @@ A fixed-layout table with a sticky header. Columns: status 34 px, type glyph 26 
 
 The status column shows one mark, in this order of precedence: problem, paused, live, playhead. Empty list: a centred two-line hint.
 
-**The section heading** (`app/renderer/Sections.js`). A section is a row across all nine columns, 8 px taller than a cue row, on a `--bg-2` tint: a caret, the name at `--fs-l` 500 in `--text-0`, and the section's own colour (a cue label colour, or `--line` with none) as the 3 px rule at the left. Folded, it adds the count of its top-level cues as a tag. It never hides what matters: a `▶` in `--go` when a cue in it is running; a hollow flag or a `✕` when a folded one holds a flagged or broken cue; and the cue standing by in it as `➤ <number> <name>` in `--standby` on a `--standby-wash` row while folded (a lone `➤` while open). A plain click on the row folds it and selects it (never the playhead); ⌥-click on any caret folds or opens every one like it (every section; a group's siblings); ← and → fold and open the selected section or group; `<` `>` and View ▸ Fold All / Unfold All do every section and group. In Show mode the section holding the playhead is drawn open whatever was folded, and folds again when the playhead leaves (only if it had been folded). What is folded is this computer's view of that show (`config.json` `folds`, by show folder), never the show file's.
+**The section heading** (`app/renderer/Sections.ts`). A section is a row across all nine columns, 8 px taller than a cue row, on a `--bg-2` tint: a caret, the name at `--fs-l` 500 in `--text-0`, and the section's own colour (a cue label colour, or `--line` with none) as the 3 px rule at the left. Folded, it adds the count of its top-level cues as a tag. It never hides what matters: a `▶` in `--go` when a cue in it is running; a hollow flag or a `✕` when a folded one holds a flagged or broken cue; and the cue standing by in it as `➤ <number> <name>` in `--standby` on a `--standby-wash` row while folded (a lone `➤` while open). A plain click on the row folds it and selects it (never the playhead); ⌥-click on any caret folds or opens every one like it (every section; a group's siblings); ← and → fold and open the selected section or group; `<` `>` and View ▸ Fold All / Unfold All do every section and group. In Show mode the section holding the playhead is drawn open whatever was folded, and folds again when the playhead leaves (only if it had been folded). What is folded is this computer's view of that show (`config.json` `folds`, by show folder), never the show file's.
 
-**Chains** (`app/renderer/ListTools.js`, the arithmetic in `app/renderer/list-view.js`, unit-tested in `test/list-view.test.js`). Cues linked by their continue modes carry a 2 px line in `--text-2` down the left of the status column (7 px in; a group's children 5 px further per level): solid where a cue auto-continues (the next starts with it), dotted where it auto-follows (the next starts when it ends), with a short tick on each linked cue. The line runs past what GO passes over (a section heading, a light cue only called while light cues are skipped, a group's open children); a folded section stands for the part of the chain inside it. The next cue is the next GO would stand by on, and inside a group only where the group starts its first child (enter, first, random). The masthead says `GO · N cues` beside "Standing by" when the GO sets off more than one. When a delete or a cut takes a cue out of the middle of a chain, the cue before it and the cue it now links to flash on a `--bg-4` tint for 2.4 s, their line in `--text-0`, and the toast says "1 now auto-continues into 3 · ⌘Z undoes it".
+**Chains** (`app/renderer/ListTools.ts`, the arithmetic in `app/renderer/list-view.ts`, unit-tested in `test/list-view.test.ts`). Cues linked by their continue modes carry a 2 px line in `--text-2` down the left of the status column (7 px in; a group's children 5 px further per level): solid where a cue auto-continues (the next starts with it), dotted where it auto-follows (the next starts when it ends), with a short tick on each linked cue. The line runs past what GO passes over (a section heading, a light cue only called while light cues are skipped, a group's open children); a folded section stands for the part of the chain inside it. The next cue is the next GO would stand by on, and inside a group only where the group starts its first child (enter, first, random). The masthead says `GO · N cues` beside "Standing by" when the GO sets off more than one. When a delete or a cut takes a cue out of the middle of a chain, the cue before it and the cue it now links to flash on a `--bg-4` tint for 2.4 s, their line in `--text-0`, and the toast says "1 now auto-continues into 3 · ⌘Z undoes it".
 
 **A playing row** carries, at the right of its Name cell, a 34 × 4 px meter of that sound's own level (after its fader, in `--go`; `cueLevels` in the state, read by the audio window 15 times a second) whose title says where it goes (its bus and that bus's pair, or its own outputs, and the device), "NO OUTPUT" in `--danger` when the device, or an output it needs, is not there, and a stop: `■` in `--danger` in a thin danger outline (filled while that stop fades it). A click fades the sound out over the panic time; a second click while it fades, or ⌥-click, stops it dead. The stop never takes the keyboard and never selects or moves the playhead. In Show mode it is 34 px wide and the row's height, far from GO.
 
@@ -271,8 +271,8 @@ Up to 268 px tall (less in a short window: see Layout). Tabs: Basics, then the c
 | `cue` | Select of eligible cues, "number · name". |
 | `bus`, `patch` | Select from the show's buses / network patches. |
 | `levels` | One mono box per bus. |
-| `markers`, `regions`, `envelope`, `automation` | Not in the form: on the Time & Loops tab, drawn on the waveform (`WaveEdit.js`): markers in a strip above it and loop regions in the lane above that, both dragged where they go; the lines over it, chosen in its lane picker. The chips below it are the same markers and regions, typed. |
-| `shape` | A select (Linear, S-curve, Custom) and the curve drawn beside it; a custom curve's points are added, dragged and removed there (`Curves.js`). |
+| `markers`, `regions`, `envelope`, `automation` | Not in the form: on the Time & Loops tab, drawn on the waveform (`WaveEdit.ts`): markers in a strip above it and loop regions in the lane above that, both dragged where they go; the lines over it, chosen in its lane picker. The chips below it are the same markers and regions, typed. |
+| `shape` | A select (Linear, S-curve, Custom) and the curve drawn beside it; a custom curve's points are added, dragged and removed there (`Curves.ts`). |
 
 Fields marked `advanced` fold under "More (N)". Pre-wait is on Basics only while a selected cue has one; Post-wait only while one has it or is set to auto-continue (the only time it matters); otherwise both are under More. With several cues selected, a field whose values differ shows "(mixed)" and an edit applies to all. Problems of the selected cues are boxes at the top: danger wash for errors, standby wash for warnings.
 
@@ -320,7 +320,7 @@ Clicking the scrim or Esc closes it.
 
 ### Footer, toasts, welcome
 
-Footer (26 px, `--text-2`): cue count; "✕ N broken" in danger and "▲ N warnings" in standby, each selecting the first such cue; "SHOW MODE — editing is locked" in standby; on the right the output device (opens Settings ▸ Audio), **Report** (always: the Report a Problem form) and the version. When the app logs that something went wrong (an error, a sound that could not play, an output gone, a window that died and was made again: `core/report/issues.js`), the footer says "Something went wrong. Report it?" in `--standby` with a Report button and ×; Report opens the form with that line attached (each attachment can be unticked). In Show mode it is only a 7 px standby dot until Edit: it never takes focus or a key. A toast is one centred line above the footer for about 3 s; refusals from the host have a danger border. The welcome panel covers the list for an empty untitled show: the app's mark, the name in the display font, one sentence, three buttons, recent shows.
+Footer (26 px, `--text-2`): cue count; "✕ N broken" in danger and "▲ N warnings" in standby, each selecting the first such cue; "SHOW MODE — editing is locked" in standby; on the right the output device (opens Settings ▸ Audio), **Report** (always: the Report a Problem form) and the version. When the app logs that something went wrong (an error, a sound that could not play, an output gone, a window that died and was made again: `core/report/issues.ts`), the footer says "Something went wrong. Report it?" in `--standby` with a Report button and ×; Report opens the form with that line attached (each attachment can be unticked). In Show mode it is only a 7 px standby dot until Edit: it never takes focus or a key. A toast is one centred line above the footer for about 3 s; refusals from the host have a danger border. The welcome panel covers the list for an empty untitled show: the app's mark, the name in the display font, one sentence, three buttons, recent shows.
 
 ### Controls
 
@@ -346,7 +346,7 @@ Footer (26 px, `--text-2`): cue count; "✕ N broken" in danger and "▲ N warni
 - Use a token for every colour. If a state needs a colour, it is one of the four; if it does not fit one, it is a neutral.
 - Check a change in all three themes. A theme defines the whole set of colour tokens and nothing else.
 - Put every number in `.num` / `.mono`, formatted with `clock()` or `db()`.
-- Add a field to `core/show/cue-types.js` and let the inspector draw it; add a `kind` to `Field` only when no existing control fits.
+- Add a field to `core/show/cue-types.ts` and let the inspector draw it; add a `kind` to `Field` only when no existing control fits.
 - Keep live controls in the main view and set-once options in Settings.
 - Give every icon-only button a `title`, written with `keys()` so shortcuts read correctly per platform.
 - Send every change through `cmd` / `edit` and draw only what the host pushes back.
@@ -359,17 +359,17 @@ Footer (26 px, `--text-2`): cue count; "✕ N broken" in danger and "▲ N warni
 - Don't let a control keep focus after a click, and don't bind Space, Esc or the arrows on a component.
 - Don't hold show data in component state or `localStorage`.
 - Don't hide a refusal: a `{ error }` from the host is shown as a toast.
-- Don't add hard-coded colours. Those left in the file are the dark text on a holding loop block (`#1c1503`), the scrim, and a few translucent black and white overlays (stripes, shadows, the cursor's glow). `remote.html` and the window's `backgroundColor` in `app/main/main.js` carry their own fixed dark-grey values, which match none of the themes exactly.
+- Don't add hard-coded colours. Those left in the file are the dark text on a holding loop block (`#1c1503`), the scrim, and a few translucent black and white overlays (stripes, shadows, the cursor's glow). `remote.html` and the window's `backgroundColor` in `app/main/main.ts` carry their own fixed dark-grey values, which match none of the themes exactly.
 - Don't put text straight on the wash. Chrome is a slab and the list is a sheet; anything new sits on one of them.
 
 ## Pending changes, knobs and the waveform marker
 
 A control whose value differs from the saved show carries a small `--standby` dot (`.was`); its tooltip gives the saved value, and ↺ beside it puts that one control back. A cue row with pending changes carries the same dot in its status column; a knob's ring turns `--standby`. The title bar shows "N unsaved" (it opens the list of pending changes) and a Save button. Yellow means here what it means everywhere: not yet committed.
 
-The mixer's bus levels are round knobs, side by side (`Knob` in `Sidebar.js`): drag up or down (Shift for fine), scroll, double-click for 0 dB; − and + stacked on its left step by 1 dB. Master is a slider. Defaults puts every level to 0 dB, pending like any change.
+The mixer's bus levels are round knobs, side by side (`Knob` in `Sidebar.ts`): drag up or down (Shift for fine), scroll, double-click for 0 dB; − and + stacked on its left step by 1 dB. Master is a slider. Defaults puts every level to 0 dB, pending like any change.
 
-Every knob is drawn by one face (`DialFace` in `Knob.js`): a track from 7 o'clock round to 5, an arc from the setting's origin (0 for a gain or a pitch, else the bottom of the range), a needle. The sound-design devices use `ParamKnob` (the same file): the setting's short name above, its value and unit below; drag up or down (Shift: ten times finer), scroll, or the arrow keys; double-click the dial for the default, double-click the value to type one ("1.8k", "350 ms", "30%"). A frequency, a long time or a ratio turns along a ratio, a level or a mix along a line (`dial.js`, unit-tested in `test/dial.test.js`).
+Every knob is drawn by one face (`DialFace` in `Knob.ts`): a track from 7 o'clock round to 5, an arc from the setting's origin (0 for a gain or a pitch, else the bottom of the range), a needle. The sound-design devices use `ParamKnob` (the same file): the setting's short name above, its value and unit below; drag up or down (Shift: ten times finer), scroll, or the arrow keys; double-click the dial for the default, double-click the value to type one ("1.8k", "350 ms", "30%"). A frequency, a long time or a ratio turns along a ratio, a level or a mix along a line (`dial.ts`, unit-tested in `test/dial.test.ts`).
 
-The Sound design tab is a rack (`SoundDesign.js`): one device per tool in use, left to right in the order they run, scrolling sideways inside the tab when they do not fit. A device's title bar has its power button (`--accent` when on: "switched on"), its name, ‹ › for the settings beyond its first four knobs, and × to remove it. A device that is off is dimmed and keeps its settings. A device changed since the save carries the `--standby` dot and border; a knob changed, its ring and name. Bypass lit in `--standby` (the whole chain out: a state to notice), Tail in `--accent`. The add list and the presets list are popovers that close on a click outside them, never on Esc (Esc is Panic).
+The Sound design tab is a rack (`SoundDesign.ts`): one device per tool in use, left to right in the order they run, scrolling sideways inside the tab when they do not fit. A device's title bar has its power button (`--accent` when on: "switched on"), its name, ‹ › for the settings beyond its first four knobs, and × to remove it. A device that is off is dimmed and keeps its settings. A device changed since the save carries the `--standby` dot and border; a knob changed, its ring and name. Bypass lit in `--standby` (the whole chain out: a state to notice), Tail in `--accent`. The add list and the presets list are popovers that close on a click outside them, never on Esc (Esc is Panic).
 
 On a playing track's waveform a click leaves a marker (`.pin`, `--accent`) with its time. Skip jumps to it, Fade to crossfades to it inside the track over 1.5 s, and the marker stays until Clear, so Skip again returns to the same place.

@@ -8,11 +8,18 @@
  *   matchTypes(types, order, text)  the cue types the add-cue list keeps for what was typed, best first
  */
 // ── colour: a show keeps a name ('red', the tokens --c-red in each theme) or a colour from the wheel ('#rrggbb') ──
+import type { CueFields, CueType } from '../../core/show/types';
+
+/** A cue as these rules read it: any of its fields (a test's cue has only the ones it is about). */
+export interface CueLike extends CueFields { id?: string; type?: CueType; children?: CueLike[] }
+/** Which optional columns are filled (`usedColumns`). */
+export type Columns = { target: boolean; preWait: boolean; duration: boolean; postWait: boolean };
+
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/;
-const isCustomColor = (col) => HEX.test(String(col || '').trim().toLowerCase());
+const isCustomColor = (col: unknown) => HEX.test(String(col || '').trim().toLowerCase());
 /** The CSS for a cue's colour, or null for none. A name is its theme's token, so it stays in tune with the theme;
  *  a chosen colour is drawn as it was chosen. Anything else (a word no theme has) is drawn as none. */
-function colorCss(col) {
+function colorCss(col: unknown) {
   const v = String(col || '').trim().toLowerCase();
   if (!v || v === 'none') return null;
   if (HEX.test(v)) return v;
@@ -23,7 +30,7 @@ function colorCss(col) {
 const COLUMNS = ['target', 'preWait', 'duration', 'postWait'];
 /** What the Target column shows for a cue (CueList.js draws the same): its target, a named sound's file or its
  *  bus, a network cue's message. */
-function hasTarget(c) {
+function hasTarget(c: CueLike) {
   if (c.target) return true;
   if (c.type === 'audio' || c.type === 'video') return !!((c.name && c.file) || c.bus);
   if (c.type === 'network') return !!c.message;
@@ -31,9 +38,9 @@ function hasTarget(c) {
 }
 /** { target, preWait, duration, postWait }: true where at least one cue of the list (inside groups too, folded or
  *  not) has something to show there. `durationOf(cue)` is the text the Duration column would show. */
-function usedColumns(cues, durationOf = () => '') {
-  const used = { target: false, preWait: false, duration: false, postWait: false };
-  const walk = (list) => {
+function usedColumns(cues: CueLike[] | null | undefined, durationOf: (c: CueLike) => string = () => ''): Columns {
+  const used: Columns = { target: false, preWait: false, duration: false, postWait: false };
+  const walk = (list: CueLike[] | null | undefined) => {
     for (const c of list || []) {
       if (c.type !== 'section') {
         if (!used.target && hasTarget(c)) used.target = true;
@@ -50,7 +57,7 @@ function usedColumns(cues, durationOf = () => '') {
 /** The columns to draw. In Edit mode they follow the list; in Show mode they stay as they were when Show began, so
  *  no row moves under the operator's eye (a sound measured late, a cue fired that changes its duration).
  *  `state` is the caller's own record ({ held }), kept between draws; returns the columns. */
-function frozenColumns(state, used, show) {
+function frozenColumns(state: { held?: Columns | null }, used: Columns, show: boolean): Columns {
   if (!show) { state.held = null; return used; }
   if (!state.held) state.held = { ...used };
   return state.held;
@@ -59,10 +66,10 @@ function frozenColumns(state, used, show) {
 // ── the add-cue list: typed text narrows the cue types ──
 /** The cue types (ids from `order`) whose label, id or summary has `text`, best first: a label that starts with it,
  *  then a word of the label that does, then the rest. An empty text keeps them all, in their order. */
-function matchTypes(types, order, text) {
+function matchTypes<T extends string>(types: Record<string, { label?: string; summary?: string } | undefined>, order: T[], text: unknown): T[] {
   const q = String(text || '').trim().toLowerCase();
   if (!q) return order.slice();
-  const rank = (id) => {
+  const rank = (id: string) => {
     const t = types[id] || {}, label = String(t.label || id).toLowerCase();
     if (label.startsWith(q) || id.toLowerCase().startsWith(q)) return 0;
     if (label.split(/[^a-z0-9]+/).some((w) => w.startsWith(q))) return 1;

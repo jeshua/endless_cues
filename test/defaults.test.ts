@@ -8,10 +8,13 @@ import * as show from '../core/show/show';
 import { TYPES, COMMON } from '../core/show/cue-types';
 import { importQlab } from '../core/import/qlab';
 import { usesLive } from '../core/show/uses-live';
+import type { ShowDoc } from '../core/show/types';
+import type { CueEngine } from '../core/engine/cue-engine';
+import type { ShowDocument } from '../core/show/document';
 
 /** Everything a show can switch on that acts by itself, read from a document. */
-function clever(doc) {
-  const s = doc.settings, on = [];
+function clever(doc: ShowDoc) {
+  const s = doc.settings, on: string[] = [];
   if (s.audio.duck.on) on.push('ducking');
   if (s.audio.monitor.on) on.push('the monitor feed');
   if (s.light.on) on.push('lighting output');
@@ -41,12 +44,12 @@ test('a new show is a plain cue list: nothing that analyses, decides or acts by 
 });
 
 test('a new cue of any type starts plain: no quantise, warp, ducking, fading of others or auto-load', () => {
-  const quiet = { onBeat: 'now', warp: '', fadeOthers: 0, duckOthers: 0, autoLoad: false, beatLead: 0, blend: '' };
+  const quiet: Record<string, unknown> = { onBeat: 'now', warp: '', fadeOthers: 0, duckOthers: 0, autoLoad: false, beatLead: 0, blend: '' };
   for (const [type, def] of Object.entries(TYPES)) {
     for (const f of [...COMMON, ...def.fields]) if (f.key in quiet) assert.equal(f.default ?? quiet[f.key], quiet[f.key], `${type}.${f.key}`);
   }
-  assert.equal(TYPES.audio.fields.find((f) => f.key === 'bus').default, 'effects');
-  assert.equal(TYPES.audio.fields.find((f) => f.key === 'tempo').default, undefined, 'no sound starts with a tempo');
+  assert.equal(TYPES.audio.fields.find((f) => f.key === 'bus')!.default, 'effects');
+  assert.equal(TYPES.audio.fields.find((f) => f.key === 'tempo')!.default, undefined, 'no sound starts with a tempo');
   // what belongs to the Live view is marked, so the inspector can keep it out of a plain cue list
   assert.deepEqual(Object.values(TYPES).flatMap((d) => d.fields.filter((f) => f.live).map((f) => f.key)).sort(), ['desk']);
 });
@@ -99,19 +102,19 @@ test('a show says what in it came from the Live view', () => {
 // ── the rig (docs/specs/15-assistant-and-rig.md, section 7) ──
 
 test('a new show has no devices, asks nothing on the network, and its input port is shut', async () => {
-  const { createHub } = require('../core/net/hub');
-  const { createRig } = require('../app/main/rig-service');
-  const rigDevices = require('../core/rig/devices');
-  const check = require('../core/rig/check');
+  const { createHub } = require('../core/net/hub') as typeof import('../core/net/hub');
+  const { createRig } = require('../app/main/rig-service') as typeof import('../app/main/rig-service');
+  const rigDevices = require('../core/rig/devices') as typeof import('../core/rig/devices');
+  const check = require('../core/rig/check') as typeof import('../core/rig/check');
   const doc = show.newShow('x');
   assert.deepEqual(doc.settings.rig, { devices: [], checks: [], script: '' });
   assert.deepEqual(show.defaultSettings().rig, { devices: [], checks: [], script: '' });
   // the rig as the app runs it, on a hub that records what it would send and opens nothing
   const hub = createHub({ dryRun: true });
-  const sent = [];
+  const sent: Parameters<typeof hub.send>[] = [];
   const send = hub.send.bind(hub);
   hub.send = (...a) => { sent.push(a); return send(...a); };
-  const rig = createRig({ hub, state: { mode: 'edit', midi: { outputs: [] } }, engine: { active: () => [], durations: new Map() }, overrides: {}, HELD: (w) => w, smoke: true, document: () => ({ doc, showDir: null }), facts: () => ({ saved: { untitled: true }, network: hub.status() }) });
+  const rig = createRig({ hub, state: { mode: 'edit', midi: { outputs: [] } }, engine: { active: () => [], durations: new Map() } as unknown as CueEngine, overrides: {}, HELD: (w) => w, smoke: true, document: () => ({ doc, showDir: null }) as unknown as ShowDocument, facts: () => ({ saved: { untitled: true }, network: hub.status() }) });
   const n = doc.settings.network;
   hub.configure({ patches: n.patches, devices: rigDevices.patchesOf(doc), inputPort: n.inputPort, listen: !!n.listen || rig.wantsInput() });
   rig.configure();
@@ -129,16 +132,16 @@ test('a new show has no devices, asks nothing on the network, and its input port
 });
 
 test('asking, listening and sending again each have one switch, and each is off until a device says so', () => {
-  const rigDevices = require('../core/rig/devices');
-  const { applyOps } = require('../core/show/ops');
+  const rigDevices = require('../core/rig/devices') as typeof import('../core/rig/devices');
+  const { applyOps } = require('../core/show/ops') as typeof import('../core/show/ops');
   // a device written by hand asks nothing, is not listened for, and is sent each command once
-  const plain = rigDevices.find(applyOps(show.newShow('x'), [{ op: 'device.add', device: { name: 'Projector', host: '10.0.0.30', port: 4352 } }]).doc, 'projector');
+  const plain = rigDevices.find(applyOps(show.newShow('x'), [{ op: 'device.add', device: { name: 'Projector', host: '10.0.0.30', port: 4352 } }]).doc, 'projector')!;
   assert.deepEqual([plain.alive, plain.resend, plain.needed], [{ how: 'none' }, undefined, undefined]);
   for (const f of rigDevices.FIELDS) if (f.key === 'resend') assert.equal(f.default, 0);
-  assert.equal(rigDevices.ALIVE_FIELDS.find((f) => f.key === 'how').default, 'none');
+  assert.equal(rigDevices.ALIVE_FIELDS.find((f) => f.key === 'how')!.default, 'none');
   // "Ask it" is the switch for asking; "It says so by itself" is the switch for the input port; the kit's models set resend
-  const { createLiveness } = require('../core/rig/liveness');
-  const asked = [];
+  const { createLiveness } = require('../core/rig/liveness') as typeof import('../core/rig/liveness');
+  const asked: (string | undefined)[] = [];
   const live = createLiveness({ send: (d, text) => { asked.push(text); return { ok: true }; } });
   live.configure([plain]);
   live.tick();
@@ -149,13 +152,13 @@ test('asking, listening and sending again each have one switch, and each is off 
   live.configure([{ ...plain, alive: { how: 'ask', send: '/ping', every: 2 } }]);
   live.tick();
   assert.deepEqual([asked, live.wantsInput()], [['/ping'], false]);
-  assert.equal(rigDevices.fromModel('ec-prop-light', {}).resend, 3);
-  assert.equal(rigDevices.fromModel('etc-eos', {}).resend, undefined);
+  assert.equal(rigDevices.fromModel('ec-prop-light', {})!.resend, 3);
+  assert.equal(rigDevices.fromModel('etc-eos', {})!.resend, undefined);
 });
 
 test('a show started in a folder of sounds has no cues; an imported workspace has no devices; a file is written only by an accepted proposal', () => {
-  const os = require('os');
-  const { ShowDocument } = require('../core/show/document');
+  const os = require('os') as typeof import('os');
+  const { ShowDocument } = require('../core/show/document') as typeof import('../core/show/document');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-start-'));
   fs.writeFileSync(path.join(dir, '01 Overture.wav'), 'x');
   const d = ShowDocument.open(dir);
@@ -172,16 +175,16 @@ test('a show started in a folder of sounds has no cues; an imported workspace ha
 });
 
 test('updates: the daily check is on (the owner\'s decision: one GET of the feed, nothing about the person), test versions off, and nothing downloads or installs by itself', () => {
-  const { settingsOf, FEED } = require('../core/update/updates');
+  const { settingsOf, FEED } = require('../core/update/updates') as typeof import('../core/update/updates');
   assert.deepEqual(settingsOf({}), { auto: true, test: false, lastCheck: 0 });
   assert.equal(FEED, 'https://downloads.endlesscues.com/');
   // (that nothing downloads before Download, nor installs before quit or Restart now, is test/updates.test.js)
 });
 
 test('OSC control’s no-passcode row never edits, and a show this computer has no record of is not taken for its own', () => {
-  const { accessOf } = require('../app/main/modules/osc-control');
+  const { accessOf } = require('../app/main/modules/osc-control') as typeof import('../app/main/modules/osc-control');
   assert.deepEqual(accessOf({}).none, { view: true, edit: false, control: true });
   assert.equal(accessOf({ noPasscode: { view: true, edit: true, control: true } }).none.edit, false);
-  const trust = require('../core/show/trust');
+  const trust = require('../core/show/trust') as typeof import('../core/show/trust');
   assert.equal(trust.isMine({}, '/somewhere/A.ecshow', 'show_x'), false);
 });

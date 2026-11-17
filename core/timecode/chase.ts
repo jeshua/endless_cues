@@ -15,15 +15,22 @@
  *   c.park()                                   the timecode stopped, or was only located: the next update is an arrival
  *   c.next(pos)                                -> the id of the first cue whose time is still ahead, or null
  */
+/** A cue with a timecode trigger: where it is, in frames, and its length in seconds (or how to ask for it). */
+export interface Trigger { id: string; frames: number; length: number | (() => number) }
+/** A cue to start, `offset` seconds in. */
+export interface Fire { id: string; offset: number }
+
 const JUMP_SECS = 0.25;         // further than this from where it should be by now: the time was moved, not played
 const START_FRAMES = 3;         // a cue this close behind an arrival starts from its top (MTC is known two frames late)
 
 class Chaser {
+  declare triggers: Trigger[];
+  declare last: { pos: number; now: number } | null;
   constructor() { this.triggers = []; this.last = null; }
-  set(triggers) { this.triggers = [...triggers].filter((t) => Number.isFinite(t.frames)).sort((a, b) => a.frames - b.frames); }
+  set(triggers: Iterable<Trigger>) { this.triggers = [...triggers].filter((t) => Number.isFinite(t.frames)).sort((a, b) => a.frames - b.frames); }
   park() { this.last = null; }
-  update(pos, real, now, { catchUp = true } = {}) {
-    const last = this.last, out = [];
+  update(pos: number, real: number, now: number, { catchUp = true } = {}) {
+    const last = this.last, out: Fire[] = [];
     this.last = { pos, now };
     const jumped = !last || pos < last.pos - 0.01 || Math.abs(pos - (last.pos + (now - last.now) * real)) > JUMP_SECS * real;
     // (a jump forward has not been back over a time already passed: that cue had its moment, so it is not started
@@ -32,14 +39,14 @@ class Chaser {
     for (const t of this.triggers) {
       const into = pos - t.frames;
       if (into < 0) break;
-      if (!jumped) { if (t.frames > last.pos) out.push({ id: t.id, offset: 0 }); continue; }
+      if (!jumped) { if (t.frames > last!.pos) out.push({ id: t.id, offset: 0 }); continue; }
       if (ahead && t.frames <= last.pos) continue;
       if (into <= START_FRAMES) out.push({ id: t.id, offset: 0 });
       else if (catchUp) { const length = typeof t.length === 'function' ? t.length() : t.length; if (length > 0 && into / real < length) out.push({ id: t.id, offset: into / real }); }
     }
     return out;
   }
-  next(pos) { const t = this.triggers.find((x) => x.frames > pos); return t ? t.id : null; }
+  next(pos: number) { const t = this.triggers.find((x) => x.frames > pos); return t ? t.id : null; }
 }
 
 export { Chaser, JUMP_SECS, START_FRAMES };

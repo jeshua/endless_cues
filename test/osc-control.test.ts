@@ -11,15 +11,26 @@ import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import { rig, build } from './helpers';
 import * as oscControl from '../app/main/modules/osc-control';
+import type { HostApi, HostCommand } from '../app/main/host';
+import type { HubReply } from '../core/net/hub';
+import type { OscMessage, OscTyped, OscValue } from '../core/net/osc';
+import type { ShowDoc } from '../core/show/types';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A command as the fake host logs it (the tests read any of its fields). */
+type Logged = HostCommand & Record<string, any>;
+/** A reply as a test reads it: the JSON a remote is sent back. */
+/** A thing in a JSON reply (a cue, a list). */
+type Json = Record<string, any>;
+interface Said { ret: 'done' | boolean; address: string | null; reply: any }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A host as the module sees one: `cmd` (the ops it uses), `snapshot`, `showId`. */
-function fakeHost(doc) {
+function fakeHost(doc: ShowDoc) {
   let r = rig(doc), rev = 1, mode = 'edit';
-  const cmds = [];
-  const idOf = (c) => c.id || (c.number != null ? (show.findByNumber(doc, c.number) || {}).id : null) || null;
-  const run = (c) => {
+  const cmds: Logged[] = [];
+  const idOf = (c: Logged) => (c.id || (c.number != null ? (show.findByNumber(doc, c.number) || {}).id : null) || null) as string;
+  const run = (c: Logged) => {
     if ((c.number != null || c.id != null) && ['pause', 'resume', 'toggle', 'stop', 'fire', 'start'].includes(c.op) && !r.engine.byId.has(idOf(c))) return { error: `no cue ${c.number != null ? `numbered ${c.number}` : c.id}` };
     if (mode === 'show' && ['edit', 'undo', 'redo'].includes(c.op)) return { error: 'Show mode: editing is locked' };
     switch (c.op) {
@@ -49,12 +60,14 @@ function fakeHost(doc) {
     cmds,
     get doc() { return doc; },
     get engine() { return r.engine; },
-    advance: (secs) => r.advance(secs),
+    advance: (secs: number) => r.advance(secs),
     showId: () => doc.id,
-    cmd(c) { cmds.push(c); try { return run(c) || { ok: true }; } catch (err) { return { error: err.message }; } },
-    snapshot() { const e = r.engine.snapshot(); delete e.cues; delete e.poem; return { rev, doc, engine: e, show: { title: doc.title }, problems: [], mode }; },
+    cmd(c: Logged) { cmds.push(c); try { return run(c) || { ok: true }; } catch (err) { return { error: (err as Error).message }; } },
+    snapshot() { const e: Partial<ReturnType<typeof r.engine.snapshot>> & { poem?: unknown } = r.engine.snapshot(); delete e.cues; delete e.poem; return { rev, doc, engine: e, show: { title: doc.title }, problems: [], mode }; },
   };
 }
+
+type FakeHost = ReturnType<typeof fakeHost>;
 
 /** A show with a sequence in it (1 continues into 2), a group, and a second list. */
 function aShow() {
@@ -71,26 +84,27 @@ function aShow() {
 /** The module with a sender: `say('/address args')` returns { ret, reply } where reply is the JSON that came back. */
 /** (a show with no passcode of its own is given one that may do everything, and each sender connects with it first:
  *  a sender with no passcode may not edit, and over UDP only a sender that has connected is answered) */
+type RemoteConfig = Parameters<ReturnType<typeof oscControl.create>['start']>[0];
 const ALL = { code: '7777', view: true, edit: true, control: true };
-const ownCodes = (config) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
-function remote(host, config = {}, opts = {}) {
-  const m = oscControl.create({ log() {}, changed() {}, host, ...opts });
+const ownCodes = (config: RemoteConfig) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
+function remote(host: FakeHost, config: RemoteConfig = {}, opts: { now?: () => number; always?: boolean } = {}) {
+  const m = oscControl.create({ log() {}, changed() {}, host: host as unknown as HostApi, ...opts });
   const mine = ownCodes(config);
   m.start(mine ? config : { ...config, passcodes: [ALL] });
-  const from = (port) => {
-    const got = [];
-    const send = (address, args = []) => got.push({ address, args: args.map((a) => (a && typeof a === 'object' ? a.value : a)) });
-    const say = (text, args) => {
-      const msg = args ? { address: text, args } : osc.decode(osc.encode(text));
+  const from = (port: number) => {
+    const got: { address: string; args: unknown[] }[] = [];
+    const send: HubReply = (address, args = []) => got.push({ address, args: args.map((a) => (a && typeof a === 'object' ? (a as OscTyped).value : a)) });
+    const say = (text: string, args?: OscValue[]): Said => {
+      const msg = (args ? { address: text, args } : osc.decode(osc.encode(text)))!;
       const n = got.length;
       const ret = m.onOsc(msg, { address: '10.0.0.9', port }, send);
       const back = got[n] && /^\/reply/.test(got[n].address) ? got[n] : null;
-      return { ret, address: back && back.address, reply: back ? JSON.parse(back.args[0]) : null };
+      return { ret, address: back && back.address, reply: back ? JSON.parse(String(back.args[0])) : null };
     };
     // (a plain command is answered only on request, as in QLab: these tests read every answer)
     if (!mine) m.onOsc({ address: '/connect', args: [ALL.code] }, { address: '10.0.0.9', port }, () => {});
     if (opts.always !== false) m.onOsc({ address: '/alwaysReply', args: [1] }, { address: '10.0.0.9', port }, () => {});
-    return { say, got, ask: (text, args) => say(text, args).reply.data };
+    return { say, got, ask: (text: string, args?: OscValue[]) => say(text, args).reply.data };
   };
   return { m, ...from(5000), from };
 }
@@ -117,7 +131,7 @@ test('OSC control: a cue’s properties are read by QLab’s names, in QLab’s 
   assert.equal(r.ask('/cue/2/name'), '', 'its own name, which it has not');
   assert.equal(r.ask('/cue/2/displayName'), 'wait 4 s', 'what the list shows');
   assert.equal(r.ask('/cue/2/listName'), 'wait 4 s');
-  assert.deepEqual(r.ask('/cue/10/children').map((c) => c.number), ['10.1', '10.2']);
+  assert.deepEqual(r.ask('/cue/10/children').map((c: Json) => c.number), ['10.1', '10.2']);
   assert.deepEqual(r.ask('/cue/1/valuesForKeys', ['["number","name","type","armed","nonsense"]']), { number: '1', name: 'House to half', type: 'Wait', armed: true });
   assert.equal(r.say('/workspace/anything/cue/1/name').reply.address, '/workspace/anything/cue/1/name', 'a workspace prefix is taken off and given back');
   assert.equal(host.cmds.length, 0, 'reading does nothing to the show');
@@ -131,12 +145,12 @@ test('OSC control: running, paused, loaded and elapsed follow the engine', () =>
   assert.equal(r.ask('/cue/10.1/isRunning'), true);
   assert.equal(r.ask('/cue/10/isRunning'), true, 'the group it is in is running too');
   assert.equal(r.ask('/cue/10.1/actionElapsed'), 0, 'a wait has no action of its own');
-  assert.deepEqual(r.ask('/runningCues').map((c) => c.number), ['10', '10.1']);
+  assert.deepEqual(r.ask('/runningCues').map((c: Json) => c.number), ['10', '10.1']);
   r.say('/cue/10.1/pause');
   assert.equal(r.ask('/cue/10.1/isPaused'), true);
   assert.equal(r.ask('/cue/10.1/isRunning'), false);
   assert.deepEqual(r.ask('/runningCues'), []);
-  assert.deepEqual(r.ask('/runningOrPausedCues').map((c) => c.number), ['10', '10.1']);
+  assert.deepEqual(r.ask('/runningOrPausedCues').map((c: Json) => c.number), ['10', '10.1']);
   r.say('/cue/active/resume');
   assert.equal(r.ask('/cue/10.1/isRunning'), true);
   r.say('/cue/active/stop');
@@ -146,7 +160,7 @@ test('OSC control: running, paused, loaded and elapsed follow the engine', () =>
   assert.equal(r.ask('/cue/1/isLoaded'), true);
   assert.deepEqual(host.cmds.at(-1), { op: 'load', secs: 3.5, from: 'osc' });
   r.say('/cue/selected/loadAt 0 1 2');
-  assert.equal(host.cmds.at(-1).secs, 62, 'hours, minutes, seconds');
+  assert.equal(host.cmds.at(-1)!.secs, 62, 'hours, minutes, seconds');
   const other = r.say('/cue/2/loadAt 3');
   assert.equal(other.reply.status, 'error');
   assert.match(other.reply.data, /standing by/);
@@ -156,7 +170,7 @@ test('OSC control: running, paused, loaded and elapsed follow the engine', () =>
 
 test('OSC control: a property is written with a cue.set edit, and Show mode refuses it', () => {
   const s = aShow(), host = fakeHost(s.doc), r = remote(host);
-  const cue = (ref) => show.index(host.doc).byId.get(s.id(ref));
+  const cue = (ref: string) => show.index(host.doc).byId.get(s.id(ref))!;
   assert.equal(r.say('/cue/1/name "Blackout"').ret, 'done');
   assert.deepEqual(host.cmds.at(-1), { op: 'edit', ops: [{ op: 'cue.set', id: s.id('a'), props: { name: 'Blackout' } }], label: 'name (OSC)', from: 'osc' });
   assert.equal(cue('a').name, 'Blackout');
@@ -205,7 +219,7 @@ test('OSC control: a property is written with a cue.set edit, and Show mode refu
   assert.equal(r.say('/cue/10.2/duration 3').reply.status, 'error', 'a Memo has no duration');
   // one edit for every cue a pattern names
   r.say('/cue/10.*/flagged 1');
-  assert.equal(host.cmds.at(-1).ops.length, 2);
+  assert.equal(host.cmds.at(-1)!.ops.length, 2);
   assert.deepEqual([cue('g1').flagged, cue('g2').flagged], [true, true]);
   // Show mode
   r.say('/showMode 1');
@@ -228,7 +242,7 @@ test('OSC control: the ways of naming a cue, and a cue that is not there', () =>
   assert.equal(r.ask('/cue/selected/number'), '1', 'the selection is the playhead');
   assert.equal(r.ask('/cue/playhead/number'), '1');
   assert.equal(r.ask('/cue/playbackPosition/number'), '1');
-  assert.deepEqual(r.ask('/selectedCues').map((c) => c.uniqueID), [s.id('a')]);
+  assert.deepEqual(r.ask('/selectedCues').map((c: Json) => c.uniqueID), [s.id('a')]);
   assert.equal(r.ask('/playheadID'), s.id('a'));
   assert.equal(r.ask(`/cue_id/${s.list}/playheadID`), s.id('a'));
   assert.equal(r.ask(`/cue_id/${s.list}/playbackPositionId`), s.id('a'));
@@ -241,15 +255,15 @@ test('OSC control: the ways of naming a cue, and a cue that is not there', () =>
   assert.equal(r.say('/cue/{1,2}/stop').ret, 'done');
   // "/cue/start <number>" and "/cue_id/start <id>"
   r.say('/cue/start', ['2']);
-  assert.deepEqual([host.cmds.at(-1).op, host.cmds.at(-1).id], ['start', s.id('b')]);
+  assert.deepEqual([host.cmds.at(-1)!.op, host.cmds.at(-1)!.id], ['start', s.id('b')]);
   r.say('/cue_id/start', [s.id('a')]);
-  assert.equal(host.cmds.at(-1).id, s.id('a'));
+  assert.equal(host.cmds.at(-1)!.id, s.id('a'));
   r.say('/reset'); host.cmd({ op: 'panic', hard: true });
   // preview fires the cue alone; panic takes it out
   r.say('/cue/2/preview');
-  assert.deepEqual([host.cmds.at(-1).op, host.cmds.at(-1).id], ['fire', s.id('b')]);
+  assert.deepEqual([host.cmds.at(-1)!.op, host.cmds.at(-1)!.id], ['fire', s.id('b')]);
   r.say('/cue/2/panic');
-  assert.deepEqual([host.cmds.at(-1).op, host.cmds.at(-1).fade], ['stop', true]);
+  assert.deepEqual([host.cmds.at(-1)!.op, host.cmds.at(-1)!.fade], ['stop', true]);
 
   // nothing there: an error, and nothing done
   const before = host.cmds.length;
@@ -309,10 +323,10 @@ test('OSC control: the playhead by id and by sequence, and panic in a time', () 
 test('OSC control: /cueLists, /workspaces and /version in QLab’s shapes', () => {
   const s = aShow(), host = fakeHost(s.doc), r = remote(host);
   const lists = r.ask('/cueLists');
-  assert.deepEqual(lists.map((l) => [l.uniqueID, l.name, l.listName, l.type, l.number]), [[s.list, 'Main', 'Main', 'Cue List', ''], [s.doc.lists[1].id, 'Preshow', 'Preshow', 'Cue List', '']]);
+  assert.deepEqual(lists.map((l: Json) => [l.uniqueID, l.name, l.listName, l.type, l.number]), [[s.list, 'Main', 'Main', 'Cue List', ''], [s.doc.lists[1].id, 'Preshow', 'Preshow', 'Cue List', '']]);
   assert.deepEqual(Object.keys(lists[0]), ['uniqueID', 'number', 'name', 'listName', 'type', 'colorName', 'flagged', 'armed', 'cues']);
   assert.deepEqual(lists[0].cues[1], { uniqueID: s.id('b'), number: '2', name: '', listName: 'wait 4 s', type: 'Wait', colorName: 'red', flagged: false, armed: true, cues: [] });
-  assert.deepEqual(lists[0].cues[2].cues.map((c) => c.number), ['10.1', '10.2']);
+  assert.deepEqual(lists[0].cues[2].cues.map((c: Json) => c.number), ['10.1', '10.2']);
   assert.equal(r.ask('/version'), '5.0.0');
   assert.deepEqual(r.ask('/workspaces'), [{ uniqueID: s.doc.id, displayName: 'Test', port: 0, udpReplyPort: 53001, version: '5.0.0' }]);
 });
@@ -399,31 +413,31 @@ test('OSC control: /updates 1 pushes what changed, in QLab’s addresses', () =>
 });
 
 test('OSC control through the hub, over UDP: a read answered, an update pushed, and what the hub is told did nothing', async () => {
-  const { createHub } = require('../core/net/hub');
-  const port = await new Promise((res) => { const x = dgram.createSocket('udp4'); x.bind(0, '127.0.0.1', () => { const p = x.address().port; x.close(() => res(p)); }); });
+  const { createHub } = require('../core/net/hub') as typeof import('../core/net/hub');
+  const port = await new Promise<number>((res) => { const x = dgram.createSocket('udp4'); x.bind(0, '127.0.0.1', () => { const p = x.address().port; x.close(() => res(p)); }); });
   const s = aShow(), host = fakeHost(s.doc);
   const hub = createHub();
   hub.configure({ patches: [], inputPort: port, listen: true });
   // (what the module's listener tells the hub: exactly true when the message did something)
-  const told = {};
-  const net = { ...hub, onMessage: (fn) => hub.onMessage((msg, from, send) => (told[msg.address] = fn(msg, from, send))) };
-  const m = oscControl.create({ log() {}, changed() {}, net, host });
+  const told: Record<string, unknown> = {};
+  const net = { ...hub, onMessage: (fn: Parameters<typeof hub.onMessage>[0]) => hub.onMessage((msg, from, send) => (told[msg.address] = fn(msg, from, send))) };
+  const m = oscControl.create({ log() {}, changed() {}, net, host: host as unknown as HostApi });
   m.start({ replyPort: 0 })        // (answers back to the port that asked, where QLab's go to 53001);
-  const sock = dgram.createSocket('udp4'), got = [];
-  sock.on('message', (b) => got.push(osc.decode(b)));
-  const say = async (text) => { await new Promise((r) => sock.send(osc.encode(text), port, '127.0.0.1', r)); await sleep(40); };
+  const sock = dgram.createSocket('udp4'), got: OscMessage[] = [];
+  sock.on('message', (b) => got.push(osc.decode(b)!));
+  const say = async (text: string) => { await new Promise((r) => sock.send(osc.encode(text), port, '127.0.0.1', r)); await sleep(40); };
   await sleep(40);
   await say('/connect');            // (over UDP only a sender that has connected is answered)
   await say('/cue/10/name');
-  assert.equal(got.at(-1).address, '/reply/cue/10/name');
-  assert.equal(JSON.parse(got.at(-1).args[0]).data, 'Storm');
+  assert.equal(got.at(-1)!.address, '/reply/cue/10/name');
+  assert.equal(JSON.parse(got.at(-1)!.args[0] as string).data, 'Storm');
   await say('/cue/77/name');
   await say('/workspaces');
-  assert.equal(JSON.parse(got.at(-1).args[0]).data[0].port, port);
+  assert.equal(JSON.parse(got.at(-1)!.args[0] as string).data[0].port, port);
   await say('/updates 1');
   await say('/playhead/2');
   m.onState(); await sleep(40);
-  assert.deepEqual([got.at(-1).address, got.at(-1).args[0]], [`/update/workspace/${s.doc.id}/cueList/${s.list}/playbackPosition`, s.id('b')]);
+  assert.deepEqual([got.at(-1)!.address, got.at(-1)!.args[0]], [`/update/workspace/${s.doc.id}/cueList/${s.list}/playbackPosition`, s.id('b')]);
   assert.deepEqual(told, { '/connect': true, '/cue/10/name': true, '/cue/77/name': false, '/workspaces': true, '/updates': true, '/playhead/2': true });
   assert.equal(hub.monitor().filter((e) => e.dir === 'in').length, 6, 'everything heard is in the monitor');
   m.stop(); hub.close(); sock.close();

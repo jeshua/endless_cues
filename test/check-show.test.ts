@@ -3,8 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { build } from './helpers';
 import { checkShow, summary, loops } from '../core/show/check';
+import type { CueSpec, Op, Place } from '../core/show/ops';
 
-const add = (ref, cue, more = {}) => ({ op: 'cue.add', ref, cue, ...more });
+const add = (ref: string, cue: CueSpec, more: Place = {}): Op => ({ op: 'cue.add', ref, cue, ...more });
 
 test('a plain show has nothing wrong', () => {
   const s = build([add('a', { type: 'audio', file: 'media/a.wav', number: '1' }), add('f', { type: 'fade', target: '@a', number: '2' })]);

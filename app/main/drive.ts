@@ -22,8 +22,13 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import { dialog, Menu, app } from 'electron';
+import type { AddressInfo } from 'net';
+import type { BrowserWindow, MenuItem } from 'electron';
+import type { Host } from './host';
+import type { Active } from './smoke';
+import type { EngineCue } from '../../core/engine/cue-engine';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MAC = process.platform === 'darwin';
 
 /** What is on the page, as a person scanning it would list it. Runs in the window. */
@@ -85,13 +90,17 @@ const OUTLINE = `(() => {
   return { size: [innerWidth, innerHeight], items: out.slice(0, 420), cut: Math.max(0, out.length - 420),
            focus: f && f !== document.body ? (f.tagName.toLowerCase() + (f.getAttribute('data-field') ? ' ' + f.getAttribute('data-field') : '') + (f.value !== undefined ? ' "' + short(f.value, 40) + '"' : '')) : '' };
 })()`;
+/** One thing OUTLINE lists: where its middle is, what kind it is, what it says. */
+interface Item { x: number; y: number; kind: string; text: string; more: string }
+interface Outline { size: [number, number]; items: Item[]; cut: number; focus: string }
 
-const KEYS = { space: 'Space', enter: 'Enter', return: 'Enter', esc: 'Escape', escape: 'Escape', tab: 'Tab', backspace: 'Backspace', delete: 'Delete',
+const KEYS: Record<string, string> = { space: 'Space', enter: 'Enter', return: 'Enter', esc: 'Escape', escape: 'Escape', tab: 'Tab', backspace: 'Backspace', delete: 'Delete',
                up: 'Up', down: 'Down', left: 'Left', right: 'Right', arrowup: 'Up', arrowdown: 'Down', arrowleft: 'Left', arrowright: 'Right',
                home: 'Home', end: 'End', pageup: 'PageUp', pagedown: 'PageDown' };
-const MODS = { cmd: 'meta', command: 'meta', meta: 'meta', ctrl: 'control', control: 'control', shift: 'shift', alt: 'alt', option: 'alt', opt: 'alt' };
+type Mod = NonNullable<Electron.InputEvent['modifiers']>[number];
+const MODS: Record<string, Mod> = { cmd: 'meta', command: 'meta', meta: 'meta', ctrl: 'control', control: 'control', shift: 'shift', alt: 'alt', option: 'alt', opt: 'alt' };
 
-function parseKey(combo) {
+function parseKey(combo: string) {
   const parts = String(combo).split('+').map((p) => p.trim()).filter(Boolean);
   if (String(combo).endsWith('+')) parts.push('+');
   const key = parts.pop() || '';
@@ -99,51 +108,60 @@ function parseKey(combo) {
   return { key: KEYS[key.toLowerCase()] || (key.length === 1 ? key : key[0].toUpperCase() + key.slice(1)), mods };
 }
 /** "Shift+CmdOrCtrl+S" and "cmd+shift+s" as one spelling. */
-function accelKey(text) {
+function accelKey(text: string) {
   const parts = String(text).split('+').map((p) => p.trim().toLowerCase()).filter(Boolean)
     .map((p) => (p === 'cmdorctrl' || p === 'commandorcontrol' ? (MAC ? 'meta' : 'control') : MODS[p] || (KEYS[p] || p).toLowerCase()));
   const key = parts.pop();
   return [...parts.sort(), key].join('+');
 }
 
-function open({ dir, win, host, log }) {
+/** What a virtual user's client sends (bin/ec-user.js): the verb, and whatever it needs. */
+interface DriveCmd { op: string; x: number; y: number; x2: number; y2: number; text?: string; nth?: number; double?: boolean; right?: boolean; mods?: string[]; by?: number;
+                    key: string; path?: string; cancel?: boolean; button?: string; paths?: string[]; option?: string; code?: string }
+interface Reply { error?: string; text?: string; shot?: string }
+interface DialogInfo { kind: string; title: string; detail: string; buttons?: string[] }
+interface Answer { paths?: string[]; button?: string }
+type DialogOptions = Partial<Electron.OpenDialogOptions & Electron.SaveDialogOptions & Electron.MessageBoxOptions>;
+interface MenuHit { path: string[]; item: MenuItem }
+
+function open({ dir, win, host, log }: { dir: string; win: BrowserWindow; host: Host; log: (line: string) => void }) {
   fs.mkdirSync(path.join(dir, 'shots'), { recursive: true });
   const journal = path.join(dir, 'journal.jsonl');
-  const write = (line) => { try { fs.appendFileSync(journal, JSON.stringify({ at: new Date().toISOString(), ...line }) + '\n'); } catch { /* the session folder went away */ } };
+  const write = (line: Record<string, unknown>) => { try { fs.appendFileSync(journal, JSON.stringify({ at: new Date().toISOString(), ...line }) + '\n'); } catch { /* the session folder went away */ } };
   let shots = fs.readdirSync(path.join(dir, 'shots')).length;
   const wc = win.webContents;
-  const page = (js) => wc.executeJavaScript(js, true);
+  const page = <T = unknown>(js: string): Promise<T> => wc.executeJavaScript(js, true);
   // The window is never the front one, and a page that is not focused sends no blur: a field would keep what was
   // typed only on Enter. The page is told it has the keyboard, as it would for a person.
-  try { wc.debugger.attach('1.3'); wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {}); } catch (err) { log(`[drive] focus emulation: ${err.message}`); }
+  try { wc.debugger.attach('1.3'); wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {}); } catch (err) { log(`[drive] focus emulation: ${(err as Error).message}`); }
 
   // ── native dialogs: the user answers them by name ──
-  let pending = null;               // the dialog that is open: { kind, title, detail, buttons, finish }
-  const flashes = [];               // boxes that could not wait for an answer
-  const ask = (info, onAnswer, cancelled) => new Promise((resolve) => {
-    if (pending) pending.finish(null);
+  let pending: { info: DialogInfo; finish: (a: Answer | null) => void } | null = null;               // the dialog that is open: { kind, title, detail, buttons, finish }
+  const flashes: string[] = [];               // boxes that could not wait for an answer
+  const ask = <T>(info: DialogInfo, onAnswer: (a: Answer) => T, cancelled: T) => new Promise<T>((resolve) => {
+    if (pending) pending!.finish(null);
     const timer = setTimeout(() => { if (pending && pending.info === info) { flashes.push(`The ${info.kind} dialog "${info.title}" was left open for two minutes and was cancelled.`); pending.finish(null); } }, 120000);
     pending = { info, finish: (a) => { clearTimeout(timer); pending = null; resolve(a === null ? cancelled : onAnswer(a)); } };
   });
-  const options = (args) => args.find((a) => a && typeof a === 'object' && !a.webContents) || {};
-  const exts = (o) => (o.filters || []).map((f) => `${f.name} (${(f.extensions || []).join(', ')})`).join('; ');
-  dialog.showOpenDialog = (...args) => { const o = options(args);
-    return ask({ kind: 'open-file', title: o.title || 'Open', detail: `${(o.properties || []).includes('openDirectory') ? 'choose a folder' : 'choose a file'}${(o.properties || []).includes('multiSelections') ? ' (several allowed)' : ''}${exts(o) ? `; shows: ${exts(o)}` : ''}` },
-      (a) => ({ canceled: false, filePaths: a.paths }), { canceled: true, filePaths: [] }); };
-  dialog.showSaveDialog = (...args) => { const o = options(args);
-    return ask({ kind: 'save-file', title: o.title || 'Save', detail: `type where to save it; suggested: ${o.defaultPath || ''}` },
-      (a) => ({ canceled: false, filePath: a.paths[0] }), { canceled: true, filePath: '' }); };
-  dialog.showMessageBox = (...args) => { const o = options(args); const buttons = o.buttons && o.buttons.length ? o.buttons : ['OK'];
+  const options = (args: unknown[]): DialogOptions => args.find((a) => a && typeof a === 'object' && !(a as { webContents?: unknown }).webContents) || {};
+  const exts = (o: DialogOptions) => (o.filters || []).map((f) => `${f.name} (${(f.extensions || []).join(', ')})`).join('; ');
+  dialog.showOpenDialog = (...args: unknown[]) => { const o = options(args);
+    return ask<Electron.OpenDialogReturnValue>({ kind: 'open-file', title: o.title || 'Open', detail: `${(o.properties || []).includes('openDirectory') ? 'choose a folder' : 'choose a file'}${(o.properties || []).includes('multiSelections') ? ' (several allowed)' : ''}${exts(o) ? `; shows: ${exts(o)}` : ''}` },
+      (a) => ({ canceled: false, filePaths: a.paths! }), { canceled: true, filePaths: [] }); };
+  dialog.showSaveDialog = (...args: unknown[]) => { const o = options(args);
+    return ask<Electron.SaveDialogReturnValue>({ kind: 'save-file', title: o.title || 'Save', detail: `type where to save it; suggested: ${o.defaultPath || ''}` },
+      (a) => ({ canceled: false, filePath: a.paths![0] }), { canceled: true, filePath: '' }); };
+  dialog.showMessageBox = ((...args: unknown[]) => { const o = options(args); const buttons = o.buttons && o.buttons.length ? o.buttons : ['OK'];
     return ask({ kind: 'message', title: o.message || o.title || '', detail: o.detail || '', buttons },
-      (a) => ({ response: Math.max(0, buttons.findIndex((b) => b.toLowerCase() === String(a.button).toLowerCase())) }), { response: o.cancelId ?? buttons.length - 1 }); };
-  dialog.showMessageBoxSync = (...args) => { const o = options(args); const buttons = o.buttons || ['OK'];
+      (a) => ({ response: Math.max(0, buttons.findIndex((b) => b.toLowerCase() === String(a.button).toLowerCase())) }), { response: o.cancelId ?? buttons.length - 1 }); }) as typeof dialog.showMessageBox;
+  dialog.showMessageBoxSync = (...args: unknown[]) => { const o = options(args); const buttons = o.buttons || ['OK'];
     flashes.push(`A message box appeared and was cancelled for you (it cannot wait in a test session): "${o.message || ''}" ${o.detail || ''} [${buttons.join(' / ')}]`);
     return o.cancelId ?? buttons.length - 1; };
-  dialog.showErrorBox = (title, content) => { flashes.push(`An error box appeared: "${title}" ${content || ''}`); };
+  dialog.showErrorBox = (title: string, content: string) => { flashes.push(`An error box appeared: "${title}" ${content || ''}`); };
 
   // ── the menu bar ──
-  const menuItems = (menu = Menu.getApplicationMenu(), trail = []) => {
-    const out = [];
+  const menuItems = (menu = Menu.getApplicationMenu(), trail: string[] = []): MenuHit[] => {
+    const out: MenuHit[] = [];
     for (const item of (menu ? menu.items : [])) {
       if (item.type === 'separator' || !item.visible) continue;
       const here = [...trail, item.label];
@@ -152,14 +170,14 @@ function open({ dir, win, host, log }) {
     }
     return out;
   };
-  const plain = (s) => String(s).replace(/…|\.\.\./g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const plain = (s: unknown) => String(s).replace(/…|\.\.\./g, '').replace(/\s+/g, ' ').trim().toLowerCase();
   // The Edit menu's own items act on the text field being typed in; the rest of the system's items (Quit,
   // Reload, Minimise…) would end or hide the session, so a virtual user is told they are out of reach.
-  const EDIT_ROLES = { selectall: 'selectAll', copy: 'copy', cut: 'cut', paste: 'paste', undo: 'undo', redo: 'redo' };
-  const roleOf = (m) => String(m.item.role || '').toLowerCase();
-  const typing = () => page('(() => { const f = document.activeElement; return !!f && (f.tagName === "INPUT" || f.tagName === "TEXTAREA" || f.isContentEditable); })()');
-  const choose = (m) => { m.item.click(undefined, win, wc); return `${m.path.join(' ▸ ')}`; };
-  async function chooseRole(m) {
+  const EDIT_ROLES: Record<string, 'selectAll' | 'copy' | 'cut' | 'paste' | 'undo' | 'redo'> = { selectall: 'selectAll', copy: 'copy', cut: 'cut', paste: 'paste', undo: 'undo', redo: 'redo' };
+  const roleOf = (m: MenuHit) => String(m.item.role || '').toLowerCase();
+  const typing = () => page<boolean>('(() => { const f = document.activeElement; return !!f && (f.tagName === "INPUT" || f.tagName === "TEXTAREA" || f.isContentEditable); })()');
+  const choose = (m: MenuHit) => { m.item.click(undefined, win, wc); return `${m.path.join(' ▸ ')}`; };
+  async function chooseRole(m: MenuHit) {
     const fn = EDIT_ROLES[roleOf(m)];
     if (!fn) return { error: `${m.path.join(' ▸ ')} belongs to the operating system and is not available in a test session.` };
     if (await typing()) wc[fn]();
@@ -167,14 +185,14 @@ function open({ dir, win, host, log }) {
   }
 
   // ── the mouse and the keyboard ──
-  const mouse = (type, x, y, o = {}) => wc.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: o.right ? 'right' : 'left', clickCount: o.count || 1, modifiers: o.mods || [] });
-  async function clickAt(x, y, o = {}) {
+  const mouse = (type: 'mouseMove' | 'mouseDown' | 'mouseUp', x: number, y: number, o: { right?: boolean; count?: number; mods?: string[] } = {}) => wc.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: o.right ? 'right' : 'left', clickCount: o.count || 1, modifiers: (o.mods || []) as Mod[] });
+  async function clickAt(x: number, y: number, o: { double?: boolean; right?: boolean; mods?: string[] } = {}) {
     mouse('mouseMove', x, y); await sleep(40);
     for (let n = 1; n <= (o.double ? 2 : 1); n++) { mouse('mouseDown', x, y, { ...o, count: n }); mouse('mouseUp', x, y, { ...o, count: n }); await sleep(60); }
   }
-  async function find(text, nth) {
+  async function find(text: string, nth?: number): Promise<Partial<Item> & { error?: string }> {
     const want = plain(text);
-    const items = (await page(OUTLINE)).items;
+    const items = (await page<Outline>(OUTLINE)).items;
     let hits = items.filter((i) => plain(i.text) === want);
     if (!hits.length) hits = items.filter((i) => plain(i.text).includes(want));
     // a control before the words beside it
@@ -185,12 +203,12 @@ function open({ dir, win, host, log }) {
     return hits[(nth || 1) - 1] || { error: `There are only ${hits.length}.` };
   }
 
-  const line = (i) => `(${i.x},${i.y}) ${i.kind}${i.text ? ` "${i.text}"` : ''}${i.more ? `  ${i.more}` : ''}`;
+  const line = (i: Item) => `(${i.x},${i.y}) ${i.kind}${i.text ? ` "${i.text}"` : ''}${i.more ? `  ${i.more}` : ''}`;
 
-  const ops = {
+  const ops: Record<string, (c: DriveCmd) => Promise<Reply>> = {
     async look() {
       await sleep(250);
-      const o = await page(OUTLINE);
+      const o = await page<Outline>(OUTLINE);
       const file = path.join(dir, 'shots', `${String(++shots).padStart(3, '0')}.png`);
       fs.writeFileSync(file, (await wc.capturePage()).toPNG());
       const said = flashes.splice(0);
@@ -205,18 +223,18 @@ function open({ dir, win, host, log }) {
     },
     async click(c) {
       if (pending) return { error: `A dialog is open ("${pending.info.title}"). Answer it first.` };
-      let at = c;
+      let at: Partial<Item> = c;
       if (c.text !== undefined) { const hit = await find(c.text, c.nth); if (hit.error) return hit; at = hit; }
-      if (!(at.x >= 0 && at.y >= 0)) return { error: 'click needs a place (x y) or what the thing says' };
-      await clickAt(at.x, at.y, { double: !!c.double, right: !!c.right, mods: (c.mods || []).map((m) => MODS[m.toLowerCase()]).filter(Boolean) });
+      if (!(at.x! >= 0 && at.y! >= 0)) return { error: 'click needs a place (x y) or what the thing says' };
+      await clickAt(at.x!, at.y!, { double: !!c.double, right: !!c.right, mods: (c.mods || []).map((m) => MODS[m.toLowerCase()]).filter(Boolean) });
       return { text: `clicked (${at.x},${at.y})${at.text ? ` ${at.kind} "${at.text}"` : ''}${c.double ? ' twice' : ''}` };
     },
     async drag(c) {
       // A thing the page lets you pick up (a cue row) is moved by the browser's own drag and drop, which mouse events
       // sent to a hidden window start and never finish. Its events are given to the page directly instead.
-      const dnd = await page(`(async () => {
+      const dnd = await page<boolean>(`(async () => {
         const beat = () => new Promise((r) => setTimeout(r, 60));
-        const from = document.elementFromPoint(${Math.round(c.x)}, ${Math.round(c.y)});
+        const from = document.elementFromPoint(${Math.round(c.x!)}, ${Math.round(c.y!)});
         const el = from && from.closest('[draggable="true"]');
         if (!el) return false;
         const dt = new DataTransfer();
@@ -279,7 +297,7 @@ function open({ dir, win, host, log }) {
       const info = pending.info;
       if (c.cancel) { pending.finish(null); return { text: `cancelled "${info.title}"` }; }
       if (info.kind === 'message') {
-        if (!info.buttons.some((b) => b.toLowerCase() === String(c.button || '').toLowerCase())) return { error: `Its buttons are: ${info.buttons.join(' / ')}` };
+        if (!info.buttons!.some((b) => b.toLowerCase() === String(c.button || '').toLowerCase())) return { error: `Its buttons are: ${info.buttons!.join(' / ')}` };
         pending.finish({ button: c.button }); return { text: `pressed "${c.button}" in "${info.title}"` };
       }
       const paths = (c.paths || []).map((p) => path.resolve(p));
@@ -288,10 +306,10 @@ function open({ dir, win, host, log }) {
       pending.finish({ paths }); return { text: `answered "${info.title}" with ${paths.join(', ')}` };
     },
     async choose(c) {
-      let at = c;
+      let at: Partial<Item> = c;
       if (c.text !== undefined) { const hit = await find(c.text, c.nth); if (hit.error) return hit; at = hit; }
-      const r = await page(`(() => {
-        let el = document.elementFromPoint(${Math.round(at.x)}, ${Math.round(at.y)});
+      const r = await page<{ error?: string; picked?: string }>(`(() => {
+        let el = document.elementFromPoint(${Math.round(at.x!)}, ${Math.round(at.y!)});
         while (el && el.tagName !== 'SELECT') el = el.parentElement;
         if (!el) return { error: 'That is not a drop-down list.' };
         if (el.disabled) return { error: 'That drop-down list is disabled.' };
@@ -310,10 +328,11 @@ function open({ dir, win, host, log }) {
     async js(c) { try { return { text: JSON.stringify(await page(String(c.code))) }; } catch (err) { return { error: String(err) }; } },
     async hear() {
       const s = host.snapshot(false);
-      const t = (x) => `${Math.floor(x / 60)}:${(x % 60).toFixed(1).padStart(4, '0')}`;
+      const t = (x: number) => `${Math.floor(x / 60)}:${(x % 60).toFixed(1).padStart(4, '0')}`;
       // which of the device's outputs it comes out of, when not the first pair
-      const where = (id) => { const c = host.engine.byId.get(id) || {}; const b = s.mixer.buses.find((x) => x.id === c.bus); return !b || !(b.out > 1) ? '' : b.noOutput ? `, SILENT: its bus (${b.name}) is sent to outputs ${b.out}–${b.out + 1}, which the device does not have` : `, on outputs ${b.out}–${b.out + 1} only (${b.name})`; };
-      const lines = s.engine.active.map((a) => a.mic ? `🎙 ${a.number ? `${a.number} ` : ''}"${a.name}": a live input, open at ${Number(a.db).toFixed(1)} dB${a.fadingTo != null ? ` (fading to ${a.fadingTo} dB)` : ''} for ${t(a.elapsed)}${where(a.id)}` : a.kind === 'audio'
+      const where = (id: string) => { const c: Partial<EngineCue> = host.engine.byId.get(id) || {}; const b = s.mixer.buses.find((x) => x.id === c.bus); return !b || !(b.out! > 1) ? '' : b.noOutput ? `, SILENT: its bus (${b.name}) is sent to outputs ${b.out}–${b.out! + 1}, which the device does not have` : `, on outputs ${b.out}–${b.out! + 1} only (${b.name})`; };
+      const active: Active[] = s.engine.active;
+      const lines = active.map((a) => a.mic ? `🎙 ${a.number ? `${a.number} ` : ''}"${a.name}": a live input, open at ${Number(a.db).toFixed(1)} dB${a.fadingTo != null ? ` (fading to ${a.fadingTo} dB)` : ''} for ${t(a.elapsed)}${where(a.id)}` : a.kind === 'audio'
         ? `♪ ${a.number ? `${a.number} ` : ''}"${a.name}" at ${Number(a.db).toFixed(1)} dB${a.fadingTo != null ? ` (fading to ${a.fadingTo} dB)` : ''}, ${t(a.elapsed)} of ${t(a.total)}${a.loop ? ', looping' : ''}${a.holding ? (a.count ? `, pass ${a.count.pass} of ${a.count.of} of a counted section` : ', held in a loop') : ''}${a.paused ? ', PAUSED' : ''}${where(a.id)}`
         : `… ${a.number ? `${a.number} ` : ''}"${a.name}" is waiting (${t(a.elapsed)} of ${t(a.total)})${a.paused ? ', PAUSED' : ''}`);
       return { text: [`(A test session makes no sound. This is what would be coming out of the speakers.)`, ...(lines.length ? lines : ['Silence.'])].join('\n') };
@@ -325,17 +344,17 @@ function open({ dir, win, host, log }) {
     let body = '';
     req.on('data', (d) => { body += d; });
     req.on('end', async () => {
-      let c = {}, r;
-      try { c = JSON.parse(body || '{}'); r = ops[c.op] ? await ops[c.op](c) : { error: `unknown: ${c.op}` }; }
-      catch (err) { r = { error: `the app failed: ${err.message}` }; log(`[drive] ${c.op}: ${err.stack || err}`); }
+      let c: Partial<DriveCmd> = {}, r: Reply;
+      try { c = JSON.parse(body || '{}'); r = ops[c.op!] ? await ops[c.op!](c as DriveCmd) : { error: `unknown: ${c.op}` }; }
+      catch (err) { r = { error: `the app failed: ${(err as Error).message}` }; log(`[drive] ${c.op}: ${(err as Error).stack || err}`); }
       const { op, ...args } = c;
-      write({ op, args, ...(r.error ? { error: r.error } : { did: r.shot ? path.basename(r.shot) : r.text.split('\n')[0] }) });
+      write({ op, args, ...(r.error ? { error: r.error } : { did: r.shot ? path.basename(r.shot) : r.text!.split('\n')[0] }) });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(r));
     });
   });
   server.listen(0, '127.0.0.1', () => {
-    fs.writeFileSync(path.join(dir, 'door.json'), JSON.stringify({ port: server.address().port, pid: process.pid }));
+    fs.writeFileSync(path.join(dir, 'door.json'), JSON.stringify({ port: (server.address() as AddressInfo).port, pid: process.pid }));
     log(`[drive] a virtual user's session: ${dir}`);
   });
   win.showInactive();               // drawn, so it can be pictured, without taking the keyboard from whoever is working

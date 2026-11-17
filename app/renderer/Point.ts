@@ -4,9 +4,27 @@
 // host whether it could. The ring takes no clicks and no keyboard, and goes after a few seconds or at the first
 // click or key. Nothing here edits or plays anything; in Show mode nothing is pointed at.
 import { useEffect, useRef, cmd } from './lib.js';
+import type { State } from './lib.js';
+
+/** A step that brings a place on screen (core/ui/places.js). */
+export interface PlaceStep { do: 'settings' | 'cues' | 'reveal' | 'select' | 'tab' | 'more'; section?: string; cue?: string; types?: string[]; tab?: string }
+/** A place as the host sends it (core/ui/places.js `resolve`), `say` the assistant's words beside the ring. */
+export interface Place { label: string; sel: string; steps?: PlaceStep[]; settings?: boolean; fallback?: Place; absent?: string; menu?: string; say?: string }
+/** The window's part in pointing: what it shows, and how to change that. `choose` answers why it could not, or ''. */
+export interface PointUI {
+  mode: () => string | undefined;
+  settingsOpen: () => boolean;
+  openSettings: (section: string | undefined) => void;
+  closeSettings: () => void;
+  showCues: () => void;
+  reveal: (id: string) => void;
+  choose: (step: PlaceStep) => string;
+}
+/** What pointing came to. */
+export interface Pointed { ok: boolean; why?: string; instead?: string }
 
 const RING_MS = 6000;
-let ring = null;          // { box, say, el, until, raf, off }
+let ring: { box: HTMLElement; say: HTMLElement; el: Element; until: number; raf: number; off: () => void } | null = null;
 
 function unring() {
   if (!ring) return;
@@ -16,10 +34,10 @@ function unring() {
   ring = null;
 }
 
-const shown = (el) => { if (!el || !el.isConnected) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+const shown = (el: Element | null) => { if (!el || !el.isConnected) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
 
 /** Ring `el` with `words` beside it, following it if it moves, until the time is up or the person does anything. */
-export function ringOf(el, words) {
+export function ringOf(el: Element, words: string) {
   unring();
   const box = document.createElement('div'); box.className = 'point-ring'; box.dataset.pointRing = '';
   const say = document.createElement('div'); say.className = 'point-say'; say.dataset.pointSay = ''; say.textContent = words || '';
@@ -51,9 +69,9 @@ export function ringOf(el, words) {
   place();
 }
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** The place's element once it is drawn (the steps before it take a frame or two to show), or null. */
-async function found(sel, ms = 900) {
+async function found(sel: string, ms = 900) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     const el = [...document.querySelectorAll(sel)].find(shown);
@@ -67,15 +85,15 @@ async function found(sel, ms = 900) {
  * Bring `place` into view and ring it. `ui` is the window's: { mode, settingsOpen, openSettings, closeSettings,
  * showCues, reveal, choose({ cue, types }) → why or '' }. Resolves { ok, why, instead }.
  */
-export async function pointAt(place, ui) {
+export async function pointAt(place: Place | null | undefined, ui: PointUI): Promise<Pointed> {
   if (!place) return { ok: false, why: 'nothing to show' };
   if (ui.mode() === 'show') return { ok: false, why: 'Show mode' };
-  if (place.settings) ui.openSettings(place.steps.find((x) => x.do === 'settings').section);
+  if (place.settings) ui.openSettings(place.steps!.find((x) => x.do === 'settings')!.section);
   else if (ui.settingsOpen()) ui.closeSettings();
   let more = false;
   for (const step of place.steps || []) {
     if (step.do === 'cues') ui.showCues();
-    else if (step.do === 'reveal') ui.reveal(step.cue);
+    else if (step.do === 'reveal') ui.reveal(step.cue!);
     else if (step.do === 'select') { const why = ui.choose(step); if (why) return { ok: false, why }; }
     else if (step.do === 'tab') { await wait(30); window.dispatchEvent(new CustomEvent('ec-reveal', { detail: { tab: step.tab } })); }
     else if (step.do === 'more') more = true;
@@ -97,14 +115,14 @@ export async function pointAt(place, ui) {
 }
 
 /** The main window's part: each place the host pushes is shown once, and answered. */
-export function usePointer(s, ui) {
-  const done = useRef(0);
+export function usePointer(s: State | null, ui: PointUI) {
+  const done = useRef<unknown>(0);
   const uiRef = useRef(ui); uiRef.current = ui;
-  const p = s && s.point;
+  const p = (s && s.point) as (Place & { id: number }) | null;      // (the host sends what core/ui/places.js resolved)
   useEffect(() => {
     if (!p || p.id === done.current) return;
     done.current = p.id;
-    pointAt(p, uiRef.current).then((r) => cmd({ op: 'pointed', id: p.id, ...r })).catch((err) => cmd({ op: 'pointed', id: p.id, ok: false, why: err.message }));
+    pointAt(p, uiRef.current).then((r) => cmd({ op: 'pointed', id: p.id, ...r })).catch((err: Error) => cmd({ op: 'pointed', id: p.id, ok: false, why: err.message }));
   }, [p && p.id]);
   // Show mode: a ring still showing goes at once
   useEffect(() => { if (s && s.mode === 'show') unring(); }, [s && s.mode]);

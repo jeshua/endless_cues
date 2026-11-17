@@ -7,6 +7,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssistant, sdkProvider, compatibleProvider, cloudProvider, cliProvider } from '../core/assistant/assistant';
+import type { Provider, Reply, TextBlock, ToolUseBlock } from '../core/assistant/assistant';
+import type { Op } from '../core/show/ops';
+import type { ChildProcess } from 'child_process';
 import { outline } from '../core/assistant/tools';
 import * as history from '../core/assistant/history';
 import { ShowDocument } from '../core/show/document';
@@ -15,7 +18,7 @@ import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 
 const showOf = (n = 30) => {
-  const ops = [];
+  const ops: Op[] = [];
   for (let i = 1; i <= n; i++) ops.push({ op: 'cue.add', cue: i % 10 === 0
     ? { type: 'group', number: String(i), name: `Scene ${i / 10}`, children: [{ type: 'audio', name: `Bed ${i}`, file: `media/bed-${i}.wav`, gainDb: -8 }] }
     : { type: 'audio', number: String(i), name: `Sound ${i}`, file: `media/sound-${i}.wav`, gainDb: -3 } });
@@ -26,7 +29,7 @@ const showOf = (n = 30) => {
 
 test('a diff of two outlines, applied to the first, gives the second: edits anywhere, lines that repeat, nothing changed', () => {
   let seed = 7;
-  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
   const lines = Array.from({ length: 40 }, (_, i) => `  - #${i} Audio: Sound ${i}`);
   for (let round = 0; round < 300; round++) {
     const a = lines.slice(0, 5 + rnd(35));
@@ -76,19 +79,28 @@ test('what a question says of the show: the outline the first time, a line when 
   assert.ok(whole >= 1 && whole <= 6, `${whole} whole outlines in 40 small changes`);
 });
 
+/** A child process as far as the CLI providers use one. */
+type FakeChild = EventEmitter & { stdout: PassThrough; stderr: PassThrough };
+
 // ── every provider: what was sent is never changed ──────────────────────────────────────────────────────────
 
-const use = (id, name, input) => ({ stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: '', signature: `sig-${id}` }, { type: 'tool_use', id, name, input }] });
-const say = (text) => ({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: `sig-${text.length}` }, { type: 'text', text }] });
+/** A reply as a provider is scripted to give it (and as the fakes put it on the wire). */
+type Scripted = Omit<Reply, 'role'>;
+const use = (id: string, name: string, input: unknown): Scripted => ({ stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: '', signature: `sig-${id}` }, { type: 'tool_use', id, name, input }] });
+const say = (text: string): Scripted => ({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '', signature: `sig-${text.length}` }, { type: 'text', text }] });
 const FAIL = 'fail';
+/** What a provider put on the wire for one request (its messages as JSON). */
+interface Wire { messages: any[]; system: unknown; tools: unknown; body?: any; headers?: unknown }
+/** What `conversation` gives the provider under test. */
+interface IO { answer: () => Scripted | typeof FAIL; record: (r: Wire) => void }
 
 /**
  * Six questions: a look, a change accepted, a turn that fails half-way, a change left waiting, a follow-up on it,
  * a plain question. `wire` is the provider under test, built around `answer(i)` (the i-th reply, or FAIL), and gives
  * back what it put on the wire for each request as { messages, system, tools, body }.
  */
-async function conversation(makeProvider) {
-  const replies = [
+async function conversation(makeProvider: (io: IO) => Provider) {
+  const replies: (Scripted | typeof FAIL)[] = [
     use('a1', 'find_cues', { text: 'sound' }), say('There are 30 cues.'),
     use('b1', 'propose_changes', { summary: 'Cue 7 quieter', ops: [{ op: 'cue.set', id: '#7', props: { gainDb: -12 } }] }), say('Cue 7 is quieter.'),
     use('c1', 'read_show', {}), FAIL,
@@ -97,12 +109,12 @@ async function conversation(makeProvider) {
     say('Cue 1 plays first.'),
   ];
   let n = 0;
-  const sent = [];
+  const sent: Wire[] = [];
   const provider = makeProvider({ answer: () => replies[n++], record: (r) => sent.push(r) });
   const d = showOf(30);
   const a = createAssistant({ provider });
-  const asks = [['how many cues?', false], ['make cue 7 quieter', true], ['and read it again', false], ['fade 9 out after it', false], ['make it 5 seconds', false], ['what plays first?', false]];
-  const turns = [];
+  const asks: [string, boolean][] = [['how many cues?', false], ['make cue 7 quieter', true], ['and read it again', false], ['fade 9 out after it', false], ['make it 5 seconds', false], ['what plays first?', false]];
+  const turns: { from: number; to: number; failed: boolean }[] = [];
   for (const [text, accept] of asks) {
     const from = sent.length;
     const r = await a.ask(text, { document: d });
@@ -114,8 +126,8 @@ async function conversation(makeProvider) {
 }
 
 /** Every request sent in a turn that did not fail is, message for message, the start of every request after it. */
-function assertAppendOnly({ sent, turns }) {
-  const failed = new Set(); for (const t of turns) if (t.failed) for (let i = t.from; i < t.to; i++) failed.add(i);
+function assertAppendOnly({ sent, turns }: { sent: Wire[]; turns: { from: number; to: number; failed: boolean }[] }) {
+  const failed = new Set<number>(); for (const t of turns) if (t.failed) for (let i = t.from; i < t.to; i++) failed.add(i);
   assert.ok(sent.length >= 10);
   for (let i = 0; i < sent.length; i++) {
     assert.deepEqual(sent[i].system, sent[0].system, `request ${i}: the same instructions`);
@@ -131,11 +143,11 @@ function assertAppendOnly({ sent, turns }) {
 test('the conversation as the app keeps it: never changed, and what it says of the show adds up to the show', async () => {
   const run = await conversation(({ answer, record }) => ({ name: 'scripted', async create(req) {
     record({ messages: JSON.parse(JSON.stringify(req.messages)), system: req.system, tools: req.tools });
-    const r = answer(); if (r === FAIL) throw new Error('network down'); return JSON.parse(JSON.stringify(r));
+    const r = answer(); if (r === FAIL) throw new Error('network down'); return JSON.parse(JSON.stringify(r)) as Reply;
   } }));
   assertAppendOnly(run);
   // the questions, in order: the outline once, then changes; together they are the show as the last question saw it
-  const last = run.sent.at(-1).messages;
+  const last = run.sent.at(-1)!.messages;
   const notes = last.filter((m) => m.role === 'user' && m.content[0].type === 'text').map((m) => m.content[0].text.replace(/\n<waiting_for_review>[\s\S]*$/, ''));
   assert.equal(notes.length, 5, 'five questions kept (the failed one went)');
   assert.match(notes[0], /^<show_outline>/);
@@ -159,8 +171,8 @@ test('the conversation as the app keeps it: never changed, and what it says of t
 test('your own Anthropic key: the requests on the wire are append-only, the thinking goes back as it came, and the conversation is cached', async () => {
   const run = await conversation(({ answer, record }) => sdkProvider('anthropic', {
     apiKey: 'test-key', maxRetries: 0,
-    fetch: async (url, init) => {
-      const body = JSON.parse(init.body);
+    fetch: async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init!.body as string);
       record({ messages: body.messages, system: body.system, tools: body.tools, body });
       const r = answer();
       if (r === FAIL) return new Response(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'boom' } }), { status: 500, headers: { 'content-type': 'application/json' } });
@@ -168,26 +180,26 @@ test('your own Anthropic key: the requests on the wire are append-only, the thin
     },
   }));
   assertAppendOnly(run);
-  const body = run.sent.at(-1).body;
+  const body = run.sent.at(-1)!.body;
   assert.deepEqual(body.cache_control, { type: 'ephemeral' }, 'the conversation is cached, not only the instructions');
   assert.equal(body.system[0].cache_control.type, 'ephemeral');
-  const thinking = body.messages.filter((m) => m.role === 'assistant').flatMap((m) => m.content).filter((b) => b.type === 'thinking');
-  assert.ok(thinking.length >= 6 && thinking.every((b) => b.thinking === '' && /^sig-/.test(b.signature)), 'every thinking block, empty ones too, sent back');
+  const thinking = body.messages.filter((m: { role: string }) => m.role === 'assistant').flatMap((m: { content: unknown }) => m.content).filter((b: { type: string }) => b.type === 'thinking');
+  assert.ok(thinking.length >= 6 && thinking.every((b: { thinking: string; signature: string }) => b.thinking === '' && /^sig-/.test(b.signature)), 'every thinking block, empty ones too, sent back');
 });
 
 test('OpenAI-compatible services and the Endless Cues assistant: the chat messages on the wire are append-only, ec_state included', async () => {
-  const chatReply = (r, i) => {
-    const calls = r.content.filter((b) => b.type === 'tool_use');
-    const text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  const chatReply = (r: Scripted, i: number) => {
+    const calls = r.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
+    const text = r.content.filter((b): b is TextBlock => b.type === 'text').map((b) => b.text).join('');
     return { choices: [{ finish_reason: calls.length ? 'tool_calls' : 'stop', message: { role: 'assistant', content: text || null,
       ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.input) } })) } : {}),
       ec_state: JSON.stringify({ m: 'm', items: [{ type: 'reasoning', encrypted_content: `enc-${i}` }] }) } }] };
   };
-  const fake = ({ answer, record }) => {
+  const fake = ({ answer, record }: IO) => {
     let i = 0;
-    return async (url, init) => {
-      const body = JSON.parse(init.body);
-      record({ messages: body.messages, system: body.messages[0], tools: body.tools, body, headers: init.headers });
+    return async (url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(init!.body as string);
+      record({ messages: body.messages, system: body.messages[0], tools: body.tools, body, headers: init!.headers });
       const r = answer(); i++;
       if (r === FAIL) return new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 500 });
       return new Response(JSON.stringify(chatReply(r, i)), { status: 200, headers: { 'x-ec-tier': 'allowance', 'x-ec-used': '3' } });
@@ -197,10 +209,10 @@ test('OpenAI-compatible services and the Endless Cues assistant: the chat messag
   assertAppendOnly(open);
   const hosted = await conversation((io) => cloudProvider({ token: 't', version: '1.0.0', fetchImpl: fake(io) }));
   assertAppendOnly(hosted);
-  const states = hosted.sent.at(-1).messages.filter((m) => m.role === 'assistant').map((m) => m.ec_state);
+  const states = hosted.sent.at(-1)!.messages.filter((m) => m.role === 'assistant').map((m) => m.ec_state);
   assert.ok(states.length >= 6 && states.every((s) => /enc-\d+/.test(s)), 'the service’s reasoning goes back as it came');
   // each user message is one string: the note on the show, then the question (as the service's Worker reads it)
-  const users = hosted.sent.at(-1).messages.filter((m) => m.role === 'user');
+  const users = hosted.sent.at(-1)!.messages.filter((m) => m.role === 'user');
   assert.ok(users.every((m) => typeof m.content === 'string'));
   assert.match(users[0].content, /^<show_outline>[\s\S]*\n\nhow many cues\?$/);
   assert.match(users[1].content, /^<show_unchanged>.*\n\nmake cue 7 quieter$/);
@@ -208,28 +220,28 @@ test('OpenAI-compatible services and the Endless Cues assistant: the chat messag
 
 test('Claude Code and Codex keep their own conversation: each question carries the whole outline, and Claude Code resumes its session', async () => {
   const d = showOf(12);
-  const started = [];
-  const spawn = (file, args, opts) => {
+  const started: string[][] = [];
+  const spawn = (file: string, args: string[], opts: unknown) => {
     started.push(args);
-    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    const child = new EventEmitter() as FakeChild; child.stdout = new PassThrough(); child.stderr = new PassThrough();
     setTimeout(() => { child.stdout.end(JSON.stringify({ type: 'result', is_error: false, result: 'Done.', session_id: 'sess-1' }) + '\n'); child.emit('close', 0); }, 2);
-    return child;
+    return child as unknown as ChildProcess;
   };
   const a = createAssistant({ provider: cliProvider('claude-code', { spawn, find: () => '/bin/claude', mcpServer: () => ({ command: 'node', args: [] }) }) });
   await a.ask('how many cues?', { document: d });
   await a.ask('and now?', { document: d });
-  const arg = (args, name) => args[args.indexOf(name) + 1];
+  const arg = (args: string[], name: string) => args[args.indexOf(name) + 1];
   assert.ok(!started[0].includes('--resume'));
   assert.equal(arg(started[1], '--resume'), 'sess-1', 'the follow-up continues the session Claude Code keeps (and keeps append-only itself)');
   for (const args of started) assert.match(arg(args, '-p'), /^<show_outline>\n[\s\S]*#11 Audio: Sound 11[\s\S]*<\/show_outline>/);
   // Codex keeps nothing between questions (no session to resume): each prompt is whole on its own
-  const prompts = [];
-  const codexSpawn = (file, args) => {
-    prompts.push(args.at(-1));
-    require('fs').writeFileSync(args[args.indexOf('-o') + 1], 'Done.');
-    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+  const prompts: string[] = [];
+  const codexSpawn = (file: string, args: string[]) => {
+    prompts.push(args.at(-1)!);
+    (require('fs') as typeof import('fs')).writeFileSync(args[args.indexOf('-o') + 1], 'Done.');
+    const child = new EventEmitter() as FakeChild; child.stdout = new PassThrough(); child.stderr = new PassThrough();
     setTimeout(() => { child.stdout.end(''); child.emit('close', 0); }, 2);
-    return child;
+    return child as unknown as ChildProcess;
   };
   const c = createAssistant({ provider: cliProvider('codex', { spawn: codexSpawn, find: () => '/bin/codex', mcpServer: () => ({ command: 'node', args: [] }) }) });
   await c.ask('how many cues?', { document: d });

@@ -12,9 +12,12 @@
  */
 import * as path from 'path';
 import * as show from '../../core/show/show';
+import type { Smoke, Snap } from './smoke';
+import type { Cue } from '../../core/show/types';
+import type { Op } from '../../core/show/ops';
 
 /** Pointer events on the waveform's parts, at a fraction of the width and a height in px (or a fraction). */
-const pointer = (sel, steps, opts = {}) => `(async () => {
+const pointer = (sel: string, steps: unknown[][], opts: { alt?: boolean; meta?: boolean } = {}) => `(async () => {
   const el = document.querySelector(${JSON.stringify(sel)}), wave = document.querySelector('[data-wavedit]');
   if (!el || !wave) return 'no ' + ${JSON.stringify(sel)};
   const box = wave.getBoundingClientRect();
@@ -27,31 +30,31 @@ const pointer = (sel, steps, opts = {}) => `(async () => {
   return 'ok';
 })()`;
 // the y (px, in the waveform) the Volume line is drawn at for a level: the fader's law, as WaveEdit.js draws it
-const volY = (d) => `(() => { const h = document.querySelector('[data-wavedit]').clientHeight, u = ${d} <= -60 ? 0 : Math.pow((${d} + 60) / 72, 2.2); return (1 - u) * (h - 8) + 4; })()`;
+const volY = (d: number) => `(() => { const h = document.querySelector('[data-wavedit]').clientHeight, u = ${d} <= -60 ? 0 : Math.pow((${d} + 60) / 72, 2.2); return (1 - u) * (h - 8) + 4; })()`;
 
-async function editing({ host, check, until, page, sleep, cue, edit }) {
-  const dur = host.snapshot().engine.durations[cue().file] || 3;
-  const fx = (t) => t / dur;
+async function editing({ host, check, until, page, sleep, cue, edit }: Pick<Smoke, 'host' | 'check' | 'until' | 'page' | 'sleep'> & { cue: () => Cue; edit: (n: number) => void }) {
+  const dur = host.snapshot().engine.durations[cue().file!] || 3;
+  const fx = (t: number) => t / dur;
   const env = () => cue().envelope || [];
   const was = env().length;
   // ── the Volume line, always drawn: a click on it adds a point there, on the line ──
   check('the Volume line is drawn without being asked for, with its points', await until(() => page(`!!document.querySelector('[data-wavedit] svg[data-lane-svg="volume"] path.line') && document.querySelectorAll('[data-wavedit] svg circle').length === ${was}`), 3000));
-  const y0 = await page(volY(0));
+  const y0 = await page<number>(volY(0));
   await page(pointer('[data-wavedit]', [['pointerdown', fx(2.1), y0], ['pointerup', fx(2.1), y0]])); edit(1);
   check('a click on the line adds a point there, at the line’s level', await until(() => env().length === was + 1 && env().some((p) => Math.abs(p[0] - 2.1) < 0.06 && Math.abs(p[1]) < 0.6), 2000), env());
   await page(pointer('[data-wavedit]', [['pointerdown', fx(2.1), y0], ['pointermove', fx(2.1), y0 + 15], ['pointermove', fx(2.1), y0 + 30], ['pointerup', fx(2.1), y0 + 30]])); edit(1);
   check('a point dragged down lowers the level there, at the same time', await until(() => env().some((p) => Math.abs(p[0] - 2.1) < 0.06 && p[1] < -3), 2000), env());
   // ⌥-drag on the rising stretch (0.6 s to 1.4 s) bends it
-  const yMid = await page(volY(-30));
+  const yMid = await page<number>(volY(-30));
   await page(pointer('[data-wavedit]', [['pointerdown', fx(1.0), yMid], ['pointermove', fx(1.0), yMid - 15], ['pointermove', fx(1.0), yMid - 30], ['pointerup', fx(1.0), yMid - 30]], { alt: true })); edit(1);
-  check('an ⌥-drag on the line bends it: a bulge up on a rising stretch is a bend below 0, kept on its first point', await until(() => { const p = env().find((q) => Math.abs(q[0] - 0.6) < 0.01); return p && p[2] < 0; }, 2000), env());
+  check('an ⌥-drag on the line bends it: a bulge up on a rising stretch is a bend below 0, kept on its first point', await until(() => { const p = env().find((q) => Math.abs(q[0] - 0.6) < 0.01); return p && p[2]! < 0; }, 2000), env());
   const yLow = await page(`(() => { const c = [...document.querySelectorAll('[data-wavedit] svg circle')]; return c.length; })()`);
   const lowered = env().find((p) => Math.abs(p[0] - 2.1) < 0.06);
-  const yDown = await page(volY(lowered ? lowered[1] : 0));
-  await page(pointer('[data-wavedit]', [['pointerdown', fx(lowered[0]), yDown], ['pointerup', fx(lowered[0]), yDown], ['dblclick', fx(lowered[0]), yDown]])); edit(1);
+  const yDown = await page<number>(volY(lowered ? lowered[1] : 0));
+  await page(pointer('[data-wavedit]', [['pointerdown', fx(lowered![0]), yDown], ['pointerup', fx(lowered![0]), yDown], ['dblclick', fx(lowered![0]), yDown]])); edit(1);
   check('a double-click on a point removes it', await until(() => env().length === was && !env().some((p) => Math.abs(p[0] - 2.1) < 0.06), 2000), [env(), yLow]);
   // ⌘-drag a box round two points, and Delete takes both (and not the cue)
-  const cues = host.snapshot().rows.length, top = await page(volY(12)), foot = await page(`document.querySelector('[data-wavedit]').clientHeight - 2`);
+  const cues = host.snapshot().rows.length, top = await page<number>(volY(12)), foot = await page(`document.querySelector('[data-wavedit]').clientHeight - 2`);
   await page(pointer('[data-wavedit]', [['pointerdown', fx(0.45), top], ['pointermove', fx(1.0), foot], ['pointermove', fx(1.55), foot], ['pointerup', fx(1.55), foot]], { meta: true }));
   check('a ⌘-drag selects the points inside its box', await until(() => page(`document.querySelectorAll('[data-wavedit] svg circle.on').length === 2`), 2000));
   await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', bubbles: true }))`); edit(1);
@@ -62,7 +65,7 @@ async function editing({ host, check, until, page, sleep, cue, edit }) {
   check('the lane picker lists Volume and Pan, with a dot on the line that has points', await until(() => page(`!!document.querySelector('[data-lane-menu] [data-lane="pan"]') && !!document.querySelector('[data-lane-menu] [data-lane="volume"] .lane-dot.has') && !document.querySelector('[data-lane-menu] [data-lane="pan"] .lane-dot.has')`), 2000));
   await page(`document.querySelector('[data-lane-menu] [data-lane="pan"]').click()`);
   await until(() => page(`!!document.querySelector('svg[data-lane-svg="pan"]')`), 2000);
-  const yPan = await page(`(() => { const h = document.querySelector('[data-wavedit]').clientHeight; return 0.5 * (h - 8) + 4; })()`);
+  const yPan = await page<number>(`(() => { const h = document.querySelector('[data-wavedit]').clientHeight; return 0.5 * (h - 8) + 4; })()`);
   await page(pointer('[data-wavedit]', [['pointerdown', fx(0.5), yPan], ['pointermove', fx(0.5), yPan - 20], ['pointerup', fx(0.5), yPan - 20]])); edit(1);
   check('on the Pan line, a point added and dragged up is a pan to the right, kept in the cue’s automation', await until(() => { const a = (cue().automation || {}).pan; return a && a.length === 1 && a[0][1] > 10; }, 2000) && await page(`document.querySelectorAll('[data-wavedit] svg path.other').length === 1`), cue().automation);
   await page(`document.querySelector('[data-lane-pick]').click()`);
@@ -83,7 +86,7 @@ async function editing({ host, check, until, page, sleep, cue, edit }) {
   await until(() => page(`!!document.querySelector('[data-marker-name]')`), 2000);
   await page(`(() => { const el = document.querySelector('[data-marker-name]'); el.value = 'Chorus'; el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`); edit(1);
   check('a double-click on a marker’s name renames it in place', await until(() => marks().some((m) => m.name === 'Chorus'), 2000), marks());
-  const chorus = () => page(`[...document.querySelectorAll('[data-mflag]')].findIndex((el) => el.textContent.includes('Chorus'))`);
+  const chorus = () => page<number>(`[...document.querySelectorAll('[data-mflag]')].findIndex((el) => el.textContent.includes('Chorus'))`);
   await until(async () => (await chorus()) >= 0, 2000);              // (the window draws the new name a moment after the show has it)
   const fk = await chorus();
   await page(pointer(`[data-mflag="${fk}"]`, [['pointerdown', fx(0.9) + 0.003, 0.5], ['pointerup', fx(0.9) + 0.003, 0.5]], { alt: true })); edit(1);
@@ -122,14 +125,14 @@ async function editing({ host, check, until, page, sleep, cue, edit }) {
   if (keep.length) { host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: cue().id, props: { markers: keep } }], label: 'markers back' }); edit(1); }
 }
 
-async function heard({ host, check, until, sleep }) {
-  const snap = () => host.snapshot();
-  const av = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
+async function heard({ host, check, until, sleep }: Pick<Smoke, 'host' | 'check' | 'until' | 'sleep'>) {
+  const snap = () => host.snapshot() as Snap;
+  const av = (js: string) => host.audioWindow()!.webContents.executeJavaScript(js, true);
   const list = host.document.doc.lists[0].id;
-  const tone = require('./test-media').tone('wav');
-  const idOf = (number) => (show.findByNumber(host.document.doc, number) || {}).id;
+  const tone = (require('./test-media') as typeof import('./test-media')).tone('wav');
+  const idOf = (number: string) => show.findByNumber(host.document.doc, number)?.id;
   let edits = 0;
-  const edit = (ops, label) => { const r = host.cmd({ op: 'edit', ops, label }); if (r && !r.error) edits++; return r; };
+  const edit = (ops: Op[], label: string) => { const r = host.cmd({ op: 'edit', ops, label }); if (r && !r.error) edits++; return r; };
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
   edit([{ op: 'cue.add', cue: { type: 'audio', number: 'LN1', file: tone, gainDb: -12, loop: true, pan: -100 }, list },
@@ -144,7 +147,7 @@ async function heard({ host, check, until, sleep }) {
   const outs = () => (snap().routing.outCh || []).slice(0, 2);
   const left = await until(() => { const [l, r] = outs(); return l > -40 && r <= -55; }, 3000);
   check('a sound panned hard left is heard on output 1 and not on output 2 (the meters)', left, outs());
-  edit([{ op: 'cue.set', id: idOf('LN1'), props: { pan: 100 } }], 'pan');
+  edit([{ op: 'cue.set', id: idOf('LN1')!, props: { pan: 100 } }], 'pan');
   check('…and the Pan field moved to the right while it plays moves it to output 2', await until(() => { const [l, r] = outs(); return r > -40 && l <= -55; }, 3000), outs());
   host.cmd({ op: 'panic', hard: true });
   await sleep(300);
@@ -164,7 +167,7 @@ async function heard({ host, check, until, sleep }) {
   check('a filter’s line moves its frequency as the sound plays (along a ratio)', early.hz > 0 && early.hz < 500 && midway.hz > 800 && midway.hz < 2600 && late.hz > 4500, { early: early.hz, midway: midway.hz, late: late.hz });
   check('a bent Volume line is below the straight one half way (it starts slow), and both arrive', midway.bent < midway.straight * 0.7 && late.straight > 0.9 && late.bent > 0.9, { midway, late });
   // a line drawn again while it plays is heard at once
-  edit([{ op: 'cue.set', id: idOf('LN5'), props: { envelope: [[0, -60]] } }], 'volume line');
+  edit([{ op: 'cue.set', id: idOf('LN5')!, props: { envelope: [[0, -60]] } }], 'volume line');
   check('a line drawn again while the sound plays is followed at once', await until(async () => (await read()).straight < 0.01, 2000), await read());
   host.cmd({ op: 'panic', hard: true });
   for (; edits > 0; edits--) host.cmd({ op: 'undo' });

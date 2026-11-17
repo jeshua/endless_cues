@@ -13,18 +13,20 @@ import * as path from 'path';
 import * as show from '../../core/show/show';
 import { applyOps } from '../../core/show/ops';
 import { writeWav } from '../../examples/make-demo';
+import type { Smoke, Snap, Check } from './smoke';
+import type { Op } from '../../core/show/ops';
 
-async function run({ host, win, check, until, page, sleep, shot, log = () => {} }) {
+async function run({ host, win, check, until, page, sleep, shot, log = () => {} }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'> & Partial<Pick<Smoke, 'log'>>) {
   // (the whole show fits the list only in a window as tall as the run asked for; on a smaller screen it was cut down)
-  const roomy = (name, ok, got) => { const h = win.getContentSize()[1]; if (ok || h >= 880) return check(name, ok, got); log(`SMOKE skip  ${name}: the window is ${h} px tall here, the screen is too small for 940${got !== undefined ? `  got: ${JSON.stringify(got)}` : ''}`); };
-  const snap = () => host.snapshot();
+  const roomy: Check = (name, ok, got) => { const h = win.getContentSize()[1]; if (ok || h >= 880) return check(name, ok, got); log(`SMOKE skip  ${name}: the window is ${h} px tall here, the screen is too small for 940${got !== undefined ? `  got: ${JSON.stringify(got)}` : ''}`); };
+  const snap = () => host.snapshot() as Snap;
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-showlist-')), 'Showlist.ecshow');
   fs.mkdirSync(path.join(dir, 'media'), { recursive: true });
   // a steady tone, long enough to be playing while it is looked at
   const n = 44100 * 20, tone = new Float32Array(n);
   for (let i = 0; i < n; i++) tone[i] = 0.4 * Math.sin((2 * Math.PI * 330 * i) / 44100);
   writeWav(path.join(dir, 'media', 'tone.wav'), tone);
-  const ops = [
+  const ops: Op[] = [
     { op: 'cue.add', ref: 'a', cue: { type: 'memo', number: '1', name: 'Doors', continue: 'auto-continue' } },
     { op: 'cue.add', ref: 'b', cue: { type: 'wait', number: '2', name: 'Beat', duration: 0.5, continue: 'auto-follow' } },
     { op: 'cue.add', ref: 's1', cue: { type: 'section', name: 'Scene one', color: 'teal' } },
@@ -39,14 +41,14 @@ async function run({ host, win, check, until, page, sleep, shot, log = () => {} 
     ops.push({ op: 'cue.add', cue: { type: 'memo', number: String(i + 100), name: `Cue ${i}`, color: ['none', 'red', 'green', 'none', 'orange'][i % 5] } });
   }
   const built = applyOps(show.newShow('Showlist'), ops);
-  const id = (ref) => built.refs[ref];
+  const id = (ref: string) => built.refs[ref];
   fs.writeFileSync(path.join(dir, 'show.json'), show.stringify(built.doc));
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
   host.open(dir);
-  const row = (cid) => `document.querySelector('.list tbody tr[data-cue="${cid}"]')`;
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const key = (k, more = '') => page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true${more} }))`);
+  const row = (cid: string) => `document.querySelector('.list tbody tr[data-cue="${cid}"]')`;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const key = (k: string, more = '') => page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true${more} }))`);
   await until(() => page(`!!${row(id('needle'))}`), 4000);
   host.cmd({ op: 'playhead', id: id('a') });
 
@@ -132,7 +134,7 @@ async function run({ host, win, check, until, page, sleep, shot, log = () => {} 
   await page(`document.querySelector('.toolstrip input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
 
   // 5. zoom: a pinch (a wheel with ctrl) until the whole show fits
-  const listBox = () => page(`(() => { const l = document.querySelector('.list'), t = l.querySelector('table'); return { h: l.clientHeight, t: t.offsetHeight, scroll: l.scrollHeight }; })()`);
+  const listBox = () => page<{ h: number; t: number; scroll: number }>(`(() => { const l = document.querySelector('.list'), t = l.querySelector('table'); return { h: l.clientHeight, t: t.offsetHeight, scroll: l.scrollHeight }; })()`);
   await page(`(() => { const l = document.querySelector('.list'), r = l.getBoundingClientRect(); for (let i = 0; i < 6; i++) l.dispatchEvent(new WheelEvent('wheel', { deltaY: 12, ctrlKey: true, clientX: r.left + 200, clientY: r.top + 200, bubbles: true, cancelable: true })); })()`);
   check('a pinch zooms the list out: the rows shrink, their words fading', await until(() => page(`document.querySelector('.list').classList.contains('zoomed') && ${row(id('c'))}.getBoundingClientRect().height < 29`), 2000));
   await shot('showlist-zoom-half');
@@ -143,8 +145,8 @@ async function run({ host, win, check, until, page, sleep, shot, log = () => {} 
     return h >= 18 && p >= 5 && document.querySelector('.list').classList.contains('overview'); })()`));
   check('…and a chain is still drawn', await page(`!!${row(id('a'))}.querySelector('.cline.down')`));
   await shot('showlist-zoom-whole');
-  await until(async () => ((await page(`window.ec.app({ op: 'list-zoom', dir: ${JSON.stringify(dir)} })`)) || {}).z < 0.2, 2000);
-  check('the zoom is kept per show on this computer, not in the show file', ((await page(`window.ec.app({ op: 'list-zoom', dir: ${JSON.stringify(dir)} })`)) || {}).z < 0.2 && !/zoom/i.test(fs.readFileSync(path.join(dir, 'show.json'), 'utf8')));
+  await until(async () => ((await page<{ z: number }>(`window.ec.app({ op: 'list-zoom', dir: ${JSON.stringify(dir)} })`)) || {}).z < 0.2, 2000);
+  check('the zoom is kept per show on this computer, not in the show file', ((await page<{ z: number }>(`window.ec.app({ op: 'list-zoom', dir: ${JSON.stringify(dir)} })`)) || {}).z < 0.2 && !/zoom/i.test(fs.readFileSync(path.join(dir, 'show.json'), 'utf8')));
   // Space is still GO, zoomed out
   const before = snap().engine.playhead;
   await key(' ');

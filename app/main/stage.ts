@@ -16,31 +16,66 @@
  * drawn offscreen (nothing appears on any screen) and can be pictured from there.
  */
 import * as path from 'path';
+import type { BrowserWindow as Win, Display, IpcMain, IpcMainEvent, Screen } from 'electron';
 import { stageOf, pinMatrix } from '../../core/video/stage';
+import type { CueEngine, EngineStage, PictureSpec } from '../../core/engine/cue-engine';
+import type { Geometry } from '../../core/video/stage';
+import type { AppConfig } from './main';
 
 const SYNC_MS = 500;              // how often a playing video's picture is checked against its sound
 
-function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, log, test = false, engine, fileUrl, audioCmd, notice, changed, operatorWindow }) {
-  let win = null;
+/** What the stage is told to draw (app/stage/stage.ts reads it). */
+export interface StageMessage { op: string; [field: string]: unknown }
+/** What the stage window says (app/stage/stage.ts). */
+export type StageEvent =
+  | { type: 'ready' | 'shown' }
+  | { type: 'cameras'; list?: unknown }
+  | { type: 'error'; id: string; detail: string }
+  | { type: 'operror'; op: string; id?: string; detail: string };
+/** The stage's commands, through the host's `cmd`: Settings ▸ Integrations ▸ Video. */
+export type StageCommand =
+  | { op: 'stage-open'; display?: string | null }
+  | { op: 'stage-choose'; display?: string | null }
+  | { op: 'stage-close' }
+  | { op: 'stage-pattern'; on?: boolean }
+  | { op: 'stage-blackout'; on?: boolean; secs?: number };
+export interface StageOptions {
+  BrowserWindow: typeof Win;
+  screen: Screen | null;
+  ipcMain: IpcMain;
+  getConfig: () => AppConfig;
+  saveConfig: (change: Partial<AppConfig>) => void;
+  log: (line: string) => void;
+  test?: boolean;
+  engine: CueEngine;
+  fileUrl: (file: string) => string;
+  audioCmd: (c: { op: string; [field: string]: unknown }) => void;
+  notice: (text: string, ms?: number) => void;
+  changed: () => void;
+  operatorWindow: () => Win | null;
+}
+
+function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, log, test = false, engine, fileUrl, audioCmd, notice, changed, operatorWindow }: StageOptions) {
+  let win: Win | null = null;
   let ready = false;
-  let where = null;                 // what the open window is on: 'window', or a display's id
+  let where: string | null = null;  // what the open window is on: 'window', or a display's id
   let label = '';
-  let waiting = null;               // { display, label }: its display is not connected; it opens when that comes back
+  let waiting: { display: string; label: string } | null = null;     // its display is not connected; it opens when that comes back
   let settings = stageOf({});
   let pattern = false, blackout = false;
-  let cameras = [];
+  let cameras: string[] = [];
   let saidClosed = false;           // "the stage is not open" is said once, not at every cue
   const movies = new Set();         // cue ids of the videos playing: their pictures are kept in step with their sound
-  let syncTimer = null;
-  let chosen = null;                // the display the stage opens on when it is opened (this computer's; kept in config.json)
+  let syncTimer: ReturnType<typeof setInterval> | undefined;
+  let chosen: string | null = null;                // the display the stage opens on when it is opened (this computer's; kept in config.json)
   let quitting = false;             // the app is closing: the stage going with it is not the operator closing the stage
 
-  const send = (cmd) => { if (win && !win.isDestroyed() && ready) win.webContents.send('stage-cmd', cmd); };
+  const send = (cmd: StageMessage) => { if (win && !win.isDestroyed() && ready) win.webContents.send('stage-cmd', cmd); };
   const cfg = () => ((getConfig() || {}).stage) || {};
-  const remember = (change) => saveConfig({ stage: { ...cfg(), ...change } });
+  const remember = (change: NonNullable<AppConfig['stage']>) => saveConfig({ stage: { ...cfg(), ...change } });
 
   // ── displays ──────────────────────────────────────────────────────────
-  const idOf = (d) => String(d.id);
+  const idOf = (d: Display) => String(d.id);
   function displays() {
     if (!screen) return [];
     const primary = screen.getPrimaryDisplay();
@@ -48,28 +83,28 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
     return screen.getAllDisplays().map((d, i) => ({ id: idOf(d), label: d.label || `Display ${i + 1}`, width: Math.round(d.size.width * d.scaleFactor), height: Math.round(d.size.height * d.scaleFactor),
       primary: d.id === primary.id, operator: !!mine && d.id === mine.id }));
   }
-  function operatorDisplay() {
+  function operatorDisplay(): Display | null {
     const w = operatorWindow && operatorWindow();
     try { return w && !w.isDestroyed() && screen ? screen.getDisplayMatching(w.getBounds()) : null; } catch { return null; }
   }
   /** The display asked for: by its id, or (ids change when a cable is moved to another socket) by its name. */
-  function find(display, name) {
+  function find(display: string | null, name?: string): Display | null {
     if (!screen) return null;
     const all = screen.getAllDisplays();
     return all.find((d) => idOf(d) === String(display)) || (name ? all.find((d) => d.label && d.label === name) : null) || null;
   }
 
   // ── the window ────────────────────────────────────────────────────────
-  function open(display = 'window') {
+  function open(display: string | null = 'window'): { ok?: boolean; error?: string } {
     close(false);
     waiting = null;
     chosen = String(display);
-    const webPreferences = { preload: path.join(__dirname, '../stage/preload.js'), backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', ...(test ? { offscreen: true } : {}) };
+    const webPreferences: Electron.WebPreferences = { preload: path.join(__dirname, '../stage/preload.js'), backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required', ...(test ? { offscreen: true } : {}) };
     if (test) {
       // 960 x 540, or the largest 16:9 the screen holds: Windows narrows a window wider than its screen (an 800 x 600
       // server console), and a stage letterboxed by that would read as a picture that does not fill it
       let width = 960;
-      try { width = Math.min(960, screen.getPrimaryDisplay().workAreaSize.width); } catch { /* no screen: as asked */ }
+      try { width = Math.min(960, screen!.getPrimaryDisplay().workAreaSize.width); } catch { /* no screen: as asked */ }
       win = new BrowserWindow({ show: false, width, height: Math.round(width * 9 / 16), frame: false, backgroundColor: '#000000', webPreferences });
       where = 'window'; label = 'offscreen (a test run)';
     } else if (display === 'window') {
@@ -92,16 +127,16 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
     }
     const mine = win;
     ready = false;
-    win.setMenuBarVisibility && win.setMenuBarVisibility(false);
-    win.loadFile(path.join(__dirname, '../stage/stage.html'), test ? { query: { test: '1' } } : {});
-    win.webContents.on('render-process-gone', (_e, d) => {
+    win!.setMenuBarVisibility && win!.setMenuBarVisibility(false);
+    win!.loadFile(path.join(__dirname, '../stage/stage.html'), test ? { query: { test: '1' } } : {});
+    win!.webContents.on('render-process-gone', (_e, d) => {
       if (win !== mine) return;
       log(`[stage] the stage window died (${d.reason}); making a new one`);
       const again = where;
       close(false);
       setTimeout(() => open(again), 500);
     });
-    win.webContents.on('console-message', (e) => { if (e.level === 'error' || e.level === 3) log(`[stage page] ${e.message}`); });
+    win.webContents.on('console-message', (e) => { if (e.level === 'error' || Number(e.level) === 3) log(`[stage page] ${e.message}`); });
     // closed by its own close button (the windowed stage): it stays closed until it is opened again
     win.on('closed', () => { if (win !== mine) return; win = null; ready = false; where = null; movies.clear(); if (!test && !quitting) remember({ open: false }); changed(); });
     saidClosed = false;
@@ -127,7 +162,7 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
     for (const p of engine.pictures()) hooks.show(p.id, p.spec, p.paused);
   }
 
-  ipcMain.on('stage-event', (e, ev) => {
+  ipcMain.on('stage-event', (e: IpcMainEvent, ev: StageEvent) => {
     if (!win || win.isDestroyed() || e.sender !== win.webContents) return;
     try {
       switch (ev.type) {
@@ -143,13 +178,13 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
         case 'operror': log(`[stage] ${ev.op}${ev.id ? ` ${ev.id}` : ''} failed: ${ev.detail}`); break;
         default: break;
       }
-    } catch (err) { log(`[stage] event ${ev && ev.type}: ${err.stack || err}`); }
+    } catch (err) { log(`[stage] event ${ev && ev.type}: ${(err as Error).stack || err}`); }
   });
 
   // ── a display unplugged, or back ──────────────────────────────────────
   // The stage must never land on the operator's screen (the OS would move its window there): it is closed, the
   // sound goes on, and it opens again by itself when the display returns.
-  function displayRemoved(_e, d) {
+  function displayRemoved(_e: unknown, d: Display) {
     if (!win || where === 'window' || where !== idOf(d)) { changed(); return; }
     waiting = { display: where, label };
     close(false);
@@ -158,15 +193,15 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
     changed();
   }
   function displayAdded() {
-    if (waiting && find(waiting.display, waiting.label)) { const w = waiting; const r = open(find(w.display, w.label).id); if (r.ok) notice(`The stage is back on ${w.label || 'its display'}.`, 5000); }
+    if (waiting && find(waiting.display, waiting.label)) { const w = waiting; const r = open(idOf(find(w.display, w.label)!)); if (r.ok) notice(`The stage is back on ${w.label || 'its display'}.`, 5000); }
     changed();
   }
-  function displayChanged(_e, d) { if (win && !win.isDestroyed() && where === idOf(d)) win.setBounds(d.bounds); changed(); }
+  function displayChanged(_e: unknown, d: Display) { if (win && !win.isDestroyed() && where === idOf(d)) win.setBounds(d.bounds); changed(); }
   if (screen && !test) { screen.on('display-removed', displayRemoved); screen.on('display-added', displayAdded); screen.on('display-metrics-changed', displayChanged); }
 
   // ── what the engine asks of the stage ─────────────────────────────────
   const hooks = {
-    show(id, spec, paused = false) {
+    show(id: string, spec: Partial<PictureSpec> & { from: number; geometry: Geometry }, paused = false) {
       if (!win) {
         if (!saidClosed) { saidClosed = true; log('[stage] a cue with a picture fired with the stage closed'); notice(waiting ? `The stage’s display (${waiting.label || 'the one chosen'}) is not connected: its pictures are not shown.` : 'The stage is not open, so this cue’s picture is not shown. Open it in Settings ▸ Integrations ▸ Video.', 7000); }
         return;
@@ -174,24 +209,24 @@ function createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, lo
       send({ op: 'show', id, ...spec, url: spec.file ? fileUrl(spec.file) : '', paused });
       if (spec.kind === 'video' && !paused) movies.add(id);
     },
-    move: (id, props, secs) => send({ op: 'move', id, props, secs }),
-    pause: (id) => { movies.delete(id); send({ op: 'pause', id }); },
-    resume: (id) => { if ((engine.running.get(id) || {}).spec && engine.running.get(id).spec.kind === 'video') movies.add(id); send({ op: 'resume', id }); },
-    seek: (id, t) => send({ op: 'seek', id, t }),
-    hide: (id) => { movies.delete(id); send({ op: 'hide', id }); },
-  };
+    move: (id: string, props: Partial<Geometry>, secs: number) => send({ op: 'move', id, props, secs }),
+    pause: (id: string) => { movies.delete(id); send({ op: 'pause', id }); },
+    resume: (id: string) => { if (engine.running.get(id)?.spec?.kind === 'video') movies.add(id); send({ op: 'resume', id }); },
+    seek: (id: string, t: number) => send({ op: 'seek', id, t }),
+    hide: (id: string) => { movies.delete(id); send({ op: 'hide', id }); },
+  } satisfies EngineStage;
   /** From the audio window: where a video's sound is. Its picture is brought to it. */
-  function soundAt(ev) { if (movies.has(ev.key)) send({ op: 'sync', id: ev.key, t: ev.t, at: ev.at }); }
+  function soundAt(ev: { key: string; t: number; at: number }) { if (movies.has(ev.key)) send({ op: 'sync', id: ev.key, t: ev.t, at: ev.at }); }
 
   /** The show's stage settings (its size and corner pin), whenever the show changes. */
-  function configure(showSettings) {
+  function configure(showSettings: Parameters<typeof stageOf>[0]) {
     const next = stageOf(showSettings);
     if (JSON.stringify(next) === JSON.stringify(settings)) return;
     settings = next;
     send({ op: 'stage', width: settings.width, height: settings.height, matrix: pinMatrix(settings.width, settings.height, settings.pin) });
   }
 
-  function cmd(c) {
+  function cmd(c: StageCommand) {
     switch (c.op) {
       case 'stage-open': return open(c.display == null ? (chosen || cfg().display || 'window') : String(c.display));
       // which display, without opening it; a stage that is open (or waiting for its display) moves there

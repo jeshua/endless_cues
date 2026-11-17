@@ -12,7 +12,7 @@ import * as showFiles from '../core/show/files';
 import * as models from '../core/net/devices';
 
 const lantern = { id: 'lantern_a', name: 'Lantern A', model: 'ec-prop-light' };
-const text = (files, name) => files.find((f) => f.path.endsWith(name)).text;
+const text = (files: { path: string; text: string }[], name: string) => files.find((f) => f.path.endsWith(name))!.text;
 const FW = path.join(__dirname, '../core/kit/firmware');
 
 test('a light: the pin, the count, the order and the name are in config.h, and every file is under props/<id>/', () => {

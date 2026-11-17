@@ -2,39 +2,47 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, build } from './helpers';
+import type { SoundLine } from './helpers';
 import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import * as curves from '../core/audio/curves';
+import type { EngineAudio, EngineOptions } from '../core/engine/cue-engine';
+import type { Op } from '../core/show/ops';
+import type { ShowDoc } from '../core/show/types';
+
+type FadeArgs = Parameters<EngineAudio['fade']>;
+type RateArgs = Parameters<NonNullable<EngineAudio['rate']>>;
 
 /** The rig, with every argument of a fade and every rate move written down too (the shared rig keeps four). */
-function rigAll(doc, opts) {
-  const r = rig(doc, opts);
-  r.fades = []; r.rates = [];
+function rigAll(doc: ShowDoc, opts?: Partial<EngineOptions>) {
+  const r = Object.assign(rig(doc, opts), { fades: [] as FadeArgs[], rates: [] as RateArgs[] });
   const fade = r.audio.fade;
   r.audio.fade = (...a) => { r.fades.push(a); fade(...a); };
-  r.audio.rate = (...a) => { r.rates.push(a); };
+  (r.audio as EngineAudio).rate = (...a) => { r.rates.push(a); };
   return r;
 }
-const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
+/** What a clean kept (undefined when it refused). */
+const kept = <T>(r: { ok: true; value: T } | { ok: false; why: string }) => (r.ok ? r.value : undefined);
+const near = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
 // ── shapes ──────────────────────────────────────────────────────────────────
 test('a shape says how far along a fade is: linear, an S-curve, and custom points', () => {
   assert.equal(curves.shapeAt('linear', 0.25), 0.25);
   near(curves.shapeAt('s-curve', 0.5), 0.5);
   assert.ok(curves.shapeAt('s-curve', 0.1) < 0.1 && curves.shapeAt('s-curve', 0.9) > 0.9, 'it eases out of the start and into the end');
-  const custom = curves.cleanShape([[0.5, 0.9]]).value;
+  const custom = kept(curves.cleanShape([[0.5, 0.9]]))!;
   assert.deepEqual(custom, [[0, 0], [0.5, 0.9], [1, 1]], 'the ends are always (0, 0) and (1, 1)');
   near(curves.shapeAt(custom, 0.25), 0.45);
   near(curves.shapeAt(custom, 0.75), 0.95);
 });
 
 test('a shape is kept on the cue as little as it can be, and nonsense is refused', () => {
-  assert.equal(curves.cleanShape('linear').value, undefined, 'linear is the default: nothing is written');
-  assert.equal(curves.cleanShape('s-curve').value, 's-curve');
+  assert.equal(kept(curves.cleanShape('linear')), undefined, 'linear is the default: nothing is written');
+  assert.equal(kept(curves.cleanShape('s-curve')), 's-curve');
   assert.equal(curves.cleanShape('wobble').ok, false);
-  assert.deepEqual(curves.cleanShape([[0.7, 2], [0.2, -1], [0.2, 0.5]]).value, [[0, 0], [0.2, 0], [0.7, 1], [1, 1]], 'points are put in order, kept inside the square, one to a moment');
+  assert.deepEqual(kept(curves.cleanShape([[0.7, 2], [0.2, -1], [0.2, 0.5]])), [[0, 0], [0.2, 0], [0.7, 1], [1, 1]], 'points are put in order, kept inside the square, one to a moment');
   const s = build([{ op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav' } }, { op: 'cue.add', ref: 'f', cue: { type: 'fade', target: '@a', shapeUp: 's-curve', shapeDown: 'linear' } }]);
-  const f = show.index(s.doc).byId.get(s.id('f'));
+  const f = show.index(s.doc).byId.get(s.id('f'))!;
   assert.equal(f.shapeUp, 's-curve');
   assert.equal('shapeDown' in f, false);
   assert.throws(() => applyOps(s.doc, [{ op: 'cue.set', id: s.id('f'), props: { shapeUp: 'wobble' } }]), /fade shape/);
@@ -60,7 +68,7 @@ test('a Fade cue uses its rising shape for a level going up and its falling shap
   const down = fadeShow({ db: -30, shapeUp: 's-curve', shapeDown: [[0.5, 0.9]] });
   const d = rigAll(down.doc);
   d.engine.go(); d.engine.go();
-  assert.deepEqual(d.fades.at(-1).slice(4), [[[0, 0], [0.5, 0.9], [1, 1]], 0]);
+  assert.deepEqual(d.fades.at(-1)!.slice(4), [[[0, 0], [0.5, 0.9], [1, 1]], 0]);
 });
 
 test('a fade with no shape is sent exactly as it always was', () => {
@@ -77,8 +85,8 @@ test('an Audio cue’s own fade in and fade out have their shapes', () => {
   r.engine.go();
   assert.deepEqual(r.fades[0], [s.id('a'), -10, 2, undefined, 's-curve', 0]);
   r.advance(7.05);
-  assert.equal(r.fades.at(-1)[1], -60);
-  assert.deepEqual(r.fades.at(-1)[4], [[0, 0], [0.3, 0.6], [1, 1]]);
+  assert.equal(r.fades.at(-1)![1], -60);
+  assert.deepEqual(r.fades.at(-1)![4], [[0, 0], [0.3, 0.6], [1, 1]]);
 });
 
 test('a shaped fade that is paused goes on along what is left of its shape', () => {
@@ -87,8 +95,8 @@ test('a shaped fade that is paused goes on along what is left of its shape', () 
   r.engine.go(); r.engine.go();
   r.advance(1);
   r.engine.pause(); r.advance(5); r.engine.resume();
-  const last = r.fades.at(-1);
-  assert.equal(last[1], 0); near(last[2], 3); assert.equal(last[4], 's-curve'); near(last[5], 0.25);
+  const last = r.fades.at(-1)!;
+  assert.equal(last[1], 0); near(last[2], 3); assert.equal(last[4], 's-curve'); near(last[5]!, 0.25);
 });
 
 // ── the envelope ────────────────────────────────────────────────────────────
@@ -108,7 +116,7 @@ test('an Audio cue hands its envelope to the sound; an emptied one is taken off 
   r.engine.go();
   assert.deepEqual(r.audio.calls[0][2].envelope, [[0, -60], [2, 0]]);
   const cleared = applyOps(s.doc, [{ op: 'cue.set', id: s.id('a'), props: { envelope: [] } }]).doc;
-  assert.equal('envelope' in show.index(cleared).byId.get(s.id('a')), false);
+  assert.equal('envelope' in show.index(cleared).byId.get(s.id('a'))!, false);
   const plain = fadeShow();
   const p = rigAll(plain.doc);
   p.engine.go();
@@ -124,7 +132,7 @@ test('a sound at a rate reaches places in its file sooner or later, and the engi
   assert.equal(r.audio.calls[0][2].rate, 2);
   assert.equal(r.audio.calls[0][2].preservePitch, false);
   r.advance(1);
-  near(r.engine.positionOf(r.engine.running.get(s.id('a'))), 2);
+  near(r.engine.positionOf(r.engine.running.get(s.id('a'))!), 2);
   assert.equal(r.engine.lengthOf(s.id('a')), 4, 'eight seconds of file take four');
   r.advance(2.6);
   assert.ok(!r.audio.calls.some((c) => c[0] === 'cut'));
@@ -159,10 +167,10 @@ test('a loop region goes round its count at the sound’s rate', () => {
   r.engine.setDuration('a.wav', 20);
   r.engine.go();
   r.engine.setExact(s.id('a'), true);
-  const run = () => r.engine.running.get(s.id('a'));
-  assert.deepEqual([run().region.start, run().region.end], [2, 4]);
+  const run = () => r.engine.running.get(s.id('a'))!;
+  assert.deepEqual([run().region!.start, run().region!.end], [2, 4]);
   r.advance(2.4);                      // 4.8 s of file played through: the second pass
-  assert.equal(r.engine.active().find((a) => a.id === s.id('a')).count.pass, 2);
+  assert.equal((r.engine.active().find((a) => a.id === s.id('a')) as SoundLine).count!.pass, 2);
   r.advance(1.2);                      // 7.2 s: it lets go half way through its last pass (7 s)
   assert.equal(run().region, null);
   r.advance(1);
@@ -179,7 +187,7 @@ test('a Fade cue moves the rate over its time; the clock follows the ramp', () =
   assert.deepEqual(r.rates.at(-1), [s.id('a'), 2, 4]);
   assert.equal(r.fades.length, 0, 'rate only: the level is left alone');
   r.advance(4);
-  const run = r.engine.running.get(s.id('a'));
+  const run = r.engine.running.get(s.id('a'))!;
   assert.equal(run.rate, 2);
   near(r.engine.positionOf(run), 1 + 4 * 1.5, 1e-6);       // a straight ramp from 1 to 2 covers its time at 1.5
   r.advance(1);
@@ -203,13 +211,13 @@ test('a paused rate fade waits, and goes on to the same rate', () => {
   r.engine.go(); r.engine.go();
   r.advance(1);
   r.engine.pause(); r.advance(10);
-  const held = r.engine.positionOf(r.engine.running.get(s.id('a')));
+  const held = r.engine.positionOf(r.engine.running.get(s.id('a'))!);
   near(held, 1.5, 1e-6);
   r.engine.resume();
-  assert.deepEqual(r.rates.at(-1).slice(0, 2), [s.id('a'), 3]); near(r.rates.at(-1)[2], 1);
+  assert.deepEqual(r.rates.at(-1)!.slice(0, 2), [s.id('a'), 3]); near(r.rates.at(-1)![2], 1);
   r.advance(1);
-  near(r.engine.positionOf(r.engine.running.get(s.id('a'))), 4, 1e-6);
-  assert.equal(r.engine.running.get(s.id('a')).rate, 3);
+  near(r.engine.positionOf(r.engine.running.get(s.id('a'))!), 4, 1e-6);
+  assert.equal(r.engine.running.get(s.id('a'))!.rate, 3);
 });
 
 // ── absolute and relative, and putting a fade back ────────────────────────────
@@ -226,7 +234,7 @@ test('an absolute fade is the last word: a dip still held in the voice band is l
   r.advance(1.5);
   r.engine.go();
   assert.deepEqual(r.fades.slice(-2), [[s.id('a'), 0, 2, 'voice'], [s.id('a'), -20, 2]]);
-  assert.equal(r.engine.running.get(s.id('a')).band, 0);
+  assert.equal(r.engine.running.get(s.id('a'))!.band, 0);
   // …and a relative one leaves a dip where it is
   const s2 = build([
     { op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav', gainDb: -6 } },
@@ -248,7 +256,7 @@ test('revert fade puts the sound back as it was before the Fade cue, and calls t
   assert.deepEqual(r.fades.at(-1), [s.id('a'), -10, 0.5]);
   assert.deepEqual(r.rates.at(-1), [s.id('a'), 1, 0.5]);
   r.advance(20);
-  const run = r.engine.running.get(s.id('a'));
+  const run = r.engine.running.get(s.id('a'))!;
   assert.equal(run.db, -10, 'the called-off fade never lands');
   assert.equal(run.rate, 1);
   assert.equal(r.engine.revertFade(s.id('f')), 0, 'once put back there is nothing more to revert');
@@ -271,8 +279,8 @@ test('revert fade puts back every sound of a group the fade moved', () => {
   r.engine.go(); r.engine.go(); r.advance(6);
   assert.equal(r.engine.revertFade(s.id('f')), 2);
   r.advance(1);
-  assert.equal(r.engine.running.get(s.id('a')).db, -3);
-  assert.equal(r.engine.running.get(s.id('b')).db, -9);
+  assert.equal(r.engine.running.get(s.id('a'))!.db, -3);
+  assert.equal(r.engine.running.get(s.id('b'))!.db, -9);
 });
 
 // ── level limits ────────────────────────────────────────────────────────────
@@ -287,9 +295,9 @@ test('the show’s level limits hold every level a cue or a fade asks for', () =
   r.engine.go();
   assert.equal(r.audio.calls[0][2].gainDb, 6);
   r.engine.go();
-  assert.equal(r.fades.at(-1)[1], 6);
+  assert.equal(r.fades.at(-1)![1], 6);
   r.engine.trim(s.id('a'), 3);
-  assert.equal(r.engine.running.get(s.id('a')).fade.to, 6, 'a trim cannot push past the maximum either');
+  assert.equal(r.engine.running.get(s.id('a'))!.fade!.to, 6, 'a trim cannot push past the maximum either');
   const flagged = show.problems(applyOps(s.doc, [{ op: 'show.set', path: 'settings.audio.levels', value: { min: -40, max: 6 } }]).doc);
   assert.equal(flagged.filter((p) => /above this show’s maximum/.test(p.why)).length, 2);
 });
@@ -304,7 +312,7 @@ test('a new show has the limits and the monitor feed in its settings, off and ha
 
 // ── one rate: a cue's own rate, the Live view's warp, a Fade's "rate to", and what waits on a place in the file ──
 import { warpRate } from '../core/audio/tempo';
-const A = (ref, more = {}) => ({ op: 'cue.add', ref, cue: { type: 'audio', file: `${ref}.wav`, ...more } });
+const A = (ref: string, more = {}): Op => ({ op: 'cue.add', ref, cue: { type: 'audio', file: `${ref}.wav`, ...more } });
 
 test('a sound’s rate is its own rate times its warp, in one number; pitch is kept if either asks for it', () => {
   const s = build([
@@ -316,20 +324,20 @@ test('a sound’s rate is its own rate times its warp, in one number; pitch is k
   let desk = 120;
   const r = rigAll(s.doc, { warp: (cue, from) => (cue.warp ? { rate: warpRate(cue.tempo, desk, from), keepPitch: cue.warp === 'keep' } : null) });
   for (const k of ['both', 'kept', 'warpkeep', 'plain']) { r.engine.setDuration(`${k}.wav`, 60); r.engine.fire(s.id(k)); }
-  const played = (k) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(k)).pop()[2];
-  near(played('both').rate, 0.6); assert.equal(played('both').preservePitch, false);
-  near(played('kept').rate, 2.4); assert.equal(played('kept').preservePitch, true);
-  near(played('warpkeep').rate, 1.2); assert.equal(played('warpkeep').preservePitch, true);
+  const played = (k: string) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(k)).pop()![2];
+  near(played('both').rate!, 0.6); assert.equal(played('both').preservePitch, false);
+  near(played('kept').rate!, 2.4); assert.equal(played('kept').preservePitch, true);
+  near(played('warpkeep').rate!, 1.2); assert.equal(played('warpkeep').preservePitch, true);
   assert.equal(played('plain').rate, undefined, 'at the desk’s tempo already: told nothing of rates');
   r.advance(10);
-  near(r.engine.positionOf(r.engine.running.get(s.id('both'))), 6, 1e-6);
+  near(r.engine.positionOf(r.engine.running.get(s.id('both'))!), 6, 1e-6);
   // a Fade moves its rate; the desk's tempo then moves: the warp is taken out and put back, the Fade's rate stays
   r.engine.fadeRate(s.id('both'), 1, 0, 'rate:test');
-  near(r.engine.running.get(s.id('both')).rate, 1);
+  near(r.engine.running.get(s.id('both'))!.rate!, 1);
   desk = 100; r.engine.rewarp(s.id('both'), warpRate({ bpm: 100, first: 0, bar: 4 }, desk));
-  near(r.engine.running.get(s.id('both')).rate, 1 / 1.2);
-  assert.deepEqual(r.rates.at(-1).slice(0, 1).concat(r.rates.at(-1)[2]), [s.id('both'), 0], 'one rate op, with no time');
-  near(r.rates.at(-1)[1], 1 / 1.2);
+  near(r.engine.running.get(s.id('both'))!.rate!, 1 / 1.2);
+  assert.deepEqual(r.rates.at(-1)!.slice(0, 1).concat(r.rates.at(-1)![2]), [s.id('both'), 0], 'one rate op, with no time');
+  near(r.rates.at(-1)![1], 1 / 1.2);
 });
 
 test('a re-pitched sound at a rate can be held in a section; one that keeps its pitch cannot', () => {
@@ -340,7 +348,7 @@ test('a re-pitched sound at a rate can be held in a section; one that keeps its 
   r.advance(2.5);                                       // 5 s into its file
   assert.ok(r.engine.toggleHold(s.id('tape'), { start: 4, end: 8 }, true), 'held');
   r.advance(2.5);                                       // 10 s played through: once round 4–8, so at 6
-  near(r.engine.positionOf(r.engine.running.get(s.id('tape'))), 6, 0.01);
+  near(r.engine.positionOf(r.engine.running.get(s.id('tape'))!), 6, 0.01);
   r.engine.go();
   assert.equal(r.engine.toggleHold(s.id('stretch'), { start: 4, end: 8 }, true), null);
   assert.ok(r.logs.some((l) => /with its pitch kept: it cannot be/.test(l)));
@@ -356,7 +364,7 @@ test('a Devamp that starts the next cue as the loop ends counts the loop’s end
   r.engine.setDuration('track.wav', 60);
   r.engine.go(); r.engine.setExact(s.id('track'), true);
   r.advance(7.5);                                       // 15 s of file: 5 s into the section, 3 s of file from its end
-  near(r.engine.positionOf(r.engine.running.get(s.id('track'))), 15, 0.01);
+  near(r.engine.positionOf(r.engine.running.get(s.id('track'))!), 15, 0.01);
   r.engine.go();
   const w = r.engine.active().find((a) => a.id === s.id('hit'));
   assert.ok(w && Math.abs(w.total - 1.5) < 0.01, `1.5 s of the clock to the section's end at twice the speed (${w && w.total})`);
@@ -373,6 +381,6 @@ test('a Fade’s “rate to” does not re-time a video (its picture would not f
   r.engine.setDuration('media/film.mp4', 30);
   r.engine.go(); r.engine.go();
   assert.equal(r.rates.length, 0);
-  assert.equal(r.engine.rateOf(r.engine.running.get(s.id('v'))), 1);
-  assert.deepEqual(r.fades.at(-1).slice(0, 3), [s.id('v'), -10, 2]);
+  assert.equal(r.engine.rateOf(r.engine.running.get(s.id('v'))!), 1);
+  assert.deepEqual(r.fades.at(-1)!.slice(0, 3), [s.id('v'), -10, 2]);
 });

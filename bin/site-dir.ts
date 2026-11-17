@@ -15,7 +15,7 @@ const ROOT = path.join(__dirname, '..');
 const DEFAULT = path.join(ROOT, '..', 'endless_cues_service', 'site');
 
 /** The site folder named by the flags, the environment or the default (not checked). */
-function siteDir(flags = []) {
+function siteDir(flags: string[] = []) {
   const i = flags.indexOf('--site-dir');
   if (i >= 0 && flags[i + 1]) return path.resolve(flags[i + 1]);
   if (process.env.EC_SITE_DIR) return path.resolve(process.env.EC_SITE_DIR);
@@ -23,7 +23,7 @@ function siteDir(flags = []) {
 }
 
 /** The same, or null when there is no site there (a folder with an index.html). */
-function findSite(flags = []) {
+function findSite(flags: string[] = []) {
   const dir = siteDir(flags);
   return fs.existsSync(path.join(dir, 'index.html')) ? dir : null;
 }

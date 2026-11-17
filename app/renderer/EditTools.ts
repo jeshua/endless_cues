@@ -1,6 +1,14 @@
 // Small tools for building a show: Paste Cue Properties' chooser, and Check the show (with the flagged cues),
 // which the footer's Check and its counts open.
 import { html, useState, useEffect, cx, keys, ec } from './lib.js';
+import type { State, Cue, CueIndex } from './lib.js';
+
+/** What the host says is on the clipboard, for Paste Cue Properties: the cue, and each property it could paste. */
+export interface PropsClip { cue: Cue; properties: { key: string; label: string; set: boolean }[] }
+/** A line of Check the show (core/show/check.js `checkShow`). */
+export interface CheckLine { id?: string | null; level?: 'problem' | 'look'; text: string; rig?: boolean }
+/** The host's answer to `check`: the lines, and a few words for all of them. */
+type Checked = { lines: CheckLine[]; summary: string };
 
 /** What makes a cue that cue, more than how it behaves: left unticked until asked for. */
 const ITS_OWN = ['name', 'notes', 'file', 'target', 'hotkey', 'oscTrigger', 'midiTrigger', 'clockTrigger', 'flagged', 'message', 'midi', 'lightCue'];
@@ -10,17 +18,19 @@ const ITS_OWN = ['name', 'notes', 'file', 'target', 'hotkey', 'oscTrigger', 'mid
  * word on what is on the clipboard ({ cue, properties: [{ key, label, set }] }); `last` the keys ticked the time
  * before, so doing the same again is one key and Enter.
  */
-export function PasteProps({ clip, label, typeLabel, count, last, onPaste, close }) {
+export function PasteProps({ clip, label, typeLabel, count, last, onPaste, close }: {
+  clip: PropsClip; label: string; typeLabel: string; count: number; last: string[] | null; onPaste: (keys: string[]) => void; close: () => void;
+}) {
   const props = clip.properties;
   const [on, setOn] = useState(() => new Set(last && last.some((k) => props.some((p) => p.key === k)) ? last.filter((k) => props.some((p) => p.key === k)) : props.filter((p) => p.set && !ITS_OWN.includes(p.key)).map((p) => p.key)));
-  const flip = (k) => { const n = new Set(on); if (n.has(k)) n.delete(k); else n.add(k); setOn(n); };
+  const flip = (k: string) => { const n = new Set(on); if (n.has(k)) n.delete(k); else n.add(k); setOn(n); };
   const paste = () => { if (on.size) onPaste([...on]); };
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); paste(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); paste(); } };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   });
-  return html`<div class="scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) close(); }}><div class="sheet pasteprops">
+  return html`<div class="scrim" onMouseDown=${(e: MouseEvent) => { if (e.target === e.currentTarget) close(); }}><div class="sheet pasteprops">
     <h2>Paste cue properties</h2>
     <p class="dim">From ${typeLabel} cue <b>${label}</b> onto ${count === 1 ? 'the selected cue' : `${count} selected cues`}. Faint settings go back to their default.</p>
     <div class="props">${props.map((p) => html`<label class=${cx(!p.set && 'unset')} key=${p.key}><input type="checkbox" checked=${on.has(p.key)} onChange=${() => flip(p.key)} />${p.label}</label>`)}</div>
@@ -40,11 +50,11 @@ export function PasteProps({ clip, label, typeLabel, count, last, onPaste, close
  * flagged. A line about a cue goes to the cue (opening the group it is in); one about the equipment, to the Rig.
  * It asks again as the show changes, and every two seconds while it is open (a device can stop answering).
  */
-export function Checks({ s, byId, reveal, close, openRig }) {
-  const [r, setR] = useState(null);
+export function Checks({ s, byId, reveal, close, openRig }: { s: State; byId: CueIndex; reveal: (id: string) => void; close: () => void; openRig?: () => void }) {
+  const [r, setR] = useState<Checked | null>(null);
   useEffect(() => {
     let gone = false;
-    const ask = () => ec.cmd({ op: 'check' }).then((x) => { if (!gone && x && !x.error) setR(x); });
+    const ask = () => ec.cmd({ op: 'check' }).then((x) => { if (!gone && x && !x.error) setR(x as Checked); });
     ask();
     const t = setInterval(ask, 2000);
     return () => { gone = true; clearInterval(t); };
@@ -52,9 +62,9 @@ export function Checks({ s, byId, reveal, close, openRig }) {
   const lines = r ? r.lines : [];
   const problems = lines.filter((x) => x.level === 'problem'), looks = lines.filter((x) => x.level !== 'problem');
   const flagged = [...byId.values()].filter((x) => x.cue.flagged).map((x) => x.cue);
-  const name = (id) => { const x = byId.get(id); return x ? `${x.cue.number ? x.cue.number + ' · ' : ''}${s.labels[id] || ''}` : ''; };
-  const go = (x) => (x.id && byId.has(x.id) ? reveal(x.id) : x.rig && openRig ? openRig() : null);
-  const row = (x, mark, kind, k) => html`<button key=${k} class="check" data-check-line=${x.level} onClick=${() => go(x)} title=${x.text}><span class=${cx('mk', kind)}>${mark}</span><span class="nm">${x.id ? name(x.id) : 'Rig'}</span>${x.text ? html`<span class="why">${x.text}</span>` : null}</button>`;
+  const name = (id: string) => { const x = byId.get(id); return x ? `${x.cue.number ? x.cue.number + ' · ' : ''}${s.labels[id] || ''}` : ''; };
+  const go = (x: CheckLine) => (x.id && byId.has(x.id) ? reveal(x.id) : x.rig && openRig ? openRig() : null);
+  const row = (x: CheckLine, mark: string, kind: string, k: string) => html`<button key=${k} class="check" data-check-line=${x.level} onClick=${() => go(x)} title=${x.text}><span class=${cx('mk', kind)}>${mark}</span><span class="nm">${x.id ? name(x.id) : 'Rig'}</span>${x.text ? html`<span class="why">${x.text}</span>` : null}</button>`;
   return html`<div class="checks" data-checks>
     <div class="ch"><b>Check</b><span class="dim" style="margin-left:10px" data-check-summary>${r ? r.summary : 'Checking…'}</span><span class="grow"></span><button class="btn ghost small icon" onClick=${close} title="Close (Esc)">×</button></div>
     <div class="cb">

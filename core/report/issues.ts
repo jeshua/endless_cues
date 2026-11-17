@@ -14,19 +14,19 @@ const BAD = /\b(error|uncaught|could not|cannot|failed|exception)\b|\bdied\b|\bi
 // (what is not the app going wrong: the assistant being refused a tool, a report's own sending, a test run's own words)
 const NOT = /^(?:[\d:.]+\s+)?\[(?:agent|report|update|updates)\]|SMOKE /;
 
-function isIssue(line) {
+function isIssue(line: unknown) {
   const s = String(line || '');
   return BAD.test(s) && !NOT.test(s);
 }
 
 /** `quiet` ms: the same kind of line again within it is counted, not announced again. */
 function createIssues({ now = () => Date.now(), quiet = 30000 } = {}) {
-  let latest = null;            // { line, at, count }
-  let told = new Map();         // a line without its time -> when it was last announced
-  const key = (line) => String(line).replace(/^[\d:.]+\s+/, '').replace(/\d+/g, '#').slice(0, 200);
+  let latest: { line: string; at: number; count: number } | null = null;
+  let told = new Map<string, number>();         // a line without its time -> when it was last announced
+  const key = (line: unknown) => String(line).replace(/^[\d:.]+\s+/, '').replace(/\d+/g, '#').slice(0, 200);
   return {
     /** A log line: remembered when it is an issue. True when the window should be told (news, not a repeat). */
-    seen(line) {
+    seen(line: unknown) {
       if (!isIssue(line)) return false;
       const t = now(), k = key(line);
       latest = { line: String(line).replace(/^[\d:.]+\s+/, '').slice(0, 500), at: t, count: (latest ? latest.count : 0) + 1 };

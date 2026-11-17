@@ -10,6 +10,10 @@ import { ShowDocument } from '../core/show/document';
 import { parseSmart, formatSeconds } from '../core/show/cue-types';
 import * as osc from '../core/net/osc';
 import { build } from './helpers';
+import type { Change } from '../core/show/diff';
+
+/** A cue whose fields changed, as diffShows says it. */
+type Changed = Extract<Change, { kind: 'changed' }>;
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ec-test-'));
 
@@ -44,12 +48,12 @@ test('ops: move into a group, never into itself; duplicate retargets inside the 
   ]);
   const moved = applyOps(s.doc, [{ op: 'cue.move', ids: ['#2'], parent: '#1' }]).doc;
   assert.equal(moved.lists[0].cues.length, 1);
-  assert.equal(moved.lists[0].cues[0].children.length, 3);
+  assert.equal(moved.lists[0].cues[0].children!.length, 3);
   assert.throws(() => applyOps(s.doc, [{ op: 'cue.move', ids: ['#1'], parent: '#1' }]), /into itself/);
   const dup = applyOps(s.doc, [{ op: 'cue.duplicate', id: '#1' }]).doc;
   const copy = dup.lists[0].cues[1];
-  assert.equal(copy.children[1].target, copy.children[0].id);
-  assert.notEqual(copy.children[0].id, s.id('a'));
+  assert.equal(copy.children![1].target, copy.children![0].id);
+  assert.notEqual(copy.children![0].id, s.id('a'));
 });
 
 test('ops: renumber and show.set are checked', () => {
@@ -76,7 +80,7 @@ test('diff: changed, added, removed, moved, and a one-line description', () => {
   ]).doc;
   const ch = diffShows(s.doc, b);
   assert.deepEqual(summary(ch), { added: 1, removed: 1, changed: 1, moved: 1, settings: 0, devices: 0, total: 4 });
-  const lvl = ch.find((c) => c.kind === 'changed').fields[0];
+  const lvl = ch.find((c): c is Changed => c.kind === 'changed')!.fields[0];
   assert.equal(lvl.to, '−8 dB');
   assert.match(describe(ch), /level −8 dB/);
   assert.deepEqual(diffShows(b, b), []);
@@ -91,14 +95,14 @@ test('document: nothing is kept until save; versions, restore, revert, and a pro
   assert.equal(fs.readFileSync(file, 'utf8'), empty, 'an edit is not written');
   assert.equal(d.dirty, true);
   assert.equal(d.unsaved().length, 1);
-  const v1 = d.save();
+  const v1 = d.save()!;
   assert.equal(fs.readFileSync(file, 'utf8'), show.stringify(d.doc));
   assert.equal(d.dirty, false);
   assert.equal(d.save(), null, 'nothing to save');
 
   // what is pending is known change by change, with the saved value to put back
   d.edit([{ op: 'cue.set', id: '#1', props: { gainDb: -10 } }]);
-  const f = d.unsaved()[0].fields[0];
+  const f = (d.unsaved()[0] as Changed).fields[0];
   assert.deepEqual([f.field, f.rawFrom, f.to], ['gainDb', undefined, '−10 dB']);
   assert.equal(d.undo() !== false, true);
   assert.equal(d.dirty, false, 'undone back to the saved show: nothing pending');
@@ -108,7 +112,7 @@ test('document: nothing is kept until save; versions, restore, revert, and a pro
   assert.equal(d.doc.lists[0].cues[0].gainDb, undefined);
   d.undo();
   assert.equal(d.doc.lists[0].cues[0].gainDb, -10);
-  const v2 = d.save();
+  const v2 = d.save()!;
   assert.match(v2.note, /level −10 dB/);
 
   const p = d.propose([{ op: 'cue.set', id: '#1', props: { name: 'Heavy rain' } }, { op: 'cue.add', cue: { type: 'fade', target: '#1', number: '2' } }], { summary: 'Rename and add a fade' });
@@ -118,7 +122,7 @@ test('document: nothing is kept until save; versions, restore, revert, and a pro
   assert.equal(d.doc.lists[0].cues.length, 2);
   assert.equal(d.dirty, true, 'accepted, and pending like any other edit');
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).lists[0].cues.length, 1);
-  const v3 = d.save();
+  const v3 = d.save()!;
   assert.equal(v3.author, 'assistant');
   assert.deepEqual(d.listVersions().map((v) => v.author), ['you', 'you', 'assistant']);
 
@@ -155,7 +159,7 @@ test('smart entry and OSC', () => {
   assert.equal(parseSmart('seconds', '1:02:03.5'), 3723.5);
   assert.equal(parseSmart('db', '-inf'), -60);
   assert.equal(formatSeconds(125.5), '02:05.50');
-  const m = osc.decode(osc.encode('/a/b 3 1.5 "two words" x'));
+  const m = osc.decode(osc.encode('/a/b 3 1.5 "two words" x'))!;
   assert.equal(m.address, '/a/b');
   assert.deepEqual(m.args, [3, 1.5, 'two words', 'x']);
   assert.throws(() => osc.encode('nope 1'));
@@ -176,7 +180,7 @@ test('problems: missing target, unknown patch, duplicate numbers', () => {
 
 test('a level typed with no sign is a cut; a number is taken as it is', () => {
   const s = build([{ op: 'cue.add', cue: { type: 'audio', number: '1', file: 'a.wav' } }]);
-  const set = (v) => applyOps(s.doc, [{ op: 'cue.set', id: '#1', props: { gainDb: v } }]).doc.lists[0].cues[0].gainDb;
+  const set = (v: unknown) => applyOps(s.doc, [{ op: 'cue.set', id: '#1', props: { gainDb: v } }]).doc.lists[0].cues[0].gainDb;
   assert.equal(set('12'), -12);
   assert.equal(set('+3'), 3);
   assert.equal(set('-6.5'), -6.5);
@@ -210,9 +214,9 @@ test('what this version does not know in a cue is kept on save and not played; a
   const { doc: clean } = show.normalise(doc);
   assert.deepEqual(clean.lists[0].cues[0].fromTheFuture, { a: 1 });
   assert.equal(JSON.parse(show.stringify(clean)).lists[0].cues[0].fromTheFuture.a, 1);
-  assert.equal(show.toEngineDoc(clean).lists[0].cues[0].fromTheFuture, undefined);
-  const t = show.parseClock('19:30 fri sat');
-  assert.equal(t.secs, 19 * 3600 + 30 * 60); assert.deepEqual([...t.days], [5, 6]);
+  assert.equal((show.toEngineDoc(clean).lists[0].cues[0] as unknown as Record<string, unknown>).fromTheFuture, undefined);
+  const t = show.parseClock('19:30 fri sat')!;
+  assert.equal(t.secs, 19 * 3600 + 30 * 60); assert.deepEqual([...t.days!], [5, 6]);
   assert.equal(show.parseClock('25:00'), null); assert.equal(show.parseClock('7pm'), null);
   assert.equal(show.problems(show.normalise({ ...doc, lists: [{ id: 'l', name: 'Main', cues: [{ id: 'c2', type: 'memo', clockTrigger: 'noon' }] }] }).doc).length, 1);
 });

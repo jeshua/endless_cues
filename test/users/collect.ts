@@ -21,15 +21,32 @@ const RATINGS = ['learn', 'speed', 'clarity', 'trust'];
 /** What only the hands do: a `look`, a note or a wait is not an action on the app. */
 const ACTIONS = new Set(['click', 'drag', 'scroll', 'type', 'key', 'menu', 'answer', 'choose', 'osc send']);
 
+/** One thing a person found (README.md has the agreed shape). */
+export interface Finding {
+  title: string; severity: string; kind: string; area: string; happened: string;
+  task?: string; expected?: string; steps?: string; suggestion?: string; evidence?: string[];
+}
+/** How one of their tasks went. */
+export interface TaskOutcome { id: string; outcome: string; notes?: string }
+/** A person's report.json. */
+export interface Report {
+  person: string; verdict: string; verdictWhy: string; ratings: Record<string, number>;
+  tasks?: TaskOutcome[]; findings?: Finding[]; rig?: string[];
+}
+/** A line of a journal.jsonl: `task` on a task line, `text` on a note. */
+interface JournalLine { op: string; at: string; task: string; text: string; error?: unknown }
+/** A task's counts, from the journal. */
+export interface TaskCount { actions: number; refused: number; looks: number; notes: string[]; from: string; to: string; minutes?: number }
+
 /** The tasks a person was given: the bold ids in their page. */
-function tasksOf(id) {
+function tasksOf(id: string) {
   const text = fs.readFileSync(path.join(__dirname, 'people', `${id}.md`), 'utf8');
   return [...text.matchAll(/^\d+\.\s+\*\*([a-z-]+)\*\*/gm)].map((m) => m[1]);
 }
 
 /** What is wrong with a report, as a list of sentences (empty: nothing). */
-function check(report, id) {
-  const bad = [];
+function check(report: Report | null | undefined, id: string) {
+  const bad: string[] = [];
   if (!report || typeof report !== 'object') return ['it is not an object'];
   if (report.person !== id) bad.push(`person is "${report.person}", not "${id}"`);
   if (!VERDICT.includes(report.verdict)) bad.push(`verdict "${report.verdict}" is not one of ${VERDICT.join(', ')}`);
@@ -51,10 +68,10 @@ function check(report, id) {
 }
 
 /** Per task: how many actions, how many of them the app refused, and how long from first to last. */
-function counts(journalFile) {
-  const out = {};
+function counts(journalFile: string) {
+  const out: Record<string, TaskCount> = {};
   let task = '(before any task)';
-  let lines = [];
+  let lines: JournalLine[] = [];
   try { lines = fs.readFileSync(journalFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return out; }
   for (const l of lines) {
     if (l.op === 'task') { task = l.task; continue; }
@@ -64,21 +81,21 @@ function counts(journalFile) {
     else if (l.op === 'note') t.notes.push(l.text);
     else if (ACTIONS.has(l.op)) { t.actions++; if (l.error) t.refused++; }
   }
-  for (const t of Object.values(out)) t.minutes = Math.round((new Date(t.to) - new Date(t.from)) / 6000) / 10;
+  for (const t of Object.values(out)) t.minutes = Math.round((new Date(t.to).getTime() - new Date(t.from).getTime()) / 6000) / 10;
   return out;
 }
 
-function collect(run) {
+function collect(run: string) {
   const from = path.join(__dirname, 'runs', run);
   if (!fs.existsSync(from)) throw new Error(`there is no run ${run}`);
   const to = path.join(REPO, 'docs/internal/usability', run);
   fs.mkdirSync(to, { recursive: true });
-  const people = [], findings = [], problems = [];
+  const people: { id: string; report: Report | null; count: Record<string, TaskCount> }[] = [], findings: (Finding & { person: string })[] = [], problems: string[] = [];
   for (const id of fs.readdirSync(from).sort()) {
     const dir = path.join(from, id);
     if (!fs.statSync(dir).isDirectory()) continue;
-    let report = null;
-    try { report = JSON.parse(fs.readFileSync(path.join(dir, 'report.json'), 'utf8')); } catch (err) { problems.push(`${id}: no readable report.json (${err.message})`); }
+    let report: Report | null = null;
+    try { report = JSON.parse(fs.readFileSync(path.join(dir, 'report.json'), 'utf8')); } catch (err) { problems.push(`${id}: no readable report.json (${(err as Error).message})`); }
     const count = counts(path.join(dir, 'journal.jsonl'));
     if (!report) { people.push({ id, report: null, count }); continue; }
     for (const b of check(report, id)) problems.push(`${id}: ${b}`);
@@ -95,7 +112,7 @@ function collect(run) {
   findings.sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity) || AREA.indexOf(a.area) - AREA.indexOf(b.area));
   fs.writeFileSync(path.join(to, 'findings.json'), JSON.stringify(findings, null, 2) + '\n');
 
-  const n = (list, sev) => list.filter((f) => f.severity === sev).length;
+  const n = (list: Finding[], sev: string) => list.filter((f) => f.severity === sev).length;
   const md = [`# Usability run ${run}`, '',
     'Virtual users, each an agent standing in for a person with a show of their own, using the app through its window (`test/users/README.md`). A virtual user is not a person: read this as a list of things to look at, not as a measure of how usable the app is.', '',
     '## Verdicts', '',
@@ -111,7 +128,7 @@ function collect(run) {
   for (const p of people) if (p.report) md.push(`**${p.id}:** ${p.report.verdictWhy}`, '');
   md.push('## Tasks', '', '| Person | Task | Outcome | Actions | Refused | Minutes | Notes |', '|---|---|---|---|---|---|---|');
   for (const p of people) for (const t of (p.report ? p.report.tasks : []) || []) {
-    const c = p.count[t.id] || {};
+    const c: Partial<TaskCount> = p.count[t.id] || {};
     md.push(`| ${p.id} | ${t.id} | ${t.outcome} | ${c.actions ?? ''} | ${c.refused || ''} | ${c.minutes ?? ''} | ${String(t.notes || '').replace(/\|/g, '/').replace(/\n/g, ' ')} |`);
   }
   md.push('', '## Findings', '');
@@ -123,7 +140,7 @@ function collect(run) {
       md.push(`- **${f.title}** (${f.person}, ${f.area}, ${f.kind}${f.task ? `, task ${f.task}` : ''})`);
       if (sev !== 'praise') { if (f.expected) md.push(`  - Expected: ${f.expected}`); md.push(`  - Happened: ${f.happened}`); if (f.steps) md.push(`  - Steps: ${f.steps}`); if (f.suggestion) md.push(`  - Suggestion: ${f.suggestion}`); }
       else md.push(`  - ${f.happened}`);
-      if ((f.evidence || []).length) md.push(`  - Pictures: ${f.evidence.map((s) => `[${path.basename(String(s))}](shots/${f.person}-${path.basename(String(s))})`).join(', ')}`);
+      if ((f.evidence || []).length) md.push(`  - Pictures: ${f.evidence!.map((s) => `[${path.basename(String(s))}](shots/${f.person}-${path.basename(String(s))})`).join(', ')}`);
     }
     md.push('');
   }

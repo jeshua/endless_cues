@@ -12,7 +12,7 @@
  */
 import * as fs from 'fs';
 
-function wavPeaks(file, bins = 1600) {
+function wavPeaks(file: string, bins = 1600) {
   let fd;
   try {
     fd = fs.openSync(file, 'r');
@@ -73,7 +73,7 @@ function wavPeaks(file, bins = 1600) {
       }
       done += n;
     }
-    const r3 = (v) => Math.round(Math.min(1, v) * 1000) / 1000;
+    const r3 = (v: number) => Math.round(Math.min(1, v) * 1000) / 1000;
     return { peaks: peaks.map(r3), rms: sq.map((v, i) => r3(count[i] ? Math.sqrt(v / count[i]) : 0)) };
   } catch {
     return null;
@@ -83,7 +83,8 @@ function wavPeaks(file, bins = 1600) {
 }
 
 /** { seconds, channels, rate, bits } from a WAV's header, or null. */
-function wavInfo(file) {
+function wavInfo(file: string | null) {
+  if (!file) return null;
   let fd;
   try {
     fd = fs.openSync(file, 'r');
@@ -107,7 +108,7 @@ function wavInfo(file) {
   } catch { return null; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch { /* closed */ } }
 }
 
-function sampleReader(format, bits) {
+function sampleReader(format: number, bits: number): ((b: Buffer, o: number) => number) | null {
   if (format === 1 && bits === 16) return (b, o) => b.readInt16LE(o) / 32768;
   if (format === 1 && bits === 24) return (b, o) => b.readIntLE(o, 3) / 8388608;
   if (format === 1 && bits === 32) return (b, o) => b.readInt32LE(o) / 2147483648;

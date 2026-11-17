@@ -11,13 +11,17 @@
  *
  * How the list is folded is this computer's, not the show's: `keepFolds` is the per-computer record of it.
  */
+import type { ShowDoc, Cue } from './types';
 
-const isSection = (c) => !!c && c.type === 'section';
+/** A section as sectionsOf gives it: its heading, and the top-level cues it holds. */
+export interface Section { id: string; name: string; color: string; ids: string[] }
+
+const isSection = (c: Pick<Cue, 'type'> | null | undefined) => !!c && c.type === 'section';
 
 /** The sections of a list, in order: [{ id, name, color, ids }] where `ids` are the top-level cues each holds. */
-function sectionsOf(cues = []) {
-  const out = [];
-  let cur = null;
+function sectionsOf(cues: Cue[] = []) {
+  const out: Section[] = [];
+  let cur: Section | null = null;
   for (const c of cues) {
     if (isSection(c)) { cur = { id: c.id, name: c.name || 'Section', color: c.color || 'none', ids: [] }; out.push(cur); }
     else if (cur) cur.ids.push(c.id);
@@ -26,8 +30,8 @@ function sectionsOf(cues = []) {
 }
 
 /** The section a top-level cue is in (its id), or null: one before the first section, or one that is not there. */
-function sectionOf(cues = [], id) {
-  let cur = null;
+function sectionOf(cues: Cue[] = [], id: string) {
+  let cur: string | null = null;
   for (const c of cues) {
     if (isSection(c)) cur = c.id;
     if (c.id === id) return isSection(c) ? null : cur;
@@ -37,7 +41,7 @@ function sectionOf(cues = [], id) {
 
 /** Where a cue named as somewhere to stand by lands: a section's first cue (the next cue after it, past any empty
  *  sections), anything else itself. null: a section with no cue after it. `cues` is the list the id is in. */
-function landing(cues = [], id) {
+function landing(cues: Cue[] = [], id: string) {
   const i = cues.findIndex((c) => c.id === id);
   if (i < 0 || !isSection(cues[i])) return i < 0 ? null : id;
   const next = cues.slice(i + 1).find((c) => !isSection(c));
@@ -45,14 +49,14 @@ function landing(cues = [], id) {
 }
 
 /** `landing` in a whole show: the list the id is in, found first. */
-function landingIn(doc, id) {
+function landingIn(doc: Pick<ShowDoc, 'lists'> | null | undefined, id: string) {
   for (const l of (doc && doc.lists) || []) if (l.cues.some((c) => c.id === id)) return landing(l.cues, id);
   return id;
 }
 
 /** A section named as Jump to cue is typed ("scene 2"): the first whose name is that, or begins with it, in any
  *  case; null for none. Returns { id, list } (the list's name). */
-function byName(doc, text) {
+function byName(doc: Pick<ShowDoc, 'lists'> | null | undefined, text: unknown) {
   const want = String(text || '').trim().toLowerCase();
   if (!want) return null;
   for (const exact of [true, false]) {
@@ -65,9 +69,9 @@ function byName(doc, text) {
 }
 
 /** What is wrong with where the show's sections are, as sentences (an edit that would leave one is refused). */
-function trouble(doc) {
-  const out = [];
-  const inside = (cues) => { for (const c of cues || []) { if (isSection(c)) out.push(`a section (“${c.name || 'Section'}”) goes in a list, not inside a group`); inside(c.children); } };
+function trouble(doc: Pick<ShowDoc, 'lists'>) {
+  const out: string[] = [];
+  const inside = (cues: Cue[] | undefined) => { for (const c of cues || []) { if (isSection(c)) out.push(`a section (“${c.name || 'Section'}”) goes in a list, not inside a group`); inside(c.children); } };
   for (const l of doc.lists) {
     for (const c of l.cues) inside(c.children);
     if (l.cart && l.cues.some(isSection)) out.push(`the cart “${l.name}” has buttons, not sections`);
@@ -77,10 +81,10 @@ function trouble(doc) {
 
 /** The fold record with one show's folded rows replaced: { [show folder]: [ids] }, the most recent last, at most
  *  `max` shows (the oldest is let go). Nothing folded: the show is left out. */
-function keepFolds(folds, dir, ids, max = 40) {
-  const out = {};
+function keepFolds(folds: unknown, dir: string | null | undefined, ids: unknown[] | null | undefined, max = 40) {
+  const out: Record<string, unknown[]> = {};
   for (const [k, v] of Object.entries(folds && typeof folds === 'object' ? folds : {})) if (k !== dir && Array.isArray(v)) out[k] = v;
-  const clean = [...new Set((ids || []).filter((x) => typeof x === 'string' && x))];
+  const clean = [...new Set((ids || []).filter((x): x is string => typeof x === 'string' && !!x))];
   if (dir && clean.length) out[dir] = clean;
   const keys = Object.keys(out);
   for (const k of keys.slice(0, Math.max(0, keys.length - max))) delete out[k];

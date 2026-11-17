@@ -11,9 +11,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as show from '../../core/show/show';
 import { applyOps } from '../../core/show/ops';
+import type { Smoke, Snap } from './smoke';
 
-async function run({ host, win, check, until, page, sleep, shot }) {
-  const snap = () => host.snapshot();
+async function run({ host, win, check, until, page, sleep, shot }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const snap = () => host.snapshot() as Snap;
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-sections-')), 'Sections.ecshow');
   fs.mkdirSync(dir, { recursive: true });
   const built = applyOps(show.newShow('Sections'), [
@@ -25,18 +26,18 @@ async function run({ host, win, check, until, page, sleep, shot }) {
     { op: 'cue.add', ref: 'm4', cue: { type: 'memo', number: '4', name: 'Storm' } },
     { op: 'cue.add', ref: 'g5', cue: { type: 'group', number: '5', name: 'Thunder', children: [{ type: 'memo', name: 'Crack' }, { type: 'memo', name: 'Roll' }] } },
   ]);
-  const id = (ref) => built.refs[ref];
+  const id = (ref: string) => built.refs[ref];
   fs.writeFileSync(path.join(dir, 'show.json'), show.stringify(built.doc));
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
   host.open(dir);
   await page(`window.ec.app({ op: 'folds', dir: ${JSON.stringify(dir)}, ids: [] })`);
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const count = (sel) => page(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
-  const folded = () => page(`[...document.querySelectorAll('.list tr.section.folded')].map((r) => r.dataset.section)`);
-  const key = (k, more = '') => page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true${more} }))`);
-  const rowOf = (n) => `[...document.querySelectorAll('.list tbody tr')].find((r) => r.querySelector('.c-num') && r.querySelector('.c-num').textContent.trim() === ${JSON.stringify(n)})`;
-  const shows = (n) => page(`!!${rowOf(n)}`);
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const count = (sel: string) => page<number>(`document.querySelectorAll(${JSON.stringify(sel)}).length`);
+  const folded = () => page<string[]>(`[...document.querySelectorAll('.list tr.section.folded')].map((r) => r.dataset.section)`);
+  const key = (k: string, more = '') => page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, bubbles: true${more} }))`);
+  const rowOf = (n: string) => `[...document.querySelectorAll('.list tbody tr')].find((r) => r.querySelector('.c-num') && r.querySelector('.c-num').textContent.trim() === ${JSON.stringify(n)})`;
+  const shows = (n: string) => page<boolean>(`!!${rowOf(n)}`);
 
   check('a section is drawn as a heading across the list (every column drawn), and named in the strip above it',
     await until(() => page(`document.querySelectorAll('.list tr.section').length === 2 && document.querySelector('.list tr.section td').colSpan === [...document.querySelectorAll('.list thead th')].filter((th) => getComputedStyle(th).display !== 'none').length && [...document.querySelectorAll('[data-section-strip] button')].map((b) => b.textContent).join('|') === 'Act one|Act two'`), 4000),
@@ -62,7 +63,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   check('…and the folded section holding the cue standing by says which, in the standby treatment', await until(() => page(`(() => { const h = document.querySelector('tr.section.holds-head .sec-head'); return !!h && /2/.test(h.textContent) && /Lights up/.test(h.textContent) && getComputedStyle(h).color !== getComputedStyle(document.querySelector('.sec-name')).color; })()`), 3000));
   win.webContents.send('ec-menu', 'unfold-all');
   check('View ▸ Unfold Everything opens them all', await until(async () => !(await folded()).length && await count('.list tr.section') === 2 && await shows('5'), 3000));
-  const crack = () => page(`[...document.querySelectorAll('.list tbody tr')].some((r) => /Crack/.test(r.textContent))`);
+  const crack = () => page<boolean>(`[...document.querySelectorAll('.list tbody tr')].some((r) => /Crack/.test(r.textContent))`);
   await key('<');
   check('< folds every group and leaves the sections open', await until(async () => !(await crack()) && !(await folded()).length, 3000), await folded());
   await key('>');
@@ -80,7 +81,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
 
   // kept for this show on this computer: opened again, the same sections are folded
   await until(async () => (await page(`window.ec.app({ op: 'folds', dir: ${JSON.stringify(dir)} }).then((r) => r.ids.length)`)) === 2, 2000);
-  const kept = await page(`window.ec.app({ op: 'folds', dir: ${JSON.stringify(dir)} })`);
+  const kept = await page<{ ids: string[] }>(`window.ec.app({ op: 'folds', dir: ${JSON.stringify(dir)} })`);
   host.openUntitled();
   await until(async () => (await count('.list tr.section')) === 0, 3000);
   host.open(dir);

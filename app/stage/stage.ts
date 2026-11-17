@@ -1,12 +1,24 @@
 // The stage window's code (stage.html). A plain script (build/compile.mjs writes stage.js).
-const TEST = new URLSearchParams(location.search).has('test');
-const stageEl = document.getElementById('stage');
-const patternEl = document.getElementById('pattern');
-const blackoutEl = document.getElementById('blackout');
-const report = (ev) => window.cueStage.report(ev);
+import type { StageCmd, StageReport } from './preload';
 
-let stage = { width: 1920, height: 1080, matrix: null };
-const layers = new Map();          // cue id -> { el, media, kind, geo, tweens, paused, order }
+type Cmd<K extends StageCmd['op']> = Extract<StageCmd, { op: K }>;
+/** Where a layer is: opacity 0–100, x and y in stage pixels (y up), scale, rotation in degrees. */
+type Geo = { opacity: number; x: number; y: number; scale: number; rotation: number } & Record<string, number>;
+interface Tween { from: number; to: number; t0: number; secs: number; done: number }
+/** A cue on the stage. */
+interface Layer {
+  el: HTMLDivElement; kind?: string; media: HTMLVideoElement | null; geo: Geo; tweens: Map<string, Tween>; paused: boolean; order: number;
+  reported?: boolean; stream?: MediaStream; off?: number;
+}
+
+const TEST = new URLSearchParams(location.search).has('test');
+const stageEl = document.getElementById('stage')!;
+const patternEl = document.getElementById('pattern')!;
+const blackoutEl = document.getElementById('blackout')!;
+const report = (ev: StageReport) => window.cueStage.report(ev);
+
+let stage: { width: number; height: number; matrix: number[] | null } = { width: 1920, height: 1080, matrix: null };
+const layers = new Map<string, Layer>();          // cue id -> { el, media, kind, geo, tweens, paused, order }
 let order = 0;
 
 // ── the stage in the window ─────────────────────────────────────────────
@@ -20,7 +32,7 @@ function layout() {
 }
 addEventListener('resize', layout);
 
-function setStage({ width, height, matrix }) {
+function setStage({ width, height, matrix }: Cmd<'stage'>) {
   const resized = width !== stage.width || height !== stage.height;
   stage = { width, height, matrix: matrix || null };
   layout();
@@ -28,7 +40,7 @@ function setStage({ width, height, matrix }) {
 }
 
 // ── a layer's geometry, and the moves on it ─────────────────────────────
-function apply(l) {
+function apply(l: Layer) {
   const g = l.geo;
   l.el.style.opacity = String(Math.max(0, Math.min(1, g.opacity / 100)));
   l.el.style.transform = `translate(${g.x}px, ${-g.y}px) rotate(${g.rotation}deg) scale(${g.scale})`;
@@ -54,7 +66,7 @@ function run() { if (!ticking) { ticking = true; requestAnimationFrame(tick); } 
 // still land where it was going, so a slow timer steps whatever the frames have left behind.
 setInterval(() => { if (performance.now() - lastStep > 150 && [...layers.values()].some((l) => l.tweens.size && !l.paused)) { if (!step()) ticking = false; } }, 100);
 
-function move({ id, props, secs }) {
+function move({ id, props, secs }: Cmd<'move'>) {
   const l = layers.get(id);
   if (!l) return;
   const now = performance.now();
@@ -68,14 +80,14 @@ function move({ id, props, secs }) {
 }
 
 // ── showing ─────────────────────────────────────────────────────────────
-function shown(id, l) { if (layers.get(id) === l && !l.reported) { l.reported = true; report({ type: 'shown', id }); } }
-function failed(id, l, detail) { if (layers.get(id) === l) report({ type: 'error', id, detail: String(detail || 'cannot be shown') }); }
+function shown(id: string, l: Layer) { if (layers.get(id) === l && !l.reported) { l.reported = true; report({ type: 'shown', id }); } }
+function failed(id: string, l: Layer, detail: unknown) { if (layers.get(id) === l) report({ type: 'error', id, detail: String(detail || 'cannot be shown') }); }
 
 /** A stand-in for a camera in a test run: a picture that moves, so a check can see that it is live. */
 function standIn() {
   const c = document.createElement('canvas');
   c.width = 320; c.height = 180;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d')!;
   let n = 0;
   const draw = () => { g.fillStyle = '#1f6fd1'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#fff'; g.fillRect((n++ * 7) % 320, 0, 12, 180); };
   draw();
@@ -84,9 +96,9 @@ function standIn() {
   stream.addEventListener('inactive', () => clearInterval(timer));
   return stream;
 }
-async function openCamera(name) {
+async function openCamera(name: string): Promise<MediaStream> {
   if (TEST) return standIn();
-  let found = null;
+  let found: MediaDeviceInfo | null | undefined = null;
   if (name) {
     // (a camera is chosen by its name, which travels with the show; an id is this computer's)
     const all = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
@@ -98,13 +110,13 @@ async function openCamera(name) {
   return stream;
 }
 
-function show({ id, kind, url, text, font, size, textColor, align, camera, mirror, fit, layer, loop, from, geometry, paused }) {
+function show({ id, kind, url, text, font, size, textColor, align, camera, mirror, fit, layer, loop, from, geometry, paused }: Cmd<'show'>) {
   hide({ id });
   const el = document.createElement('div');
   el.className = `cue ${kind === 'text' ? 'natural' : ['fit', 'fill', 'stretch', 'natural'].includes(fit) ? fit : 'fit'}${mirror ? ' mirror' : ''}`;
   // a higher layer is in front; on one layer, what started last is
   el.style.zIndex = String(Math.max(0, Math.min(9999, Math.round(Number(layer) || 0))) * 10 + 1);
-  const l = { el, kind, media: null, geo: { opacity: 100, x: 0, y: 0, scale: 1, rotation: 0, ...(geometry || {}) }, tweens: new Map(), paused: !!paused, order: order++ };
+  const l: Layer = { el, kind, media: null, geo: { opacity: 100, x: 0, y: 0, scale: 1, rotation: 0, ...(geometry || {}) } as Geo, tweens: new Map(), paused: !!paused, order: order++ };
   layers.set(id, l);
   if (kind === 'video') {
     const v = document.createElement('video');
@@ -147,13 +159,13 @@ function show({ id, kind, url, text, font, size, textColor, align, camera, mirro
       l.stream = stream;
       v.srcObject = stream;
       v.play().catch(() => {});
-    }).catch((err) => failed(id, l, `the camera could not be opened: ${err.message || err}`));
+    }).catch((err: Error) => failed(id, l, `the camera could not be opened: ${err.message || err}`));
   }
   apply(l);
   stageEl.appendChild(el);
 }
 
-function hide({ id }) {
+function hide({ id }: { id: string }) {
   const l = layers.get(id);
   if (!l) return;
   layers.delete(id);
@@ -164,7 +176,7 @@ function hide({ id }) {
 function clear() { for (const id of [...layers.keys()]) hide({ id }); }
 
 /** Pause holds the picture, and any move on it, where they are. */
-function pause({ id }) {
+function pause({ id }: Cmd<'pause'>) {
   const l = layers.get(id);
   if (!l || l.paused) return;
   l.paused = true;
@@ -172,7 +184,7 @@ function pause({ id }) {
   for (const t of l.tweens.values()) t.done = now - t.t0;
   if (l.media && l.kind === 'video') l.media.pause();
 }
-function resume({ id }) {
+function resume({ id }: Cmd<'resume'>) {
   const l = layers.get(id);
   if (!l || !l.paused) return;
   l.paused = false;
@@ -181,10 +193,10 @@ function resume({ id }) {
   if (l.media && l.kind === 'video') l.media.play().catch(() => {});
   run();
 }
-function seek({ id, t }) {
+function seek({ id, t }: Cmd<'seek'>) {
   const l = layers.get(id);
   if (!l || l.kind !== 'video') return;
-  try { l.media.currentTime = Math.max(0, t); } catch { /* not seekable yet */ }
+  try { l.media!.currentTime = Math.max(0, t); } catch { /* not seekable yet */ }
 }
 
 /**
@@ -192,10 +204,10 @@ function seek({ id, t }) {
  * it: a little out, by playing a few percent fast or slow until it is there (a skip would be seen); far out,
  * by a skip. Within a frame or so it is left alone.
  */
-function sync({ id, t, at }) {
+function sync({ id, t, at }: Cmd<'sync'>) {
   const l = layers.get(id);
-  if (!l || l.kind !== 'video' || l.paused || l.media.readyState < 2 || l.media.seeking) return;
-  const v = l.media;
+  if (!l || l.kind !== 'video' || l.paused || l.media!.readyState < 2 || l.media!.seeking) return;
+  const v = l.media!;
   const want = t + (Date.now() - at) / 1000;
   let off = v.currentTime - want;
   if (v.loop && v.duration > 0) { off = ((off % v.duration) + v.duration) % v.duration; if (off > v.duration / 2) off -= v.duration; }
@@ -209,12 +221,12 @@ function sync({ id, t, at }) {
 // ── the test pattern, and the blackout ──────────────────────────────────
 function drawPattern() {
   const w = stage.width, h = stage.height, u = Math.max(8, Math.round(Math.min(w, h) / 12));
-  const lines = [];
+  const lines: string[] = [];
   for (let x = w / 2 % u; x <= w; x += u) lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}"/>`);
   for (let y = h / 2 % u; y <= h; y += u) lines.push(`<line x1="0" y1="${y}" x2="${w}" y2="${y}"/>`);
   const bars = ['#ffffff', '#ffff00', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#0000ff', '#000000'];
   const bw = (u * 6) / bars.length, by = h / 2 + u * 2;
-  const mark = (x, y, label, anchor) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${u * 0.45}" fill="#fff" font-family="system-ui, sans-serif">${label}</text>`;
+  const mark = (x: number, y: number, label: string, anchor: string) => `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${u * 0.45}" fill="#fff" font-family="system-ui, sans-serif">${label}</text>`;
   patternEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
     <rect width="${w}" height="${h}" fill="#101010"/>
     <g stroke="#5a5a5a" stroke-width="2">${lines.join('')}</g>
@@ -231,12 +243,12 @@ function drawPattern() {
     ${mark(u * 0.3, h - u * 0.3, 'bottom left', 'start')}${mark(w - u * 0.3, h - u * 0.3, 'bottom right', 'end')}
   </svg>`;
 }
-function pattern({ on }) {
+function pattern({ on }: Cmd<'pattern'>) {
   patternEl.style.display = on ? 'block' : 'none';
   if (on) drawPattern(); else patternEl.innerHTML = '';
 }
-function blackout({ on, secs }) {
-  blackoutEl.style.transition = secs > 0 ? `opacity ${secs}s linear` : 'none';
+function blackout({ on, secs }: Cmd<'blackout'>) {
+  blackoutEl.style.transition = secs! > 0 ? `opacity ${secs}s linear` : 'none';
   blackoutEl.style.opacity = on ? '1' : '0';
 }
 
@@ -247,12 +259,12 @@ async function cameras() {
   } catch { /* none to list */ }
 }
 
-const ops = { stage: setStage, show, hide, clear, move, pause, resume, seek, sync, pattern, blackout, cameras };
+const ops: { [K in StageCmd['op']]: (cmd: Cmd<K>) => unknown } = { stage: setStage, show, hide, clear, move, pause, resume, seek, sync, pattern, blackout, cameras };
 // A command that throws is said (the log), never lost in a window nobody is watching closely.
-window.cueStage.onCmd((cmd) => {
-  const f = ops[cmd.op];
+window.cueStage.onCmd((cmd: StageCmd & { id?: string }) => {
+  const f = ops[cmd.op] as ((c: StageCmd) => unknown) | undefined;
   if (!f) return;
-  try { const p = f(cmd); if (p && p.catch) p.catch((err) => report({ type: 'operror', op: cmd.op, id: cmd.id || '', detail: String(err) })); }
+  try { const p = f(cmd) as Promise<unknown> | undefined; if (p && p.catch) p.catch((err) => report({ type: 'operror', op: cmd.op, id: cmd.id || '', detail: String(err) })); }
   catch (err) { report({ type: 'operror', op: cmd.op, id: cmd.id || '', detail: String(err) }); }
 });
 if (!TEST) navigator.mediaDevices.addEventListener('devicechange', cameras);

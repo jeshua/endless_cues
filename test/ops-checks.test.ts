@@ -11,12 +11,16 @@ import { ShowDocument } from '../core/show/document';
 import { createAssistant } from '../core/assistant/assistant';
 import { execute, reference } from '../core/assistant/tools';
 import { build } from './helpers';
+import type { Op } from '../core/show/ops';
+import type { Reply, ToolUseBlock } from '../core/assistant/assistant';
+import type { ToolInput } from '../core/assistant/tools';
 
 const base = () => build([
   { op: 'cue.add', ref: 'a', cue: { type: 'audio', number: '1', name: 'Rain', file: 'media/rain.wav' } },
   { op: 'cue.add', ref: 'b', cue: { type: 'memo', number: '2' } },
 ]).doc;
-const refused = (ops, re) => assert.throws(() => applyOps(base(), ops), (err) => err.name === 'OpError' && re.test(err.message), JSON.stringify(ops));
+/** (the operations are of the wrong shape on purpose: what is checked is that they are refused) */
+const refused = (ops: unknown[], re: RegExp) => assert.throws(() => applyOps(base(), ops as Op[]), (err: Error) => err.name === 'OpError' && re.test(err.message), JSON.stringify(ops));
 
 test('an operation of the wrong shape is refused by applyOps itself, with what to send instead', () => {
   refused([{ op: 'cue.move', ids: ['#1'], to: '#2' }], /op 1 \(cue\.move\): “to” is not something a cue\.move takes \(it takes: ids, id, after, before, parent, list\)/);
@@ -53,13 +57,13 @@ test('a setting of the wrong kind is refused; one that was already wrong is not 
   assert.deepEqual(r.doc.settings.audio.buses.map((b) => [b.id, b.db, b.out]), [['music', 0, 3], ['effects', 0, undefined], ['vocals', 0, undefined], ['drums', -3, undefined]]);
   assert.deepEqual(settingsTrouble(r.doc), []);
   // a show that arrives with something wrong (written by hand) can still be edited
-  const odd = base(); odd.settings.go.panicFade = 'slow';
+  const odd = base(); odd.settings.go.panicFade = 'slow' as unknown as number;
   assert.equal(applyOps(odd, [{ op: 'cue.set', id: '#1', props: { gainDb: -3 } }]).doc.lists[0].cues[0].gainDb, -3);
 });
 
 test('the assistant’s refusals are the same sentences, and the open show and the command line get them too', () => {
   const d = new ShowDocument({ doc: base() });
-  const r = execute('edit_show', { ops: [{ op: 'cue.move', ids: ['#1'], to: '#2' }] }, { document: d });
+  const r = execute('edit_show', { ops: [{ op: 'cue.move', ids: ['#1'], to: '#2' }] } as unknown as ToolInput, { document: d });
   assert.equal(r.is_error, true);
   assert.match(r.content, /^Refused, nothing applied\. op 1 \(cue\.move\): “to” is not something a cue\.move takes/);
   assert.throws(() => d.edit([{ op: 'show.set', path: 'settings.network.inputPort', value: 'fifty' }]), /inputPort is a number/);
@@ -81,12 +85,12 @@ test('the assistant’s refusals are the same sentences, and the open show and t
 test('a turn that fails after replacing a waiting proposal puts the waiting one back', async () => {
   const d = new ShowDocument({ doc: base() });
   const first = d.propose([{ op: 'cue.set', id: '#1', props: { gainDb: -9 } }], { summary: 'Rain down' });
-  const use = (id, name, input) => ({ type: 'tool_use', id, name, input });
+  const use = (id: string, name: string, input: unknown): ToolUseBlock => ({ type: 'tool_use', id, name, input });
   // the turn stages a new proposal (which takes the first one's place), then the provider fails
-  const replies = [{ stop_reason: 'tool_use', content: [use('t1', 'propose_changes', { summary: 'Rename', ops: [{ op: 'cue.set', id: '#2', props: { name: 'Interval' } }] })] }, new Error('network down')];
-  const a = createAssistant({ provider: { name: 'scripted', async create() { const r = replies.shift(); if (r instanceof Error) throw r; return r; } } });
+  const replies: (Omit<Reply, 'role'> | Error)[] = [{ stop_reason: 'tool_use', content: [use('t1', 'propose_changes', { summary: 'Rename', ops: [{ op: 'cue.set', id: '#2', props: { name: 'Interval' } }] })] }, new Error('network down')];
+  const a = createAssistant({ provider: { name: 'scripted', async create() { const r = replies.shift(); if (r instanceof Error) throw r; return r as Reply; } } });
   const r = await a.ask('rename cue 2', { document: d });
-  assert.match(r.error, /network down/);
+  assert.match(r.error!, /network down/);
   assert.ok(d.proposal, 'something is still waiting for review');
   assert.equal(d.proposal.id, first.id, 'and it is the change that was waiting before the turn');
   assert.equal(d.accept(first.id).changed, true);

@@ -5,9 +5,10 @@ import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import * as devices from '../core/rig/devices';
 import * as models from '../core/net/devices';
+import type { Device, ShowDoc } from '../core/show/types';
 
-const lantern = (over = {}) => devices.fromModel('ec-prop-light', { id: 'lantern_a', name: 'Lantern A', host: '10.0.0.42', ...over });
-const withDevice = (d) => applyOps(show.newShow('t'), [{ op: 'device.add', device: d }]).doc;
+const lantern = (over = {}) => devices.fromModel('ec-prop-light', { id: 'lantern_a', name: 'Lantern A', host: '10.0.0.42', ...over }) as Device;
+const withDevice = (d: Partial<Device>) => applyOps(show.newShow('t'), [{ op: 'device.add', device: d }]).doc;
 
 test('a device round-trips through normalise and stringify, and what this version does not know is kept', () => {
   const doc = withDevice({ ...lantern(), notes: 'In the stage-left wing.', madeUpLater: { x: 1 } });
@@ -15,12 +16,12 @@ test('a device round-trips through normalise and stringify, and what this versio
   const back = show.normalise(JSON.parse(text));
   assert.deepEqual(back.warnings, []);
   assert.equal(show.stringify(back.doc), text);
-  const d = devices.find(back.doc, 'lantern_a');
+  const d = devices.find(back.doc, 'lantern_a')!;
   assert.equal(d.name, 'Lantern A');
   assert.deepEqual(d.madeUpLater, { x: 1 }, 'a field from a newer version is kept as it was');
   assert.deepEqual([d.kind, d.via, d.port, d.protocol, d.test, d.resend], ['prop', 'osc', 53100, 'udp', 'identify', 3]);
   assert.deepEqual(d.alive, { how: 'ask', send: '/ec/hello', reply: '/ec/here', every: 2 });
-  assert.deepEqual(d.reports.map((r) => [r.key, r.arg]), [['fw', 2], ['state', 3], ['signal', 5], ['battery', 6]]);
+  assert.deepEqual(d.reports!.map((r) => [r.key, r.arg]), [['fw', 2], ['state', 3], ['signal', 5], ['battery', 6]]);
 });
 
 test('reading is forgiving: a field that cannot be understood is dropped and said, and the device is kept', () => {
@@ -29,7 +30,7 @@ test('reading is forgiving: a field that cannot be understood is dropped and sai
     { id: 'Bad Id', name: 'Desk', port: 'eight thousand', kind: 'spaceship', commands: [{ id: 'go', label: 'Go', template: '/go' }, { id: 'no template' }], alive: { how: 'sometimes' }, test: 'nope' },
     'not a device',
     { id: 'desk', name: 'Second with the same id' },
-  ];
+  ] as unknown as Device[];
   const { doc, warnings } = show.normalise(JSON.parse(JSON.stringify(raw)));
   const list = devices.list(doc);
   assert.equal(list.length, 2);
@@ -40,7 +41,7 @@ test('reading is forgiving: a field that cannot be understood is dropped and sai
 });
 
 test('writing is strict: every sentence of trouble', () => {
-  const says = (d, re, doc = null) => assert.ok(devices.trouble(d, doc).some((t) => re.test(t)), `${re} in ${JSON.stringify(devices.trouble(d, doc))}`);
+  const says = (d: unknown, re: RegExp, doc: ShowDoc | null = null) => assert.ok(devices.trouble(d, doc).some((t) => re.test(t)), `${re} in ${JSON.stringify(devices.trouble(d, doc))}`);
   assert.deepEqual(devices.trouble(lantern()), []);
   for (const id of Object.keys(models.DEVICES)) assert.deepEqual(devices.trouble(devices.fromModel(id, { id: 'x', name: 'X', host: '10.0.0.2' })), [], `the model ${id} makes a device that may be kept`);
   says('nope', /a device is an object/);
@@ -103,8 +104,8 @@ test('compose: defaults, ranges, whole numbers, enums, a faded value, and quotes
   assert.deepEqual(devices.compose(d, 'identify', {}, { fade: true }), { ok: false, why: '“Identify” has no value that can fade' });
   assert.deepEqual(devices.compose(d, 'blink'), { ok: false, why: 'Lantern A has no command “blink” (it has: look, color, level, effect, on, off, identify)' });
   const desk = devices.fromModel('etc-eos', { id: 'desk', name: 'Lighting desk', host: '10.0.0.20' });
-  assert.equal(devices.compose(desk, 'fire', { cue: '12' }).message, '/eos/cue/1/12/fire');
-  assert.equal(devices.compose(desk, 'cmd', { command: 'Chan 1 At 50#' }).message, '/eos/newcmd "Chan 1 At 50#"', 'a template that needs quotes has them');
+  assert.equal((devices.compose(desk, 'fire', { cue: '12' }) as { message: string }).message, '/eos/cue/1/12/fire');
+  assert.equal((devices.compose(desk, 'cmd', { command: 'Chan 1 At 50#' }) as { message: string }).message, '/eos/newcmd "Chan 1 At 50#"', 'a template that needs quotes has them');
   // one function with the older device templates, which never refused a value
   assert.equal(models.compose('etc-eos', 'fire', { cue: 12 }), '/eos/cue/1/12/fire');
   assert.equal(models.compose('x32', 'fader', {}, { fade: true }), '/ch/01/mix/fader #v#');
@@ -116,14 +117,14 @@ test('compose: defaults, ranges, whole numbers, enums, a faded value, and quotes
 });
 
 test('a model is what a device is started from: its commands are copied in, and what the person said wins', () => {
-  const d = devices.fromModel('etc-eos', { id: 'desk', name: 'Lighting desk', host: '10.0.0.20' });
+  const d = devices.fromModel('etc-eos', { id: 'desk', name: 'Lighting desk', host: '10.0.0.20' })!;
   assert.deepEqual([d.kind, d.model, d.port, d.listenPort, d.commands.length], ['desk', 'etc-eos', 8000, 8001, 7]);
   assert.deepEqual(d.alive, { how: 'ask', send: '/eos/ping', reply: '/eos/out/*', every: 2 });
   d.commands[0].template = '/changed';
   assert.equal(models.DEVICES['etc-eos'].commands[0].template, '/eos/cue/{list}/{cue}/fire', 'a copy: editing a device never changes the model');
-  assert.equal(devices.fromModel('x32', { name: 'Desk', port: 10099 }).port, 10099);
-  assert.deepEqual(devices.fromModel('x32', {}).alive, { how: 'ask', send: '/info', every: 2 }, 'a model that answers its test is asked with it');
-  assert.equal(devices.fromModel('grandma3', {}).alive, undefined, 'one that does not cannot be asked');
+  assert.equal(devices.fromModel('x32', { name: 'Desk', port: 10099 })!.port, 10099);
+  assert.deepEqual(devices.fromModel('x32', {})!.alive, { how: 'ask', send: '/info', every: 2 }, 'a model that answers its test is asked with it');
+  assert.equal(devices.fromModel('grandma3', {})!.alive, undefined, 'one that does not cannot be asked');
   assert.equal(devices.fromModel('nope', {}), null);
   // the kit's two props are in the table every picker reads
   const kit = models.list().filter((m) => m.id.startsWith('ec-prop-'));
@@ -136,19 +137,19 @@ test('ids, the outline’s line, and a device as the hub wants it', () => {
   assert.equal(devices.idFrom('12 volt relay'), 'd_12_volt_relay');
   assert.equal(devices.idFrom(''), 'device');
   assert.ok(devices.ID.test(devices.idFrom('Ünïcödé — a very long name that goes on and on and on')));
-  assert.equal(devices.line(devices.clean(lantern()).device), 'lantern_a = Lantern A (prop, ec-prop-light, osc udp 10.0.0.42:53100; commands: look(n), color(r, g, b), level(level, fades), effect(name), on, off, identify; asked every 2 s)');
-  assert.match(devices.line(devices.clean({ id: 'sampler', name: 'Sampler', kind: 'instrument', via: 'midi', commands: [{ id: 'scene', label: 'Scene', template: 'pc {n} ch 10', params: [{ key: 'n', kind: 'number', default: 1 }] }] }).device), /^sampler = Sampler \(instrument, midi; commands: scene\(n\); cannot be asked\)$/);
-  assert.match(devices.line(devices.clean({ id: 'x', name: 'X' }).device), /no address yet; commands: none yet/);
+  assert.equal(devices.line(devices.clean(lantern()).device!), 'lantern_a = Lantern A (prop, ec-prop-light, osc udp 10.0.0.42:53100; commands: look(n), color(r, g, b), level(level, fades), effect(name), on, off, identify; asked every 2 s)');
+  assert.match(devices.line(devices.clean({ id: 'sampler', name: 'Sampler', kind: 'instrument', via: 'midi', commands: [{ id: 'scene', label: 'Scene', template: 'pc {n} ch 10', params: [{ key: 'n', kind: 'number', default: 1 }] }] }).device!), /^sampler = Sampler \(instrument, midi; commands: scene\(n\); cannot be asked\)$/);
+  assert.match(devices.line(devices.clean({ id: 'x', name: 'X' }).device!), /no address yet; commands: none yet/);
   const doc = applyOps(withDevice(lantern()), [{ op: 'device.add', device: { name: 'Sampler', via: 'midi', commands: [] } }]).doc;
   const hub = devices.patchesOf(doc);
   assert.equal(hub.length, 1, 'a MIDI device is not a patch to the hub');
   assert.deepEqual([hub[0].id, hub[0].name, hub[0].host, hub[0].port, hub[0].format, hub[0].resend, hub[0].isDevice], ['lantern_a', 'Lantern A', '10.0.0.42', 53100, 'osc', 3, true]);
-  assert.equal(devices.describe(devices.find(doc, 'lantern_a')), 'prop · 10.0.0.42:53100 · 7 commands · asked every 2 s');
+  assert.equal(devices.describe(devices.find(doc, 'lantern_a')!), 'prop · 10.0.0.42:53100 · 7 commands · asked every 2 s');
 });
 
 test('the tables are what a device is: every field of a kept device is in FIELDS', () => {
   const keys = new Set(devices.FIELDS.map((f) => f.key));
-  for (const k of Object.keys(devices.clean(lantern({ notes: 'x', needed: false, listenPort: 9000 })).device)) assert.ok(keys.has(k), k);
+  for (const k of Object.keys(devices.clean(lantern({ notes: 'x', needed: false, listenPort: 9000 })).device!)) assert.ok(keys.has(k), k);
   for (const t of [devices.COMMAND_FIELDS, devices.PARAM_FIELDS, devices.ALIVE_FIELDS, devices.REPORT_FIELDS]) for (const f of t) assert.ok(f.key && f.kind && f.label, JSON.stringify(f));
   assert.deepEqual(devices.KINDS, ['desk', 'prop', 'media', 'sound', 'computer', 'instrument', 'other']);
   assert.deepEqual(devices.VIAS, ['osc', 'text', 'hex', 'midi']);

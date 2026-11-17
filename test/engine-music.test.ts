@@ -3,16 +3,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, build } from './helpers';
+import type { Rig, Built, SoundLine } from './helpers';
+import type { CueSpec, Op, Place } from '../core/show/ops';
 import * as osc from '../core/net/osc';
 import { oscTriggers, firedBy } from '../core/net/triggers';
 
-const add = (cue, more = {}) => ({ op: 'cue.add', ref: cue.ref, cue, ...more });
-const last = (r, op) => r.audio.calls.filter((c) => c[0] === op).at(-1);
-const near = (a, b, tol = 0.011) => Math.abs(a - b) <= tol;
+const add = (cue: CueSpec, more: Place = {}): Op => ({ op: 'cue.add', ref: cue.ref, cue, ...more });
+const last = (r: Rig, op: string) => r.audio.calls.filter((c) => c[0] === op).at(-1)!;
+const near = (a: number, b: number, tol = 0.011) => Math.abs(a - b) <= tol;
 // a track at 120 bpm: a beat every half second, a bar every two, from 0
-const TRACK = (extra = {}) => ({ type: 'audio', ref: 'track', number: '1', name: 'Track', file: 'media/track.wav', bus: 'music', gainDb: -6, tempo: { bpm: 120, first: 0, bar: 4 }, ...extra });
-const jump = (ref, group, music) => ({ type: 'group', ref, ...group, children: [{ type: 'music', ref: `${ref}m`, target: '@track', ...music }] });
-const pos = (r, s) => r.engine.positionOf(r.engine.running.get(s.id('track')));
+const TRACK = (extra: Partial<CueSpec> = {}): CueSpec => ({ type: 'audio', ref: 'track', number: '1', name: 'Track', file: 'media/track.wav', bus: 'music', gainDb: -6, tempo: { bpm: 120, first: 0, bar: 4 }, ...extra });
+const jump = (ref: string, group: Partial<CueSpec>, music: Partial<CueSpec>): CueSpec => ({ type: 'group', ref, ...group, children: [{ type: 'music', ref: `${ref}m`, target: '@track', ...music }] });
+const pos = (r: Rig, s: Built) => r.engine.positionOf(r.engine.running.get(s.id('track'))!);
 
 test('a Jump with no quantise cuts now: the track moves inside itself, its level untouched', () => {
   const s = build([add(TRACK()), add(jump('j', { number: '2', blend: 'cut' }, { to: 40 }))]);
@@ -28,7 +30,7 @@ test('a Jump with no quantise cuts now: the track moves inside itself, its level
   assert.ok(!r.audio.calls.some((c) => c[0] === 'stop' || (c[0] === 'play' && r.audio.calls.indexOf(c) > 0)), 'it is one sound moved, not stopped and started');
   r.advance(1);
   assert.ok(near(pos(r, s), 41, 0.1), `about a second past where it landed: ${pos(r, s)}`);
-  assert.equal(r.audio.playing.get(s.id('track')).db, -6);
+  assert.equal(r.audio.playing.get(s.id('track'))!.db, -6);
 });
 
 test('a Jump on the bar waits for the next downbeat and crossfades across it; on the beat, the next beat', () => {
@@ -117,7 +119,7 @@ test('a Jump that holds arms a loop the track plays into; a second jump before t
   r.advance(5);
   r.engine.go();
   assert.equal(r.audio.calls.filter((c) => c[0] === 'move').length, 0, 'a hold moves nothing');
-  assert.deepEqual(r.engine.active().find((a) => a.id === s.id('track')).armed, [{ start: 16, end: 24 }]);
+  assert.deepEqual((r.engine.active().find((a) => a.id === s.id('track')) as SoundLine).armed, [{ start: 16, end: 24 }]);
   assert.deepEqual(last(r, 'setRegion'), ['setRegion', s.id('track'), 16, 24]);
   r.advance(30);                                             // 5 + 30 = 35 s played: 16–24 gone round
   assert.ok(pos(r, s) >= 16 && pos(r, s) < 24, `going round the section: ${pos(r, s)}`);
@@ -164,7 +166,7 @@ test('a group quantised to the bar fires on the next downbeat; with nothing on a
   assert.ok(r.audio.playing.has(s.id('click')), 'on the next beat');
   r.advance(0.4);                                            // 5.95: too near the beat at 6.0 to land on (inside 80 ms): the one after
   r.engine.fire(s.id('tick'));
-  assert.ok(near(r.engine.waits.get(s.id('tick')).total, 0.55));
+  assert.ok(near(r.engine.waits.get(s.id('tick'))!.total, 0.55));
 });
 
 test('Hold (H) loops the section the track is in until it is let go; a GO lets go', () => {
@@ -177,10 +179,10 @@ test('Hold (H) loops the section the track is in until it is let go; a GO lets g
   r.advance(3);
   r.engine.setHold(true);                                    // before the first section: the next one is armed
   assert.deepEqual(last(r, 'setRegion'), ['setRegion', s.id('track'), 8, 16]);
-  assert.ok(!r.engine.active()[0].holding, 'not in it yet');
+  assert.ok(!(r.engine.active()[0] as SoundLine).holding, 'not in it yet');
   r.advance(20);                                             // 23 s played: 8 + (23 - 8) % 8 = 15
   assert.ok(near(pos(r, s), 15, 0.01));
-  assert.ok(r.engine.active()[0].holding && r.engine.snapshot().held);
+  assert.ok((r.engine.active()[0] as SoundLine).holding && r.engine.snapshot().held);
   r.engine.go();                                             // the operator moves on
   assert.ok(!r.engine.held);
   assert.deepEqual(last(r, 'setRegion'), ['setRegion', s.id('track'), null, null]);
@@ -210,13 +212,13 @@ test('a skip moves the sound and what is timed to it; out of a held section it l
   r.engine.seek(s.id('track'), 30);
   assert.deepEqual(last(r, 'seek'), ['seek', s.id('track'), 30]);
   assert.ok(!r.engine.waits.has(s.id('early')), 'a marker now behind is dropped');
-  const w = r.engine.active().find((a) => a.id === s.id('late'));
+  const w = r.engine.active().find((a) => a.id === s.id('late'))!;
   assert.ok(near(w.total - w.elapsed, 20), 'one ahead counts from the new place');
   r.engine.seek(s.id('track'), 500);
   assert.ok(near(pos(r, s), 119.95), 'never past the end of the file');
   r.engine.seek(s.id('track'), 9);
   r.engine.setHold(true);
-  assert.ok(r.engine.active().find((a) => a.kind === 'audio').holding);
+  assert.ok((r.engine.active().find((a) => a.kind === 'audio') as SoundLine).holding);
   r.engine.seek(s.id('track'), 60);
   assert.deepEqual(last(r, 'setRegion'), ['setRegion', s.id('track'), null, null], 'skipped out of the section it was held in');
   r.engine.pause();
@@ -234,7 +236,7 @@ test('End at: the sound stops there by itself, told to the audio backend ahead; 
   r.engine.setDuration('media/a.wav', 60);
   r.engine.go();
   assert.equal(r.engine.lengthOf(s.id('a')), 8);
-  assert.equal(r.engine.active()[0].end, 10, 'the countdown is to the End at');
+  assert.equal((r.engine.active()[0] as SoundLine).end, 10, 'the countdown is to the End at');
   r.advance(7.6);
   assert.equal(last(r, 'cut'), undefined);
   r.advance(0.2);                                            // 0.3 s ahead of the end
@@ -266,16 +268,16 @@ test('fade-out tails: onto the last sample, from a set time, on a loop, and agai
   assert.ok(!r.audio.calls.some((c) => c[0] === 'fade'));
   r.advance(0.2);
   assert.deepEqual(last(r, 'fade'), ['fade', s.id('end'), -60, 4, undefined], 'over its last four seconds');
-  assert.equal(r.engine.active()[0].fadingTo, -60);
+  assert.equal((r.engine.active()[0] as SoundLine).fadingTo, -60);
   r.engine.seek(s.id('end'), 5);                             // skipped back out of the tail: its level again, and a new tail
   assert.deepEqual(last(r, 'fade').slice(1, 3), [s.id('end'), -3]);
   r.engine.pause(s.id('end'));
   r.advance(30);
   r.engine.resume(s.id('end'));
   r.advance(10.9);
-  assert.equal(r.engine.active()[0].fadingTo, null);
+  assert.equal((r.engine.active()[0] as SoundLine).fadingTo, null);
   r.advance(0.2);
-  assert.equal(r.engine.active()[0].fadingTo, -60, 'the tail was planned again from where it resumed');
+  assert.equal((r.engine.active()[0] as SoundLine).fadingTo, -60, 'the tail was planned again from where it resumed');
   r.audio.playing.delete(s.id('end')); r.engine.audioEnded(s.id('end'));
   r.engine.go();                                             // fade out from 5 s: it stops when the fade lands
   r.advance(5.1);
@@ -301,8 +303,8 @@ test('a Fade in the voice range dips the speech band and leaves the level alone'
   const r = rig(s.doc);
   r.engine.go(); r.engine.go();
   assert.deepEqual(last(r, 'fade'), ['fade', s.id('music'), -9, 1, 'voice']);
-  assert.equal(r.audio.playing.get(s.id('music')).db, -4, 'the sound’s level is where it was');
-  assert.equal(r.engine.active().find((a) => a.kind === 'audio').fadingTo, null);
+  assert.equal(r.audio.playing.get(s.id('music'))!.db, -4, 'the sound’s level is where it was');
+  assert.equal((r.engine.active().find((a) => a.kind === 'audio') as SoundLine).fadingTo, null);
   assert.ok(r.engine.active().some((a) => a.kind === 'fade' && a.id === s.id('carve')), 'it is a fade like any other in Active cues');
   r.advance(1.1);
   r.engine.go();
@@ -336,7 +338,7 @@ test('an OSC message fires the cue it is the trigger of: patterns, arguments, th
   ]);
   const triggers = oscTriggers(s.doc);
   assert.deepEqual(triggers.map((t) => [t.address, t.args]), [['/sm/thunder', ''], ['/sensor/door', '1'], ['/sm/*', '']], 'what does not start with / is no trigger');
-  const arrive = (address, args = []) => firedBy(triggers, osc.decode(osc.encode(address, args)));
+  const arrive = (address: string, args: unknown[] = []) => firedBy(triggers, osc.decode(osc.encode(address, args))!);
   assert.deepEqual(arrive('/sm/thunder'), [s.id('thunder'), s.id('creak')]);
   assert.deepEqual(arrive('/sm/thunder', [3, 'loud']), [s.id('thunder'), s.id('creak')], 'a trigger that names no arguments takes any');
   assert.deepEqual(arrive('/sensor/door', [1]), [s.id('door')]);
@@ -364,7 +366,7 @@ test('a track brought back by a Jump keeps the loop regions it goes round by its
   assert.ok(!r.audio.playing.has(s.id('track')));
   r.engine.go();                                             // started again at 30 s, short of its section
   r.engine.setExact(s.id('track'), true);
-  assert.deepEqual(r.engine.active().find((a) => a.kind === 'audio').armed, [{ start: 40, end: 48 }]);
+  assert.deepEqual((r.engine.active().find((a) => a.kind === 'audio') as SoundLine).armed, [{ start: 40, end: 48 }]);
   r.advance(30);                                             // 60 s straight on: without the hold it would be past 48
   assert.ok(pos(r, s) >= 40 && pos(r, s) < 48, `going round its section: ${pos(r, s)}`);
 });

@@ -35,6 +35,21 @@
  * (pads, rain, rubato, scattered hits) score under MIN_CONFIDENCE. Not told apart: a shuffle (a beat in
  * three) from the straight tempo half as fast again, and quiet music whose onsets are too soft to see.
  */
+/** A beat grid: its tempo, and the time of one of its beats. */
+export interface Grid { bpm: number; first: number }
+/** The frames of an envelope where something starts, and how strongly. */
+interface Onsets { at: Int32Array; v: Float32Array }
+/** A stretch of a track that keeps one tempo. */
+interface Stretch { from: number; to: number; bpm: number; first: number; confidence: number }
+/** A tempo as a show might hold it, before it is cleaned: every part may be missing or wrong. */
+export interface TempoIn { bpm?: unknown; first?: unknown; bar?: unknown; confidence?: unknown; sections?: unknown }
+/** One section of a tempo: from where, its tempo, a bar line of it, its beats in a bar. */
+export interface Section { from: number; bpm: number; first: number; bar: number }
+/** A tempo as the show keeps it: the section from the start of the file, and any later ones. */
+export interface TempoValue { bpm: number; first: number; bar: number; confidence?: number; sections?: Section[] }
+/** A tempo edited by hand (editTempo). */
+export interface TempoEdit { do: string; at?: unknown; bpm?: unknown; bar?: unknown; by?: unknown }
+
 const MIN_CONFIDENCE = 0.14;
 const HOP = 64;                  // at 11025 Hz: 172 frames a second
 const WIN = 8;                   // seconds of track a grid is checked against at a time
@@ -42,7 +57,7 @@ const LIFT = 0.78;               // a faster reading is the beat when its beats 
 
 /** The rise in loudness, frame by frame, in three bands (a kick, a snare and a hat each count): zero where
  *  nothing starts. Returns { env, fps }. */
-function onsetEnvelope(x, rate) {
+function onsetEnvelope(x: Float32Array, rate: number) {
   const hop = Math.max(1, Math.round(HOP * rate / 11025)), win = hop * 4, fps = rate / hop;
   const n = Math.max(0, Math.floor((x.length - win) / hop));
   const a1 = 1 - Math.exp(-2 * Math.PI * 200 / rate), a2 = 1 - Math.exp(-2 * Math.PI * 2000 / rate);
@@ -79,14 +94,14 @@ function onsetEnvelope(x, rate) {
 }
 
 /** The envelope folded at a period (in frames): how much of it lands in each of `bins` slices of the beat. */
-function fold(on, period, bins) {
+function fold(on: Onsets, period: number, bins: number) {
   const h = new Float64Array(bins), { at, v } = on;
   for (let k = 0; k < at.length; k++) h[Math.floor(((at[k] % period) / period) * bins) % bins] += v[k];
   return h;
 }
 /** Only the frames of an envelope where something starts (a quarter of them, in music): { at, v }. With
  *  `windows`, only those in the windows of WIN seconds marked true. */
-function onsetsOf(env, fps, windows) {
+function onsetsOf(env: Float32Array, fps: number, windows?: boolean[]): Onsets {
   const w = Math.round(WIN * fps), last = windows ? windows.length - 1 : 0;
   let count = 0;
   for (let i = 0; i < env.length; i++) if (env[i] > 0 && (!windows || windows[Math.min(last, Math.floor(i / w))])) count++;
@@ -95,7 +110,7 @@ function onsetsOf(env, fps, windows) {
   return { at, v };
 }
 /** Where a folded envelope gathers (the tallest two slices side by side), and how much of it is there. */
-function sharpness(h) {
+function sharpness(h: Float64Array) {
   let max = 0, sum = 0, at = 0;
   for (let i = 0; i < h.length; i++) { const v = h[i] + h[(i + 1) % h.length]; sum += h[i]; if (v > max) { max = v; at = i; } }
   return { score: sum > 0 ? max / sum : 0, at };
@@ -103,8 +118,8 @@ function sharpness(h) {
 
 /** A rough tempo made exact against the track (every tempo within 2 % of it, the envelope folded at each), and
  *  where its beat falls: { bpm, first }. */
-function exactOf(on, fps, rough) {
-  const score = (b) => sharpness(fold(on, fps * 60 / b, 48)).score;
+function exactOf(on: Onsets, fps: number, rough: number): Grid {
+  const score = (b: number) => sharpness(fold(on, fps * 60 / b, 48)).score;
   let best = -1, bpm = rough;
   for (let b = rough * 0.98; b <= rough * 1.02; b += 0.02) { const s = score(b); if (s > best) { best = s; bpm = b; } }
   for (let b = bpm - 0.02; b <= bpm + 0.02; b += 0.002) { const s = score(b); if (s > best) { best = s; bpm = b; } }
@@ -125,7 +140,7 @@ function exactOf(on, fps, rough) {
 
 /** Where a grid holds: the track in windows of WIN seconds, each asked whether its onsets gather on the grid's
  *  beats. Returns { holds: [{ from, to }] (seconds), covers (0 … 1), windows (one true or false each) }. */
-function holdsOf(on, frames, fps, t) {
+function holdsOf(on: Onsets, frames: number, fps: number, t: Grid) {
   const period = fps * 60 / t.bpm, f0 = t.first * fps - 3, tol = Math.min(period / 8, 0.03 * fps);
   const w = Math.round(WIN * fps), nw = Math.max(1, Math.floor(frames / w)), even = 2 * tol / period;
   const hit = new Float64Array(nw), half = new Float64Array(nw), all = new Float64Array(nw), struck = new Float64Array(nw), { at, v } = on;
@@ -138,13 +153,13 @@ function holdsOf(on, frames, fps, t) {
   // onsets spread evenly would put `even` of themselves on the beats, and as much on the half beats: a grid holds
   // where clearly more than that is on the beats, or on the beats and half beats together (busy music), and
   // where half the beats at least have something on them (a few stray hits that happen to land are not a pulse)
-  const windows = [];
+  const windows: boolean[] = [];
   for (let k = 0; k < nw; k++) {
     const beats = ((k === nw - 1 ? frames : (k + 1) * w) - k * w) / period;
     windows.push(all[k] > 0 && struck[k] >= beats / 2 && (hit[k] / all[k] >= even + 0.12 || (hit[k] + half[k]) / all[k] >= 2 * even + 0.2));
   }
   // a stretch: windows that hold, one missed window forgiven, and at least two of them (16 seconds)
-  const runs = [], length = frames / fps, sec = (k) => (k >= nw ? length : Math.min(length, k * WIN));
+  const runs: [number, number][] = [], length = frames / fps, sec = (k: number) => (k >= nw ? length : Math.min(length, k * WIN));
   for (let k = 0; k < nw; k++) {
     if (!windows[k]) continue;
     const last = runs[runs.length - 1];
@@ -159,7 +174,7 @@ function holdsOf(on, frames, fps, t) {
   return { holds, covers: Math.round(held / length * 100) / 100, windows };
 }
 /** What lands on a grid's beats, per beat, in each window of WIN seconds. */
-function strengths(e, fps, t, nw) {
+function strengths(e: Float32Array, fps: number, t: Grid, nw: number) {
   const period = fps * 60 / t.bpm, f0 = t.first * fps - 3, tol = Math.round(0.02 * fps), w = Math.round(WIN * fps);
   const sum = new Float64Array(nw), beats = new Float64Array(nw);
   for (let b = f0 - Math.floor(f0 / period) * period; b < e.length; b += period) {
@@ -178,7 +193,7 @@ function strengths(e, fps, t, nw) {
  * `others` are the other readings worth offering, the likeliest first: half or double time, and the dotted and
  * triplet relations a machine cannot always tell from the beat a person would tap.
  */
-function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
+function tempoOf(x: Float32Array | null | undefined, rate: number, { min = 60, max = 185 } = {}) {
   if (!x || x.length < rate * 4) return null;                  // under four seconds: nothing to count
   const { env, fps, amp } = onsetEnvelope(x, rate);
   const n = env.length;
@@ -197,11 +212,13 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
   for (let lag = 0; lag <= L; lag++) ac[lag] /= n - lag;
   const base = mean * mean, top = ac[0] - base;
   if (!(top > 0)) return null;
-  const at = (lag) => { const i = Math.floor(lag), f = lag - i; return i >= L ? 0 : ((ac[i] * (1 - f) + ac[i + 1] * f) - base) / top; };
-  const clarityAt = (lag) => (at(lag) + at(2 * lag) + at(3 * lag) + at(4 * lag)) / 4;
+  const at = (lag: number) => { const i = Math.floor(lag), f = lag - i; return i >= L ? 0 : ((ac[i] * (1 - f) + ac[i + 1] * f) - base) / top; };
+  const clarityAt = (lag: number) => (at(lag) + at(2 * lag) + at(3 * lag) + at(4 * lag)) / 4;
   // 2. a beat repeats at one, two, three and four of itself; a lag that is really three of something faster
   //    (a dotted or triplet reading) is marked down; people tap near 115
-  const cands = [];
+  type Cand = { bpm: number; clarity: number; score: number };
+  type Reading = Cand & Grid & { steady: number };
+  const cands: Cand[] = [];
   for (let lag = lagMin; lag <= lagMax; lag += 0.5) {
     const bpm = fps * 60 / lag;
     const clarity = clarityAt(lag);
@@ -209,12 +226,13 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
     cands.push({ bpm, clarity, score: (clarity - 0.3 * Math.max(0, at(lag / 3))) * prior });
   }
   cands.sort((a, b) => b.score - a.score);
-  const apart = (a, b) => Math.abs(Math.log2(a.bpm / b.bpm)) > 0.06;
-  let picks = [];
-  for (const c of cands) { if (c.score > 0 && picks.every((p) => apart(c, p))) picks.push(c); if (picks.length === 4) break; }
+  const apart = (a: { bpm: number }, b: { bpm: number }) => Math.abs(Math.log2(a.bpm / b.bpm)) > 0.06;
+  // (a pick has its beat and its steadiness once it is made exact, in 3. below)
+  let picks: Reading[] = [];
+  for (const c of cands) { if (c.score > 0 && picks.every((p) => apart(c, p))) picks.push(c as Reading); if (picks.length === 4) break; }
   if (!picks.length) return null;
   // a pulse that holds: the track is still like itself sixteen beats on (a tempo that wanders is not)
-  const steadyOf = (bpm) => {
+  const steadyOf = (bpm: number) => {
     const far = fps * 60 / bpm * 16;
     let steady = 0;
     for (let d = -3; d <= 3; d++) {
@@ -228,7 +246,7 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
   };
   // 3. exactly (every tempo within 2 % of a pick, against the whole track at once), and where in the track that
   //    grid holds; one that holds for part of the track is made exact again on that part alone
-  const read = (t) => {
+  const read = (t: Grid) => {
     let held = holdsOf(on, n, fps, t);
     if (held.covers > 0 && held.covers < 0.9) {
       const t2 = exactOf(onsetsOf(env, fps, held.windows), fps, t.bpm), held2 = holdsOf(on, n, fps, t2);
@@ -243,11 +261,12 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
   //    its beats are hit about as hard as the slower one's in most of the windows where the slower one holds:
   //    the slower is then every other beat of it, or its dotted reading. A kick on one beat and only a hat on
   //    the next is not that, and stays where it is.
-  const lift = (t) => {
-    const passed = [], nw = t.held.windows.length;
+  type Read = ReturnType<typeof read>;
+  const lift = (t: Read) => {
+    const passed: Read[] = [], nw = t.held.windows.length;
     for (let step = 0; step < 2 && t.held.covers > 0; step++) {
       const mine = [strengths(env, fps, t, nw), strengths(amp, fps, t, nw)];
-      let best = null;
+      let best: { u: Read; won: number } | null = null;
       for (const m of [2, 1.5]) {
         if (t.bpm * m > max) continue;
         const u = read(exactOf(on, fps, t.bpm * m)), theirs = [strengths(env, fps, u, nw), strengths(amp, fps, u, nw)];
@@ -268,7 +287,7 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
   const { t: main, passed } = lift(read({ bpm: picks[0].bpm, first: picks[0].first }));
   const steady = passed.length ? steadyOf(main.bpm) : picks[0].steady;
   const confidence = steady >= 0.1 ? picks[0].clarity : Math.min(picks[0].clarity, steady);
-  const others = [];
+  const others: { bpm: number; first: number; covers: number }[] = [];
   for (const o of [...passed.reverse(), ...picks.slice(1).filter((p) => p.clarity >= picks[0].clarity * 0.5).map((p) => ({ ...p, held: holdsOf(on, n, fps, p) }))]) {
     if (apart(o, main) && others.every((p) => apart(o, p))) others.push({ bpm: o.bpm, first: o.first, covers: o.held.covers });
   }
@@ -285,14 +304,14 @@ function tempoOf(x, rate, { min = 60, max = 185 } = {}) {
  *  found to the beat: the place before which the onsets sit on the first grid and after which on the second.
  *  A change it cannot hear this way (a ritardando, a tempo held for under sixteen seconds) is for a person to
  *  mark by hand. */
-function tempoMap(x, rate, opts = {}) {
+function tempoMap(x: Float32Array, rate: number, opts: { min?: number; max?: number } = {}) {
   const whole = tempoOf(x, rate, opts);
   if (!whole) return null;
   const length = x.length / rate;
   if (!(whole.confidence >= MIN_CONFIDENCE) || whole.covers >= 0.9 || !whole.holds.length) return { ...whole, sections: [] };
   // 1. the stretches that hold a tempo, wherever in the track they are
-  const found = [];
-  const listen = (from, to, depth) => {
+  const found: Stretch[] = [];
+  const listen = (from: number, to: number, depth: number) => {
     if (to - from < 2 * WIN || depth > 4) return;
     const a = Math.round(from * rate), off = a / rate;
     const r = depth === 0 ? whole : tempoOf(x.subarray(a, Math.round(to * rate)), rate, opts);
@@ -308,17 +327,17 @@ function tempoMap(x, rate, opts = {}) {
   listen(0, length, 0);
   found.sort((p, q) => p.from - q.from);
   // 2. two stretches on the one grid (the same tempo, the beat still where the first would have it) are one section
-  const same = (p, q) => {
+  const same = (p: Stretch, q: Stretch) => {
     const beat = 60 / p.bpm, d = (q.first - p.first) / beat;
     return Math.abs(p.bpm - q.bpm) <= 0.1 && Math.abs(d - Math.round(d)) * beat < 0.04;
   };
-  const parts = [];
+  const parts: Stretch[] = [];
   for (const f of found) { const last = parts[parts.length - 1]; if (last && same(last, f)) last.to = f.to; else parts.push({ ...f }); }
   if (parts.length < 2) return { ...whole, sections: [] };
   // 3. where each hands over to the next: the onsets around the join, each asked which grid it sits on
   const { env, fps } = onsetEnvelope(x, rate);
-  const on = (p, i) => { const period = fps * 60 / p.bpm, ph = (i - (p.first * fps - 3)) / period; return Math.abs(ph - Math.round(ph)) * period <= Math.min(period / 8, 0.03 * fps) ? 1 : 0; };
-  const sections = [];
+  const on = (p: Stretch, i: number) => { const period = fps * 60 / p.bpm, ph = (i - (p.first * fps - 3)) / period; return Math.abs(ph - Math.round(ph)) * period <= Math.min(period / 8, 0.03 * fps) ? 1 : 0; };
+  const sections: { from: number; bpm: number; first: number; confidence: number }[] = [];
   for (let k = 1; k < parts.length; k++) {
     const p = parts[k - 1], q = parts[k];
     const lo = Math.max(0, Math.round((p.to - WIN) * fps)), hi = Math.min(env.length, Math.round((q.from + WIN) * fps));
@@ -333,21 +352,21 @@ function tempoMap(x, rate, opts = {}) {
   return { ...whole, bpm: one.bpm, first: Math.round((((one.first % (60 / one.bpm)) + 60 / one.bpm) % (60 / one.bpm)) * 1000) / 1000, sections };
 }
 
-const okBpm = (b) => Number(b) >= 20 && Number(b) <= 400;
-const barOf = (b) => Math.max(1, Math.min(16, Math.round(Number(b) || 4)));
+const okBpm = (b: unknown) => Number(b) >= 20 && Number(b) <= 400;
+const barOf = (b: unknown) => Math.max(1, Math.min(16, Math.round(Number(b) || 4)));
 
 /** A tempo as its sections in order: [{ from, bpm, first, bar }], the first from 0. `first` is a bar line of
  *  that section (any one); a later section's grid starts at its `from` and runs to the next section. */
-function sectionsOf(tempo) {
+function sectionsOf(tempo: TempoIn | null | undefined): Section[] {
   if (!tempo || !okBpm(tempo.bpm)) return [];
-  const out = [{ from: 0, bpm: Number(tempo.bpm), first: Number(tempo.first) || 0, bar: barOf(tempo.bar) }];
+  const out: Section[] = [{ from: 0, bpm: Number(tempo.bpm), first: Number(tempo.first) || 0, bar: barOf(tempo.bar) }];
   for (const s of Array.isArray(tempo.sections) ? tempo.sections : []) {
     if (s && okBpm(s.bpm) && Number(s.from) > 0) out.push({ from: Number(s.from), bpm: Number(s.bpm), first: Number.isFinite(Number(s.first)) ? Number(s.first) : Number(s.from), bar: barOf(s.bar) });
   }
   return out.sort((a, b) => a.from - b.from);
 }
 /** The section a place in the track is in: { index, from, to, bpm, first, bar } (`to`: Infinity for the last). */
-function sectionAt(tempo, t) {
+function sectionAt(tempo: TempoIn | null | undefined, t: number) {
   const all = sectionsOf(tempo);
   if (!all.length) return null;
   let i = 0;
@@ -357,10 +376,10 @@ function sectionAt(tempo, t) {
 
 /** Every beat and every bar line of a tempo, from the start of the file to `length` seconds: each section's
  *  own grid, from where it begins to where the next one does. */
-function gridOf(tempo, length) {
+function gridOf(tempo: TempoIn | null | undefined, length: number) {
   const all = sectionsOf(tempo);
   if (!all.length || !(length > 0)) return { beats: [], downbeats: [] };
-  const beats = [], downbeats = [];
+  const beats: number[] = [], downbeats: number[] = [];
   all.forEach((s, i) => {
     const beat = 60 / s.bpm, to = i + 1 < all.length ? Math.min(length, all[i + 1].from - 0.02) : length;      // (no beat a hair before the next section's first)
     for (let k = Math.ceil((s.from - s.first) / beat - 1e-6); ; k++) {
@@ -375,20 +394,20 @@ function gridOf(tempo, length) {
 }
 
 /** A tempo made safe to keep in a show: null when it is not one. */
-function cleanTempo(t) {
+function cleanTempo(t: unknown): TempoValue | null {
   if (!t || typeof t !== 'object') return null;
   const all = sectionsOf(t);
   if (!all.length) return null;
-  const r2 = (v) => Math.round(v * 100) / 100, r3 = (v) => Math.round(v * 1000) / 1000;
+  const r2 = (v: number) => Math.round(v * 100) / 100, r3 = (v: number) => Math.round(v * 1000) / 1000;
   // `first` is kept inside the section's first bar: the same grid, one way of writing it
-  const tidy = (s) => { const len = 60 / s.bpm * s.bar; return { bpm: r2(s.bpm), first: r3(s.from + ((((s.first - s.from) % len) + len) % len)), bar: s.bar }; };
-  const later = [];
+  const tidy = (s: Section) => { const len = 60 / s.bpm * s.bar; return { bpm: r2(s.bpm), first: r3(s.from + ((((s.first - s.from) % len) + len) % len)), bar: s.bar }; };
+  const later: Section[] = [];
   for (const s of all.slice(1, 65)) {
     const prev = later[later.length - 1];
     if (prev && s.from - prev.from < 0.05) later.pop();          // two sections at one place: the later one stands
     later.push({ from: r3(s.from), ...tidy(s) });
   }
-  return { ...tidy(all[0]), ...(t.confidence != null ? { confidence: r2(Number(t.confidence)) } : {}), ...(later.length ? { sections: later } : {}) };
+  return { ...tidy(all[0]), ...((t as TempoIn).confidence != null ? { confidence: r2(Number((t as TempoIn).confidence)) } : {}), ...(later.length ? { sections: later } : {}) };
 }
 
 /**
@@ -400,10 +419,10 @@ function cleanTempo(t) {
  *   { do: 'split', at, bpm?, bar? }   a new section begins on the beat nearest `at` (the tempo changes here)
  *   { do: 'join', at }                the section `at` is in is taken away: the one before it runs on
  */
-function editTempo(tempo, e) {
+function editTempo(tempo: TempoIn | null | undefined, e: TempoEdit) {
   const all = sectionsOf(tempo), at = Number(e && e.at) || 0;
   if (!all.length) return null;
-  const cur = sectionAt(tempo, at), s = all[cur.index], beat = 60 / s.bpm;
+  const cur = sectionAt(tempo, at)!, s = all[cur.index], beat = 60 / s.bpm;
   const nearest = s.first + Math.round((at - s.first) / beat) * beat;
   switch (e.do) {
     case 'set':
@@ -422,13 +441,13 @@ function editTempo(tempo, e) {
   }
   // a tempo typed over the one that was heard: what was heard no longer vouches for it
   const typed = cur.index === 0 && e.do === 'set' && e.bpm !== undefined;
-  return cleanTempo({ ...all[0], ...(tempo.confidence != null && !typed ? { confidence: tempo.confidence } : {}), sections: all.slice(1) });
+  return cleanTempo({ ...all[0], ...(tempo!.confidence != null && !typed ? { confidence: tempo!.confidence } : {}), sections: all.slice(1) });
 }
 
 /** How fast a sound with a tempo plays to be at the desk's tempo: 1 when it has none, the desk has none, or the
  *  answer is beyond what stays music (half speed to double). `at`: where in its file it starts (its section). */
 const WARP_MIN = 0.5, WARP_MAX = 2;
-function warpRate(tempo, deskBpm, at = 0) {
+function warpRate(tempo: TempoIn | null | undefined, deskBpm: unknown, at = 0) {
   const sec = sectionAt(tempo, at);
   if (!sec || !okBpm(deskBpm)) return 1;
   const rate = Number(deskBpm) / sec.bpm;

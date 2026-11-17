@@ -12,10 +12,12 @@ import * as os from 'os';
 import * as path from 'path';
 import * as show from '../../core/show/show';
 import * as sig from './test-signals';
+import type { Smoke, Snap } from './smoke';
+import type { Op } from '../../core/show/ops';
 
 const RATE = 44100;
 /** A mono 16-bit WAV of `samples` (−1…1 at `rate`). */
-function writeMono(file, samples, rate = RATE) {
+function writeMono(file: string, samples: Float32Array | number[], rate = RATE) {
   const n = samples.length, buf = Buffer.alloc(44 + n * 2);
   buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8);
   buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
@@ -24,17 +26,20 @@ function writeMono(file, samples, rate = RATE) {
   for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), 44 + i * 2);
   fs.writeFileSync(file, buf);
 }
-const tone = (secs, from = 0, to = secs, hz = 440, amp = 0.4) => { const x = new Float32Array(Math.round(RATE * secs)); for (let i = Math.round(from * RATE); i < Math.min(x.length, Math.round(to * RATE)); i++) x[i] = amp * Math.sin(2 * Math.PI * hz * i / RATE); return x; };
+const tone = (secs: number, from = 0, to = secs, hz = 440, amp = 0.4) => { const x = new Float32Array(Math.round(RATE * secs)); for (let i = Math.round(from * RATE); i < Math.min(x.length, Math.round(to * RATE)); i++) x[i] = amp * Math.sin(2 * Math.PI * hz * i / RATE); return x; };
 
-async function soundChecks({ host, check, timed = check, until, sleep, page, shot, win, log = () => {} }) {
-  const snap = () => host.snapshot();
-  const av = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
-  const measure = (o) => av(`measure(${JSON.stringify(o)})`);
+/** What the audio window's `measure` gives back: each side's level every 10 ms (dB), the frequency, and what was built. */
+interface Measured { l: number[]; r: number[]; hz: number; missing: string[]; sig: string; tail: boolean; tailSecs: number }
+
+async function soundChecks({ host, check, timed = check, until, sleep, page, shot, win, log = () => {} }: Pick<Smoke, 'host' | 'check' | 'until' | 'sleep' | 'page' | 'shot' | 'win'> & Partial<Pick<Smoke, 'timed' | 'log'>>) {
+  const snap = () => host.snapshot() as Snap;
+  const av = (js: string) => host.audioWindow()!.webContents.executeJavaScript(js, true);
+  const measure = (o: unknown): Promise<Measured> => av(`measure(${JSON.stringify(o)})`);
   const list = host.document.doc.lists[0].id;
   const depth = host.document.undoStack.length;          // every edit made here (by a command or in the window) is undone at the end
-  const edit = (ops, label = 'sound') => host.cmd({ op: 'edit', ops, label });
-  const idOf = (number) => (show.findByNumber(host.document.doc, number) || {}).id;
-  const mean = (a, from, to) => { const s = a.slice(Math.round(from * 100), Math.round(to * 100)); return s.reduce((x, y) => x + y, 0) / s.length; };
+  const edit = (ops: Op[], label = 'sound') => host.cmd({ op: 'edit', ops, label });
+  const idOf = (number: string) => (show.findByNumber(host.document.doc, number) || {}).id!;
+  const mean = (a: number[], from: number, to: number) => { const s = a.slice(Math.round(from * 100), Math.round(to * 100)); return s.reduce((x, y) => x + y, 0) / s.length; };
   // (the run's show may be untitled by now: the sounds made here go in a folder of their own and are named whole)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-sound-'));
   const TONE = path.join(dir, 'sd-tone.wav'), LINE = path.join(dir, 'sd-line.wav'), ROOM = path.join(dir, 'sd-room.wav');
@@ -44,8 +49,8 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   check('the sound design worklets (gate, compressor, crusher, pitch) load in the audio window', await av('fxEnv.worklets') === true);
 
   // ── a chain, measured offline: each tool does to a synthesised signal what it says ─────────────────────
-  const sine = (hz, db = -12) => ({ kind: 'sine', hz, db });
-  const lvl = async (o, from = 0.5, to = 0.95) => mean((await measure(o)).l, from, to) + 3.01;      // a sine's level as its peak, dB
+  const sine = (hz: number, db = -12) => ({ kind: 'sine', hz, db });
+  const lvl = async (o: unknown, from = 0.5, to = 0.95) => mean((await measure(o)).l, from, to) + 3.01;      // a sine's level as its peak, dB
   {
     const plain = await measure({ signal: sine(1000) });
     check('no chain: the sound is the plain wire it was (nothing built, the level untouched)', plain.sig === '' && Math.abs(mean(plain.l, 0.5, 0.95) + 3.01 + 12) < 0.1, [plain.sig, mean(plain.l, 0.5, 0.95)]);
@@ -111,20 +116,20 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
     { op: 'cue.add', list, cue: { type: 'mic', number: 'SD4', bus: 'vocals', chain: { comp: {}, stereo: { width: 0 } } } },
   ]);
   const sd1 = idOf('SD1'), sd2 = idOf('SD2'), sd4 = idOf('SD4');
-  const fxOf = (id) => av(`(() => { const v = voices.get(${JSON.stringify(id)}); return v ? (v.fx ? { sig: v.fx.sig, tail: v.fx.tail, stages: v.fx.plan.stages, n: v.fx.n || (v.fx.n = Math.random()), into: v.fx.input.numberOfInputs } : false) : null; })()`);
+  const fxOf = (id: string) => av(`(() => { const v = voices.get(${JSON.stringify(id)}); return v ? (v.fx ? { sig: v.fx.sig, tail: v.fx.tail, stages: v.fx.plan.stages, n: v.fx.n || (v.fx.n = Math.random()), into: v.fx.input.numberOfInputs } : false) : null; })()`);
   host.cmd({ op: 'fire', number: 'SD1' }); host.cmd({ op: 'fire', number: 'SD2' }); host.cmd({ op: 'fire', number: 'SD4' });
   await until(async () => (await fxOf(sd1)) !== null && (await fxOf(sd2)) && (await fxOf(sd4)), 4000);
   const f1 = await fxOf(sd1), f2 = await fxOf(sd2), f4 = await fxOf(sd4);
   check('a playing sound with no chain has nothing built for it; one with a chain has exactly its tools; a Mic cue has its own', f1 === false && f2 && f2.sig === 'lowpass24>reverb(0.3:0.6)' && f2.tail === true && f4 && f4.sig === 'comp>stereo', [f1, f2 && f2.sig, f4 && f4.sig]);
-  await until(() => (snap().mixer.buses.find((b) => b.id === 'effects') || {}).peak > -50, 3000);
-  check('…and the designed sound and the mic are heard on their buses through their chains', (snap().mixer.buses.find((b) => b.id === 'effects') || {}).peak > -50 && (snap().mixer.buses.find((b) => b.id === 'vocals') || {}).peak > -40, snap().mixer.buses.map((b) => [b.id, b.peak]));
+  await until(() => (snap().mixer.buses.find((b) => b.id === 'effects') || { peak: -Infinity }).peak > -50, 3000);
+  check('…and the designed sound and the mic are heard on their buses through their chains', (snap().mixer.buses.find((b) => b.id === 'effects') || { peak: -Infinity }).peak > -50 && (snap().mixer.buses.find((b) => b.id === 'vocals') || { peak: -Infinity }).peak > -40, snap().mixer.buses.map((b) => [b.id, b.peak]));
   edit([{ op: 'cue.set', id: sd2, props: { chain: { lowpass: { hz: 2000, slope: 24 }, reverb: { size: 0.3, decay: 0.6, predelay: 0, mix: 0.3 }, tail: true } } }]);
   check('a number changed on a playing sound’s tool glides there in place (the chain is not rebuilt)', await until(async () => { const f = await fxOf(sd2); return f && f.n === f2.n && f.stages[0].hz === 2000; }, 3000), await fxOf(sd2));
   const hzNow = () => av(`(() => { const v = voices.get(${JSON.stringify(sd2)}); let hz = null; if (v && v.fx) { v.fx.input.context; } return v && v.fx ? v.fx.plan.stages[0].hz : null; })()`);
   host.cmd({ op: 'fire', number: 'SD3' });
   check('a Fade cue’s “Sound design to” moves the playing sound’s low-pass over its time', await until(async () => (await hzNow()) === 500, 3000), await hzNow());
   edit([{ op: 'cue.set', id: sd1, props: { chain: { highpass: { hz: 300, slope: 12 } } } }]);
-  check('a tool switched on for a sound that was playing plain is put in its path at once', await until(async () => { const f = await fxOf(sd1); return f && f.sig === 'highpass12'; }, 3000) && (snap().mixer.buses.find((b) => b.id === 'effects') || {}).peak > -50, await fxOf(sd1));
+  check('a tool switched on for a sound that was playing plain is put in its path at once', await until(async () => { const f = await fxOf(sd1); return f && f.sig === 'highpass12'; }, 3000) && (snap().mixer.buses.find((b) => b.id === 'effects') || { peak: -Infinity }).peak > -50, await fxOf(sd1));
   edit([{ op: 'cue.set', id: sd1, props: { chain: { highpass: { hz: 300, slope: 12 }, bypass: true } } }]);
   check('…and bypassed (A/B) it is the plain wire again, still sounding', await until(async () => (await fxOf(sd1)) === false, 3000) && await until(() => av(`(() => { const v = voices.get(${JSON.stringify(sd1)}); return !!v && (v.buf ? !!v.srcNode : !v.el.paused); })()`), 2000));
   check('a cue left bypassed is flagged', snap().problems.some((p) => p.id === sd1 && /bypassed/.test(p.why)), snap().problems.filter((p) => p.id === sd1));
@@ -148,23 +153,23 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   host.cmd({ op: 'panic', hard: true });
 
   // ── the inspector's Sound design tab ────────────────────────────────────────────────────────────────
-  const row = (name) => page(`(() => { const r = [...document.querySelectorAll('.list tbody tr')].find((x) => /${name}/.test(x.textContent)); if (r) { r.scrollIntoView(); r.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); r.click(); } return !!r; })()`);
-  const tab = (label) => page(`(() => { const b = [...document.querySelectorAll('.inspector .tabs button')].find((x) => x.textContent.startsWith(${JSON.stringify(label)})); if (b) b.click(); return !!b; })()`);
-  const typeIn = (sel, text) => page(`(() => { const i = document.querySelector(${JSON.stringify(sel)}); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
-  const cueNow = (id) => show.index(host.document.doc).byId.get(id);
+  const row = (name: string) => page(`(() => { const r = [...document.querySelectorAll('.list tbody tr')].find((x) => /${name}/.test(x.textContent)); if (r) { r.scrollIntoView(); r.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); r.click(); } return !!r; })()`);
+  const tab = (label: string) => page(`(() => { const b = [...document.querySelectorAll('.inspector .tabs button')].find((x) => x.textContent.startsWith(${JSON.stringify(label)})); if (b) b.click(); return !!b; })()`);
+  const typeIn = (sel: string, text: string) => page(`(() => { const i = document.querySelector(${JSON.stringify(sel)}); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  const cueNow = (id: string) => show.index(host.document.doc).byId.get(id)!;
   edit([{ op: 'cue.set', id: sd1, props: { chain: null } }]);
   await row('plain');
   check('an Audio cue’s inspector has a Sound design tab', await until(() => tab('Sound design'), 3000) && await until(() => page(`!!document.querySelector('[data-sound-design] [data-rack]')`), 3000));
   check('…a rack with no devices and one “+ Add effect” when the cue has none', await until(() => page(`document.querySelectorAll('[data-sound-design] [data-device]').length === 0 && /Add effect/.test((document.querySelector('[data-add-effect]') || {}).textContent || '')`), 3000));
   // a click on what the page has drawn: waited for (a slow machine draws late), and named when it never comes
-  const click = async (sel, ms = 3000) => {
+  const click = async (sel: string, ms = 3000) => {
     if (!await until(() => page(`!!document.querySelector(${JSON.stringify(sel)})`), ms)) throw new Error(`nothing to click: ${sel}`);
     await page(`document.querySelector(${JSON.stringify(sel)}).click()`);
   };
   // (a hidden window has no keyboard focus to lose: the box is told it lost it, as the browser would tell it)
-  const leave = (sel) => page(`document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new FocusEvent('blur'))`);
+  const leave = (sel: string) => page(`document.querySelector(${JSON.stringify(sel)}).dispatchEvent(new FocusEvent('blur'))`);
   // (a click on "+" that lands while the rack is being drawn again opens nothing: up to three, and said)
-  const addTool = async (key) => {
+  const addTool = async (key: string) => {
     for (let n = 1; n <= 3; n++) {
       await click('[data-add-effect]');
       if (await until(() => page(`!!document.querySelector('[data-add-tool="${key}"]')`), 2000)) { if (n > 1) log(`SMOKE note  the + menu took ${n} clicks to open`); break; }
@@ -174,9 +179,9 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   await addTool('highpass');
   check('“+” lists the tools; one chosen is added with its settings written out', await until(() => JSON.stringify((cueNow(sd1) || {}).chain) === JSON.stringify({ highpass: { hz: 80, slope: 12 } }), 3000) && await until(() => page(`!!document.querySelector('[data-device="highpass"] [data-knob="highpass.hz"]') && !document.querySelector('[data-add-menu]')`), 2000), cueNow(sd1).chain);
   // a knob dragged up: the frequency rises along a ratio, and lands in the show when the button is let go
-  const drag = (sel, dy) => page(`(() => { const d = document.querySelector(${JSON.stringify(sel)}); const ev = (type, y) => d.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientX: 10, clientY: y })); ev('pointerdown', 200); ev('pointermove', 200 - ${dy / 2}); ev('pointermove', 200 - ${dy}); ev('pointerup', 200 - ${dy}); return true; })()`);
+  const drag = (sel: string, dy: number) => page(`(() => { const d = document.querySelector(${JSON.stringify(sel)}); const ev = (type, y) => d.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientX: 10, clientY: y })); ev('pointerdown', 200); ev('pointermove', 200 - ${dy / 2}); ev('pointermove', 200 - ${dy}); ev('pointerup', 200 - ${dy}); return true; })()`);
   await drag('[data-knob="highpass.hz"] svg', 50);
-  check('a knob dragged up turns its setting up, and the new value is in the show (one edit)', await until(() => { const h = (cueNow(sd1).chain || {}).highpass || {}; return h.hz > 600 && h.hz < 1000; }, 3000), cueNow(sd1).chain);
+  check('a knob dragged up turns its setting up, and the new value is in the show (one edit)', await until(() => { const h: { hz?: number } = (cueNow(sd1).chain || {}).highpass || {}; return h.hz! > 600 && h.hz! < 1000; }, 3000), cueNow(sd1).chain);
   check('…and its value is shown under it in the units it is in', await until(() => page(`/^\\d+Hz$/.test(document.querySelector('[data-knob-value="highpass.hz"]').textContent.trim())`), 2000), await page(`document.querySelector('[data-knob-value="highpass.hz"]').textContent`));
   // the value double-clicked: a box to type in (a box commits when it loses the keyboard, not only on Enter)
   await page(`document.querySelector('[data-knob-value="highpass.hz"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
@@ -207,14 +212,14 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   check('“+” offers a tool already in the chain no second time', await (async () => { await click('[data-add-effect]'); await until(() => page(`!!document.querySelector('[data-add-menu]')`), 2000); const r = await page(`document.querySelector('[data-add-tool="reverb"]').disabled && !document.querySelector('[data-add-tool="delay"]').disabled`); await click('[data-add-effect]'); return r && await until(() => page(`!document.querySelector('[data-add-menu]')`), 2000); })());
   // the power button: off keeps the settings, on again takes them back
   await click('[data-power="reverb"]');
-  check('a device switched off keeps its settings in the cue (“on”: false)', await until(() => ((cueNow(sd1).chain || {}).reverb || {}).on === false && cueNow(sd1).chain.reverb.mix === 0.25, 3000) && await until(() => page(`!!document.querySelector('[data-device="reverb"].off')`), 2000), cueNow(sd1).chain);
+  check('a device switched off keeps its settings in the cue (“on”: false)', await until(() => ((cueNow(sd1).chain || {}).reverb || {}).on === false && cueNow(sd1).chain!.reverb!.mix === 0.25, 3000) && await until(() => page(`!!document.querySelector('[data-device="reverb"].off')`), 2000), cueNow(sd1).chain);
   await click('[data-power="reverb"]');
-  check('…and on again', await until(() => (cueNow(sd1).chain || {}).reverb && cueNow(sd1).chain.reverb.on === undefined, 3000), cueNow(sd1).chain);
+  check('…and on again', await until(() => (cueNow(sd1).chain || {}).reverb && cueNow(sd1).chain!.reverb!.on === undefined, 3000), cueNow(sd1).chain);
   // an eq band: chosen on the eq device, its gain and frequency typed
   await click('[data-band="mid"]');
   await until(() => page(`!!document.querySelector('[data-knob-value="eq.mid.db"]')`), 2000);
   // (a knob typed into by synthetic events: on a slow CI machine the first try has been lost; up to three, and said)
-  const typeKnob = async (knob, text, landed) => {
+  const typeKnob = async (knob: string, text: string, landed: () => unknown) => {
     for (let n = 1; n <= 3; n++) {
       await page(`document.querySelector('[data-knob-value="${knob}"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
       if (!await until(() => page(`!!document.querySelector('[data-knob-input="${knob}"]')`), 2000)) continue;
@@ -223,14 +228,14 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
     }
   };
   await typeKnob('eq.mid.db', '-6', () => (cueNow(sd1).eq || {}).mid === -6);
-  await typeKnob('eq.mid.hz', '1.8k', () => ((cueNow(sd1).eq || {}).mid || {}).hz === 1800);
+  await typeKnob('eq.mid.hz', '1.8k', () => (((cueNow(sd1).eq || {}).mid || {}) as { hz?: number }).hz === 1800);
   check('an eq band is a level at its usual place, and { db, hz, q } once it is moved', await until(() => JSON.stringify(cueNow(sd1).eq) === JSON.stringify({ mid: { db: -6, hz: 1800, q: 0.8 } }), 3000), cueNow(sd1).eq);
   // the rack at 1024 wide: it scrolls inside the tab, the window never does
   const was = win.getContentSize();
   win.setContentSize(1024, 700);
   await until(() => page('window.innerWidth === 1024'), 3000);
   await sleep(200);
-  const fit = await page(`(() => { const r = document.querySelector('[data-rack]'); return { page: document.documentElement.scrollWidth <= window.innerWidth, inside: r.getBoundingClientRect().right <= window.innerWidth + 1 }; })()`);
+  const fit = await page<{ page: boolean; inside: boolean }>(`(() => { const r = document.querySelector('[data-rack]'); return { page: document.documentElement.scrollWidth <= window.innerWidth, inside: r.getBoundingClientRect().right <= window.innerWidth + 1 }; })()`);
   check('at 1024 wide the rack stays inside the window (it scrolls sideways within the tab)', fit.page && fit.inside, fit);
   await shot('sound-design-1024');
   win.setContentSize(1600, 900);
@@ -240,20 +245,20 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   await sleep(200);
   // remove: the device and its settings leave the cue
   await click('[data-remove="lowpass"]');
-  check('a device removed (×) is gone from the cue', await until(() => !(cueNow(sd1).chain || {}).lowpass && !!cueNow(sd1).chain.highpass, 3000) && await until(() => page(`!document.querySelector('[data-device="lowpass"]')`), 2000), cueNow(sd1).chain);
+  check('a device removed (×) is gone from the cue', await until(() => !(cueNow(sd1).chain || {}).lowpass && !!cueNow(sd1).chain!.highpass, 3000) && await until(() => page(`!document.querySelector('[data-device="lowpass"]')`), 2000), cueNow(sd1).chain);
   await shot('sound-design-rack');
   // a preset: applied from the menu, then this cue's chain saved under a name in the show
   const presets = async () => { await click('[data-presets]'); await until(() => page(`!!document.querySelector('[data-preset-menu]')`), 2000); };
   await presets();
   await click('[data-preset="b:Phone"]');
-  check('a built-in preset (Phone) puts its chain on the cue', await until(() => ((cueNow(sd1).chain || {}).lowpass || {}).hz === 3200 && cueNow(sd1).chain.stereo.width === 0 && cueNow(sd1).eq === undefined, 3000), cueNow(sd1).chain);
+  check('a built-in preset (Phone) puts its chain on the cue', await until(() => ((cueNow(sd1).chain || {}).lowpass || {}).hz === 3200 && cueNow(sd1).chain!.stereo!.width === 0 && cueNow(sd1).eq === undefined, 3000), cueNow(sd1).chain);
   await presets();
   await typeIn('[data-preset-name]', 'Tannoy');
   await click('[data-preset-save]');
   check('a cue’s chain is saved in the show as a preset of its own, and offered', await until(() => !!((host.document.doc.settings.audio.chains || {}).Tannoy || {}).chain, 3000) && await until(() => page(`!!document.querySelector('[data-preset="s:Tannoy"]')`), 3000), host.document.doc.settings.audio.chains);
   await click('[data-presets]');
   await click('[data-bypass]');
-  check('Bypass (A/B) is a button on the tab, and the tab says so', await until(() => cueNow(sd1).chain.bypass === true, 3000) && await until(() => page(`[...document.querySelectorAll('.inspector .tabs button')].some((b) => /Sound design \\(bypassed\\)/.test(b.textContent))`), 3000));
+  check('Bypass (A/B) is a button on the tab, and the tab says so', await until(() => cueNow(sd1).chain!.bypass === true, 3000) && await until(() => page(`[...document.querySelectorAll('.inspector .tabs button')].some((b) => /Sound design \\(bypassed\\)/.test(b.textContent))`), 3000));
   await shot('sound-design');
   // a mic on the voice bus with no chain is offered the Voice chain, and nothing is applied until it is taken
   edit([{ op: 'cue.set', id: sd4, props: { chain: null } }]);
@@ -288,12 +293,12 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   const lineAt = () => av(`(() => { const v = voices.get(${JSON.stringify(sk1)}); return v ? { at: placeOf(v), speech: v.speech || null } : null; })()`);
   await until(async () => !!(await lineAt()), 3000);
   check('a recorded voice on a voice bus is played with where its speech is (read from its waveform)', JSON.stringify((await lineAt()).speech) === JSON.stringify([[1.5, 2.5]]), await lineAt());
-  let downAt = null, upAt = null;
+  let downAt: number | null = null, upAt: number | null = null;
   await until(async () => { const l = await lineAt(); if (!l) return true; if (downAt === null && snap().mixer.ducked.includes('music')) downAt = l.at; return downAt !== null; }, 5000);
   await timed('look-ahead ducking: the music starts down before the voice speaks (an attack time ahead), not after', downAt !== null && downAt >= 1.0 && downAt < 1.5, downAt);
   await until(async () => { const l = await lineAt(); if (!l) return true; if (l.at > 2.2 && !snap().mixer.ducked.includes('music')) upAt = l.at; return upAt !== null; }, 5000);
   await timed('…and is let go as the last word ends, without waiting out the hold', upAt !== null && upAt >= 2.5 && upAt < 2.5 + 0.45, upAt);
-  check('a voice-over’s transcript is in the masthead while it plays', await until(() => page(`(document.querySelector('[data-transcript]') || {}).textContent || ''`).then((t) => /best of times/.test(t)), 3000));
+  check('a voice-over’s transcript is in the masthead while it plays', await until(() => page<string>(`(document.querySelector('[data-transcript]') || {}).textContent || ''`).then((t) => /best of times/.test(t)), 3000));
   host.cmd({ op: 'panic', hard: true });
   // a bus that fades its stops, set by choosing its kind in Settings ▸ Audio
   edit([{ op: 'show.set', path: 'settings.audio.buses', value: audio().buses.map((b) => (b.id === 'music' ? { ...b, kind: 'music', stopFade: 0.8 } : b)) }]);
@@ -332,12 +337,12 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
   await page(`(async () => { for (let i = 0; i < 40 && !document.querySelector('.modal'); i++) await new Promise((r) => setTimeout(r, 50)); const b = [...document.querySelectorAll('.modal nav button')].find((x) => x.textContent === 'Audio'); if (b) b.click(); })()`);
   check('Settings ▸ Audio shows what each bus carries, and ducking by kind', await until(() => page(`!!document.querySelector('.modal [data-bus-kinds] [data-kind="effects"]') && !!document.querySelector('.modal [data-ducking] [data-duck-under="music"]')`), 3000));
   await page(`(() => { const s = document.querySelector('.modal [data-kind="effects"]'); s.value = 'ambience'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  check('a bus given the kind Ambience is only named so: nothing about how it plays is switched on', await until(() => audio().buses.find((x) => x.id === 'effects').kind === 'ambience', 3000) && audio().buses.find((x) => x.id === 'effects').oneAtATime === undefined && audio().buses.find((x) => x.id === 'effects').stopFade === undefined, audio().buses);
+  check('a bus given the kind Ambience is only named so: nothing about how it plays is switched on', await until(() => audio().buses.find((x) => x.id === 'effects')!.kind === 'ambience', 3000) && audio().buses.find((x) => x.id === 'effects')!.oneAtATime === undefined && audio().buses.find((x) => x.id === 'effects')!.stopFade === undefined, audio().buses);
   await until(() => page(`!document.querySelector('.modal [data-suggest="effects"]').disabled`), 3000);
   await click('.modal [data-suggest="effects"]');
-  check('…until “Use suggested” is pressed: one at a time (3 s) and a fading stop (2 s), written on the bus', await until(() => { const b = audio().buses.find((x) => x.id === 'effects'); return b.oneAtATime === 3 && b.stopFade === 2; }, 3000), audio().buses);
+  check('…until “Use suggested” is pressed: one at a time (3 s) and a fading stop (2 s), written on the bus', await until(() => { const b = audio().buses.find((x) => x.id === 'effects')!; return b.oneAtATime === 3 && b.stopFade === 2; }, 3000), audio().buses);
   await page(`(() => { const i = document.querySelector('.modal [data-oneatatime="effects"]'); i.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '5'); i.dispatchEvent(new Event('input', { bubbles: true })); i.dispatchEvent(new FocusEvent('blur')); })()`);
-  check('…and the time is the designer’s to change (typed and left, it is kept)', await until(() => audio().buses.find((x) => x.id === 'effects').oneAtATime === 5, 3000), audio().buses);
+  check('…and the time is the designer’s to change (typed and left, it is kept)', await until(() => audio().buses.find((x) => x.id === 'effects')!.oneAtATime === 5, 3000), audio().buses);
   await page(`document.querySelector('.modal [data-ducking]').scrollIntoView({ block: 'end' })`);
   await shot('sound-kinds-settings');
   await click('.modal .close');

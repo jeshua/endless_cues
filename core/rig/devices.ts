@@ -22,6 +22,22 @@
 import * as osc from '../net/osc';
 import * as netRaw from '../net/raw';
 import * as midi from '../net/midi';
+import type { Cue, Device, DeviceCommand, Destination } from '../show/types';
+
+/** Data not yet checked: a device as a show file, an edit or the assistant gives it. */
+type Raw = Record<string, any>;
+
+/** One field of the tables below: what the editor draws and `clean` reads. */
+export interface DeviceField {
+  key: string; kind: string; label: string; required?: boolean; help?: string; options?: string[]; labels?: Record<string, string>;
+  default?: unknown; min?: number; max?: number; whole?: boolean; network?: boolean; mono?: boolean; advanced?: boolean; when?: string;
+}
+/** A network device as the hub wants it: a patch, marked `isDevice`. */
+export interface DevicePatch {
+  id: string; name: string; host: string; port: number; protocol: 'udp' | 'tcp'; framing: 'slip' | 'length';
+  listenPort?: number; iface?: string; destinations?: Destination[];
+  format: Device['via']; resend: number; alive: Device['alive']; isDevice: true;
+}
 
 const ID = /^[a-z][a-z0-9_]{0,31}$/;
 const KINDS = ['desk', 'prop', 'media', 'sound', 'computer', 'instrument', 'other'];
@@ -30,7 +46,7 @@ const MAX_COMMANDS = 64, MAX_REPORTS = 12, MAX_RESEND = 5;
 const RESEND_GAP_MS = 40;
 
 /** A device's fields. `network: true`: only a device spoken to over the network has it (not a MIDI one). */
-const FIELDS = [
+const FIELDS: DeviceField[] = [
   { key: 'id', kind: 'id', label: 'Id', required: true, help: 'Cues name it by this; it never changes. a–z, 0–9 and _, from a letter; unique. Made from the name if left out.' },
   { key: 'name', kind: 'text', label: 'Name', required: true, help: 'What the operator calls it.' },
   { key: 'kind', kind: 'enum', label: 'Kind', options: KINDS, default: 'other', help: 'A label only.' },
@@ -54,7 +70,7 @@ const FIELDS = [
   { key: 'notes', kind: 'longtext', label: 'Notes', help: 'Where it is, what powers it.' },
 ];
 
-const COMMAND_FIELDS = [
+const COMMAND_FIELDS: DeviceField[] = [
   { key: 'id', kind: 'id', label: 'Id', required: true, help: 'Device cues name it by this; unique in the device.' },
   { key: 'label', kind: 'text', label: 'Name', required: true, help: 'What the operator reads: “Fire cue”.' },
   { key: 'template', kind: 'text', label: 'Message', required: true, mono: true,
@@ -64,7 +80,7 @@ const COMMAND_FIELDS = [
   { key: 'notes', kind: 'text', label: 'Notes' },
 ];
 
-const PARAM_FIELDS = [
+const PARAM_FIELDS: DeviceField[] = [
   { key: 'key', kind: 'text', label: 'Key', required: true, help: 'The word between the braces in the message.' },
   { key: 'label', kind: 'text', label: 'Name' },
   { key: 'kind', kind: 'enum', label: 'Kind', options: ['number', 'text', 'enum'], default: 'text' },
@@ -76,7 +92,7 @@ const PARAM_FIELDS = [
   { key: 'help', kind: 'text', label: 'Help' },
 ];
 
-const ALIVE_FIELDS = [
+const ALIVE_FIELDS: DeviceField[] = [
   { key: 'how', kind: 'enum', label: 'Is it there', options: ['none', 'ask', 'heartbeat'], default: 'none', labels: { none: 'It cannot be asked', ask: 'Ask it', heartbeat: 'It says so by itself' },
     help: 'ask: asked every few seconds. heartbeat: listened for; opens the input port. none: cannot be told.' },
   { key: 'send', kind: 'text', label: 'Ask with', mono: true, when: 'ask', help: 'The “are you there?” message, as /eos/ping.' },
@@ -86,7 +102,7 @@ const ALIVE_FIELDS = [
   { key: 'within', kind: 'number', label: 'Within (s)', default: 5, min: 1, max: 600, when: 'heartbeat', help: 'There while something arrived this recently.' },
 ];
 
-const REPORT_FIELDS = [
+const REPORT_FIELDS: DeviceField[] = [
   { key: 'key', kind: 'text', label: 'Key', required: true },
   { key: 'label', kind: 'text', label: 'Name', required: true, help: 'What the operator reads: “Battery”.' },
   { key: 'from', kind: 'text', label: 'In message', required: true, mono: true, help: 'The OSC pattern it is read from, as /ec/here.' },
@@ -97,15 +113,15 @@ const REPORT_FIELDS = [
   { key: 'none', kind: 'any', label: 'Means “not known”', help: 'Sent when it cannot tell, as -1: not shown, never a warning.' },
 ];
 
-const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
-const clone = (v) => JSON.parse(JSON.stringify(v));
-const viaOf = (d) => (VIAS.includes(d && d.via) ? d.via : 'osc');
-const isNetwork = (d) => viaOf(d) !== 'midi';
-const holesOf = (template) => [...String(template || '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
-const portOk = (v) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536 && typeof v !== 'boolean' && v !== '';
+const isObj = (v: unknown): v is Raw => !!v && typeof v === 'object' && !Array.isArray(v);
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+const viaOf = (d: { via?: unknown } | null | undefined): Device['via'] => (VIAS.includes((d && d.via) as string) ? (d!.via as Device['via']) : 'osc');
+const isNetwork = (d: { via?: unknown } | null | undefined) => viaOf(d) !== 'midi';
+const holesOf = (template: unknown) => [...String(template || '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+const portOk = (v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536 && typeof v !== 'boolean' && v !== '';
 
 /** An id made from a name ("Lantern A" → lantern_a), not one of `taken` (lantern_a_2). */
-function idFrom(name, taken = []) {
+function idFrom(name: unknown, taken: Iterable<string> | Set<string> = []): string {
   const has = taken instanceof Set ? taken : new Set(taken);
   let base = String(name || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   if (!base) base = 'device';
@@ -118,9 +134,9 @@ function idFrom(name, taken = []) {
 
 // ── reading: forgiving ────────────────────────────────────────────────
 
-function cleanParam(p) {
+function cleanParam(p: unknown): Raw | null {
   if (!isObj(p) || !/^\w+$/.test(String(p.key || ''))) return null;
-  const out = { ...p, key: String(p.key), label: String(p.label || p.key), kind: ['number', 'text', 'enum'].includes(p.kind) ? p.kind : 'text' };
+  const out: Raw = { ...p, key: String(p.key), label: String(p.label || p.key), kind: ['number', 'text', 'enum'].includes(p.kind) ? p.kind : 'text' };
   for (const k of ['min', 'max']) { if (out[k] === undefined) continue; if (Number.isFinite(Number(out[k])) && out[k] !== '' && out[k] !== null) out[k] = Number(out[k]); else delete out[k]; }
   if (out.whole !== undefined) { if (out.whole) out.whole = true; else delete out.whole; }
   if (out.kind === 'enum') out.options = (Array.isArray(p.options) ? p.options : []).map(String);
@@ -128,23 +144,23 @@ function cleanParam(p) {
   if (out.default === undefined || out.default === null) delete out.default;
   return out;
 }
-function cleanCommand(c) {
+function cleanCommand(c: unknown): Raw | null {
   if (!isObj(c) || !ID.test(String(c.id || '')) || typeof c.template !== 'string' || !c.template.trim()) return null;
-  const out = { ...c, id: String(c.id), label: String(c.label || c.id), template: c.template, params: (Array.isArray(c.params) ? c.params : []).map(cleanParam).filter(Boolean) };
-  if (out.fade !== undefined && !out.params.some((p) => p.key === out.fade && p.kind === 'number')) delete out.fade;
+  const out: Raw = { ...c, id: String(c.id), label: String(c.label || c.id), template: c.template, params: (Array.isArray(c.params) ? c.params : []).map(cleanParam).filter(Boolean) as Raw[] };
+  if (out.fade !== undefined && !out.params.some((p: Raw) => p.key === out.fade && p.kind === 'number')) delete out.fade;
   if (out.notes !== undefined) { if (out.notes) out.notes = String(out.notes); else delete out.notes; }
   return out;
 }
-function cleanAlive(a) {
+function cleanAlive(a: unknown): Device['alive'] {
   const how = isObj(a) && ['ask', 'heartbeat'].includes(a.how) ? a.how : 'none';
   if (how === 'none') return { how };
-  const num = (v, def, lo, hi) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Math.max(lo, Math.min(hi, Number(v))) : def);
-  if (how === 'ask') return { how, send: String(a.send || ''), ...(a.reply ? { reply: String(a.reply) } : {}), every: num(a.every, 2, 1, 30) };
-  return { how, ...(a.hears ? { hears: String(a.hears) } : {}), within: num(a.within, 5, 1, 600) };
+  const num = (v: unknown, def: number, lo: number, hi: number) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Math.max(lo, Math.min(hi, Number(v))) : def);
+  if (how === 'ask') return { how, send: String((a as Raw).send || ''), ...((a as Raw).reply ? { reply: String((a as Raw).reply) } : {}), every: num((a as Raw).every, 2, 1, 30) };
+  return { how, ...((a as Raw).hears ? { hears: String((a as Raw).hears) } : {}), within: num((a as Raw).within, 5, 1, 600) };
 }
-function cleanReport(r) {
+function cleanReport(r: unknown): Raw | null {
   if (!isObj(r) || !r.key || !r.from) return null;
-  const out = { ...r, key: String(r.key), label: String(r.label || r.key), from: String(r.from), arg: Number.isInteger(Number(r.arg)) && Number(r.arg) >= 0 ? Number(r.arg) : 0 };
+  const out: Raw = { ...r, key: String(r.key), label: String(r.label || r.key), from: String(r.from), arg: Number.isInteger(Number(r.arg)) && Number(r.arg) >= 0 ? Number(r.arg) : 0 };
   for (const k of ['warnBelow', 'warnAbove']) { if (out[k] === undefined) continue; if (Number.isFinite(Number(out[k])) && out[k] !== '' && out[k] !== null) out[k] = Number(out[k]); else delete out[k]; }
   if (out.unit !== undefined) { if (out.unit) out.unit = String(out.unit); else delete out.unit; }
   return out;
@@ -156,12 +172,12 @@ function cleanReport(r) {
  * kind, a `via`, a list of commands (each with its params) and `alive.how`; everything else only if given.
  * `device` is null for something that is not a device at all.
  */
-function clean(raw, { taken = [] } = {}) {
-  const warnings = [];
+function clean(raw: unknown, { taken = [] as Iterable<string> } = {}): { device: Device | null; warnings: string[] } {
+  const warnings: string[] = [];
   if (!isObj(raw)) return { device: null, warnings: ['not a device, dropped'] };
-  const d = { ...raw };
+  const d: Raw = { ...raw };
   const who = String(raw.name || raw.id || 'a device');
-  const drop = (key, why) => { warnings.push(`${who}: ${why}, dropped`); delete d[key]; };
+  const drop = (key: string, why: string) => { warnings.push(`${who}: ${why}, dropped`); delete d[key]; };
   if (!ID.test(String(d.id || ''))) { const id = idFrom(d.name || d.id || 'device', taken); if (d.id !== undefined) warnings.push(`${who}: its id ${JSON.stringify(d.id)} is not one (lower-case letters, digits and _); it is now ${id}`); d.id = id; }
   d.name = String(d.name || d.id);
   if (!KINDS.includes(d.kind)) { if (d.kind !== undefined) warnings.push(`${who}: kind ${JSON.stringify(d.kind)} is not one of ${KINDS.join(', ')}; it is “other”`); d.kind = 'other'; }
@@ -173,14 +189,14 @@ function clean(raw, { taken = [] } = {}) {
     switch (f.kind) {
       case 'text': case 'longtext': case 'command': d[f.key] = String(v); break;
       case 'port': if (portOk(v)) d[f.key] = Number(v); else drop(f.key, `its ${f.label.toLowerCase()} ${JSON.stringify(v)} is not a port`); break;
-      case 'enum': if (!f.options.includes(v)) drop(f.key, `its ${f.label.toLowerCase()} ${JSON.stringify(v)} is not one of ${f.options.join(', ')}`); break;
+      case 'enum': if (!f.options!.includes(v)) drop(f.key, `its ${f.label.toLowerCase()} ${JSON.stringify(v)} is not one of ${f.options!.join(', ')}`); break;
       case 'bool': d[f.key] = v === true || v === 'true' || v === 1; break;
       case 'number': { const n = Number(v); if (!Number.isFinite(n) || typeof v === 'boolean') drop(f.key, `its ${f.label.toLowerCase()} is not a number`); else d[f.key] = Math.max(f.min ?? -Infinity, Math.min(f.max ?? Infinity, f.whole ? Math.round(n) : n)); break; }
-      case 'destinations': if (Array.isArray(v)) d[f.key] = v.filter((x) => isObj(x) && x.host).map((x) => ({ ...x, host: String(x.host), ...(portOk(x.port) ? { port: Number(x.port) } : {}) })); else drop(f.key, 'its further destinations are not a list'); if (d[f.key] && !d[f.key].length) delete d[f.key]; break;
+      case 'destinations': if (Array.isArray(v)) d[f.key] = v.filter((x) => isObj(x) && x.host).map((x: Raw) => ({ ...x, host: String(x.host), ...(portOk(x.port) ? { port: Number(x.port) } : {}) })); else drop(f.key, 'its further destinations are not a list'); if (d[f.key] && !d[f.key].length) delete d[f.key]; break;
       default: break;
     }
   }
-  const commands = [], seen = new Set();
+  const commands: Raw[] = [], seen = new Set();
   for (const c of Array.isArray(raw.commands) ? raw.commands.slice(0, MAX_COMMANDS) : []) {
     const k = cleanCommand(c);
     if (!k || seen.has(k.id)) { warnings.push(`${who}: a command that cannot be understood (${JSON.stringify(c && c.id)}), dropped`); continue; }
@@ -190,7 +206,7 @@ function clean(raw, { taken = [] } = {}) {
   d.alive = cleanAlive(raw.alive);
   if (raw.reports !== undefined) { d.reports = (Array.isArray(raw.reports) ? raw.reports.slice(0, MAX_REPORTS) : []).map(cleanReport).filter(Boolean); if (!d.reports.length) delete d.reports; }
   if (d.test !== undefined && !commands.some((c) => c.id === d.test)) drop('test', `its “safe to try” command ${JSON.stringify(d.test)} is not one of its commands`);
-  return { device: d, warnings };
+  return { device: d as Device, warnings };
 }
 
 // ── composing ─────────────────────────────────────────────────────────
@@ -201,7 +217,7 @@ function clean(raw, { taken = [] } = {}) {
  * With `fade`, the command's `fade` param becomes "#v#" (a Network cue's faded value). `strict: false` is for
  * the older device templates, which never checked a value: what is given is put in as written.
  */
-function compose(device, commandId, args = {}, { fade = false, strict = true } = {}) {
+function compose(device: { name?: string; commands?: DeviceCommand[] } | null | undefined, commandId: string | null | undefined, args: unknown = {}, { fade = false, strict = true } = {}): { ok: true; message: string } | { ok: false; why: string } {
   const commands = (device && device.commands) || [];
   const cmd = commands.find((c) => c.id === commandId);
   const name = (device && device.name) || 'the device';
@@ -209,7 +225,7 @@ function compose(device, commandId, args = {}, { fade = false, strict = true } =
   if (fade && !cmd.fade) return { ok: false, why: `“${cmd.label || cmd.id}” has no value that can fade` };
   let why = '';
   const params = cmd.params || [];
-  const message = String(cmd.template).replace(/\{(\w+)\}/g, (_m, key) => {
+  const message = String(cmd.template).replace(/\{(\w+)\}/g, (_m, key: string) => {
     if (fade && cmd.fade === key) return '#v#';
     const p = params.find((x) => x.key === key);
     const given = isObj(args) ? args[key] : undefined;
@@ -231,7 +247,7 @@ function compose(device, commandId, args = {}, { fade = false, strict = true } =
 }
 
 /** A fading command's number, checked as compose checks it: null when it may be sent, else why not. */
-function valueTrouble(command, value) {
+function valueTrouble(command: DeviceCommand | null | undefined, value: unknown): string | null {
   const p = command && (command.params || []).find((x) => x.key === command.fade);
   if (!p) return 'this command has no value that can fade';
   const n = Number(value);
@@ -241,12 +257,12 @@ function valueTrouble(command, value) {
 }
 
 /** The value each of a command's params takes for these arguments (the given one, else its default), in the command's order. */
-function valuesOf(command, args = {}) {
+function valuesOf(command: DeviceCommand | null | undefined, args: unknown = {}): unknown[] {
   return ((command && command.params) || []).map((p) => { const v = isObj(args) ? args[p.key] : undefined; return v !== undefined && v !== '' && v !== null ? v : p.default; });
 }
 
 /** What a Device cue is called when it has no name: "Lantern A ▸ Effect (breathe)". */
-function cueName(device, cue = {}) {
+function cueName(device: Device | null | undefined, cue: Partial<Cue> = {}): string {
   if (!device) return cue.device ? `${cue.device} ▸ ${cue.command || '…'}` : 'Device';
   const cmd = (device.commands || []).find((c) => c.id === cue.command);
   if (!cmd) return `${device.name} ▸ ${cue.command || '…'}`;
@@ -257,14 +273,14 @@ function cueName(device, cue = {}) {
 // ── writing: strict ───────────────────────────────────────────────────
 
 /** Whether a message is one, in the way a device is spoken to: null, or why not. */
-function messageTrouble(via, text) {
+function messageTrouble(via: string, text: unknown): string | null {
   const s = String(text || '').trim();
   if (!s) return 'is empty';
   try {
     if (via === 'osc') { if (!s.startsWith('/')) return 'is not OSC: an OSC message starts with /'; osc.parseText(s); }
     else if (via === 'hex') netRaw.hex(s);
     else if (via === 'midi') midi.encode(midi.parseText(s));
-  } catch (err) { return `cannot be sent: ${err.message}`; }
+  } catch (err) { return `cannot be sent: ${(err as Error).message}`; }
   return null;
 }
 
@@ -272,8 +288,8 @@ function messageTrouble(via, text) {
  * What is wrong with a device, as sentences a person (or the assistant) can act on. Strict: this is what an
  * edit is held to. With `doc`, also what is wrong with it in that show (an id shared with a patch or another device).
  */
-function trouble(device, doc = null) {
-  const out = [];
+function trouble(device: unknown, doc: { settings?: { network?: { patches?: { id?: string }[] }; rig?: { devices?: { id?: string }[] } } } | null = null): string[] {
+  const out: string[] = [];
   if (!isObj(device)) return ['a device is an object: { "name": …, "host": …, "port": …, "commands": [ … ] }'];
   const d = device, via = viaOf(d);
   const who = typeof d.name === 'string' && d.name.trim() ? d.name : typeof d.id === 'string' && d.id ? d.id : 'the device';
@@ -286,7 +302,7 @@ function trouble(device, doc = null) {
   if (d.protocol !== undefined && !['udp', 'tcp'].includes(d.protocol)) out.push(`${who}: protocol is udp or tcp (it was given ${JSON.stringify(d.protocol)})`);
   if (d.framing !== undefined && !['slip', 'length'].includes(d.framing)) out.push(`${who}: framing is slip or length (it was given ${JSON.stringify(d.framing)})`);
   if (d.iface !== undefined && typeof d.iface !== 'string') out.push(`${who}: iface is the name of a network interface, as text`);
-  if (d.destinations !== undefined && !(Array.isArray(d.destinations) && d.destinations.every((x) => isObj(x) && typeof x.host === 'string' && x.host && (x.port === undefined || portOk(x.port))))) out.push(`${who}: destinations is a list of { "host": …, "port": … }`);
+  if (d.destinations !== undefined && !(Array.isArray(d.destinations) && d.destinations.every((x: unknown) => isObj(x) && typeof x.host === 'string' && x.host && (x.port === undefined || portOk(x.port))))) out.push(`${who}: destinations is a list of { "host": …, "port": … }`);
   if (via === 'midi' && (d.host || d.port)) out.push(`${who}: a MIDI device has no address: it uses the show’s MIDI output (Settings ▸ Integrations ▸ Network)`);
   if (d.resend !== undefined && !(Number.isInteger(d.resend) && d.resend >= 0 && d.resend <= MAX_RESEND)) out.push(`${who}: resend is a whole number from 0 to ${MAX_RESEND} (it was given ${JSON.stringify(d.resend)})`);
   if (d.needed !== undefined && typeof d.needed !== 'boolean') out.push(`${who}: needed is true or false (it was given ${JSON.stringify(d.needed)})`);
@@ -306,8 +322,8 @@ function trouble(device, doc = null) {
       if (typeof c.label !== 'string' || !c.label.trim()) out.push(`${who}: ${cn} needs a label (what the operator reads)`);
       if (typeof c.template !== 'string' || !c.template.trim()) { out.push(`${who}: ${cn} needs a template (its message)`); continue; }
       const params = c.params === undefined ? [] : c.params;
-      if (!Array.isArray(params) || params.some((p) => !isObj(p))) { out.push(`${who}: ${cn}: params is a list of { "key": …, "label": …, "kind": "number" | "text" | "enum", "default": … }`); continue; }
-      const holes = holesOf(c.template), keys = new Set();
+      if (!Array.isArray(params) || params.some((p: unknown) => !isObj(p))) { out.push(`${who}: ${cn}: params is a list of { "key": …, "label": …, "kind": "number" | "text" | "enum", "default": … }`); continue; }
+      const holes = holesOf(c.template), keys = new Set<string>();
       let bad = false;
       for (const p of params) {
         if (!/^\w+$/.test(String(p.key ?? ''))) { out.push(`${who}: ${cn} has a parameter with no key (a key is one word: letters, digits and _)`); bad = true; continue; }
@@ -319,15 +335,15 @@ function trouble(device, doc = null) {
         if (!holes.includes(p.key)) { out.push(`${who}: ${cn} has a parameter ${p.key} that its message does not use (put {${p.key}} in the message, or take the parameter out)`); bad = true; }
       }
       for (const h of new Set(holes)) if (!keys.has(h)) { out.push(`${who}: ${cn} has {${h}} in its message and no parameter called ${h}`); bad = true; }
-      if (c.fade !== undefined && !params.some((p) => p.key === c.fade && p.kind === 'number')) { out.push(`${who}: ${cn}: fade names the one numeric parameter that may fade (${JSON.stringify(c.fade)} is not a number parameter of it)`); bad = true; }
+      if (c.fade !== undefined && !params.some((p: Raw) => p.key === c.fade && p.kind === 'number')) { out.push(`${who}: ${cn}: fade names the one numeric parameter that may fade (${JSON.stringify(c.fade)} is not a number parameter of it)`); bad = true; }
       if (bad) continue;
       // the message it makes from its defaults must be one this device can be sent (a parameter with no default is taken as 1)
-      const probe = Object.fromEntries(params.filter((p) => p.default === undefined).map((p) => [p.key, p.kind === 'enum' ? p.options[0] : p.kind === 'number' ? Math.max(p.min ?? 1, Math.min(p.max ?? 1, 1)) : '1']));
-      const r = compose({ name: who, commands: [c] }, c.id, probe);
+      const probe = Object.fromEntries(params.filter((p: Raw) => p.default === undefined).map((p: Raw) => [p.key, p.kind === 'enum' ? p.options[0] : p.kind === 'number' ? Math.max(p.min ?? 1, Math.min(p.max ?? 1, 1)) : '1']));
+      const r = compose({ name: who, commands: [c as DeviceCommand] }, c.id, probe);
       const mt = r.ok ? messageTrouble(via, r.message) : `cannot be made from its defaults: ${r.why}`;
       if (mt) out.push(`${who}: ${cn}: its message ${via === 'osc' && /starts with \//.test(mt) ? `is not OSC (${JSON.stringify(c.template)}): an OSC message starts with /` : mt}`);
     }
-    if (d.test !== undefined && d.test !== '' && !commands.some((c) => isObj(c) && c.id === d.test)) out.push(`${who}: test is the id of one of its commands, or empty (it was given ${JSON.stringify(d.test)}; it has: ${commands.map((c) => c && c.id).join(', ') || 'none'})`);
+    if (d.test !== undefined && d.test !== '' && !commands.some((c: unknown) => isObj(c) && c.id === d.test)) out.push(`${who}: test is the id of one of its commands, or empty (it was given ${JSON.stringify(d.test)}; it has: ${commands.map((c: Raw) => c && c.id).join(', ') || 'none'})`);
   }
 
   if (d.alive !== undefined) {
@@ -374,10 +390,10 @@ function trouble(device, doc = null) {
  * its kind, port and protocol are copied in, so they can be edited and a model changing later never changes
  * a show. `over` is what the person said (name, host, …) and wins. null: no such model.
  */
-function fromModel(modelId, over = {}) {
-  const model = require('../net/devices').DEVICES[modelId];
+function fromModel(modelId: string, over: Record<string, unknown> | null = {}): Raw | null {
+  const model = (require('../net/devices') as typeof import('../net/devices')).DEVICES[modelId];
   if (!model) return null;
-  const d = { name: model.label, kind: model.kind || 'other', model: modelId, via: 'osc', port: model.port, protocol: model.protocol || 'udp', commands: clone(model.commands || []) };
+  const d: Raw = { name: model.label, kind: model.kind || 'other', model: modelId, via: 'osc', port: model.port, protocol: model.protocol || 'udp', commands: clone(model.commands || []) };
   if (model.listenPort) d.listenPort = model.listenPort;
   if (model.tryCommand) d.test = model.tryCommand;
   // a model that answers its test message can be asked with it
@@ -391,12 +407,12 @@ function fromModel(modelId, over = {}) {
 }
 
 /** The show's devices (always a list). */
-function list(doc) { const l = doc && doc.settings && doc.settings.rig && doc.settings.rig.devices; return Array.isArray(l) ? l : []; }
-function find(doc, id) { return list(doc).find((d) => d && d.id === id) || null; }
+function list(doc: { settings?: { rig?: { devices?: Device[] } } } | null | undefined): Device[] { const l = doc && doc.settings && doc.settings.rig && doc.settings.rig.devices; return Array.isArray(l) ? l : []; }
+function find(doc: { settings?: { rig?: { devices?: Device[] } } } | null | undefined, id: string | null | undefined): Device | null { return list(doc).find((d) => d && d.id === id) || null; }
 
 /** The network devices as the hub wants them: a device is also a patch to it (same id, name, address), marked `isDevice`. */
-function patchesOf(doc) {
-  return list(doc).filter(isNetwork).map((d) => ({
+function patchesOf(doc: { settings?: { rig?: { devices?: Device[] } } } | null | undefined): DevicePatch[] {
+  return list(doc).filter(isNetwork).map((d): DevicePatch => ({
     id: d.id, name: d.name, host: d.host || '', port: Number(d.port) || 0, protocol: d.protocol || 'udp', framing: d.framing || 'slip',
     ...(d.listenPort ? { listenPort: d.listenPort } : {}), ...(d.iface ? { iface: d.iface } : {}), ...(d.destinations ? { destinations: d.destinations } : {}),
     format: viaOf(d), resend: Number(d.resend) || 0, alive: d.alive || { how: 'none' }, isDevice: true,
@@ -404,7 +420,7 @@ function patchesOf(doc) {
 }
 
 /** One line for the assistant's outline: "lantern_a = Lantern A (prop, osc udp 10.0.0.42:53100; commands: look(n), level(level, fades); asked every 2 s)". */
-function line(d) {
+function line(d: Device): string {
   const via = viaOf(d);
   const where = via === 'midi' ? 'midi' : `${via} ${d.protocol || 'udp'} ${d.host && d.port ? `${d.host}:${d.port}` : d.host ? `${d.host} (no port yet)` : 'no address yet'}`;
   const commands = (d.commands || []).map((c) => { const inside = [...(c.params || []).map((p) => p.key), ...(c.fade ? ['fades'] : [])]; return `${c.id}${inside.length ? `(${inside.join(', ')})` : ''}`; });
@@ -414,7 +430,7 @@ function line(d) {
 }
 
 /** A device as one line of a review: "prop · 10.0.0.42:53100 · 4 commands · asked every 2 s". */
-function describe(d) {
+function describe(d: Device): string {
   const a = d.alive || {}, n = (d.commands || []).length;
   return [d.kind || 'other', viaOf(d) === 'midi' ? 'MIDI' : d.host && d.port ? `${d.host}:${d.port}` : 'no address yet', `${n} command${n === 1 ? '' : 's'}`,
     a.how === 'ask' ? `asked every ${a.every || 2} s` : a.how === 'heartbeat' ? 'listened for' : null].filter(Boolean).join(' · ');

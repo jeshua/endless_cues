@@ -9,13 +9,15 @@ import * as os from 'os';
 import * as path from 'path';
 import * as show from '../../core/show/show';
 import { applyOps } from '../../core/show/ops';
+import type { Smoke, Snap } from './smoke';
+import type { CheckLine } from '../../core/show/check';
 
-async function run({ host, win, check, until, page, sleep, shot }) {
+async function run({ host, win, check, until, page, sleep, shot }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
   const { writeWav } = require('../../examples/make-demo');
-  const snap = () => host.snapshot();
+  const snap = () => host.snapshot() as Snap;
   const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-safety-')), 'Safety.ecshow');
   fs.mkdirSync(path.join(dir, 'media'), { recursive: true });
-  const tone = (secs, hz) => { const n = Math.round(44100 * secs), x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = 0.2 * Math.sin(2 * Math.PI * hz * i / 44100); return x; };
+  const tone = (secs: number, hz: number) => { const n = Math.round(44100 * secs), x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = 0.2 * Math.sin(2 * Math.PI * hz * i / 44100); return x; };
   writeWav(path.join(dir, 'media', 'rain.wav'), tone(2, 330));
   writeWav(path.join(dir, 'media', 'music.wav'), tone(20, 440));
   const built = applyOps(show.newShow('Safety'), [
@@ -33,24 +35,24 @@ async function run({ host, win, check, until, page, sleep, shot }) {
     { op: 'cue.add', ref: 'out', cue: { type: 'fade', number: '11', target: '@music', duration: 0.3 } },
     { op: 'cue.remove', id: '@gone' },
   ]);
-  const id = (ref) => built.refs[ref];
+  const id = (ref: string) => built.refs[ref];
   fs.writeFileSync(path.join(dir, 'show.json'), show.stringify(built.doc));
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
   host.open(dir);
   await until(() => Object.keys(snap().engine.durations).length >= 2, 4000);
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) return false; b.click(); return true; })()`);
-  const menu = (action) => win.webContents.send('ec-menu', action);
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) return false; b.click(); return true; })()`);
+  const menu = (action: string) => win.webContents.send('ec-menu', action);
 
   // 1. a fade to silence left alone stops its target; the inspector's switch says so
   check('a Fade to silence left alone is one that stops its target (and one to −12 is not)', snap().fadeStops.includes(id('out')) && !snap().fadeStops.includes(id('down')), snap().fadeStops);
 
   // 2. Check the show
   const c = host.cmd({ op: 'check' });
-  const says = (re, level) => c.lines.some((x) => re.test(x.text) && (!level || x.level === level));
+  const says = (re: RegExp, level?: CheckLine['level']) => c.lines.some((x: CheckLine) => re.test(x.text) && (!level || x.level === level));
   check('Check finds a target that is gone, a loop with no wait and a cue that never plays, without playing anything',
-    says(/target is gone/, 'problem') && says(/no wait \(8 → 9 → 8\)/, 'problem') && says(/never plays/, 'look') && !snap().engine.active.length, c.lines.map((x) => `${x.level}: ${x.text}`));
+    says(/target is gone/, 'problem') && says(/no wait \(8 → 9 → 8\)/, 'problem') && says(/never plays/, 'look') && !snap().engine.active.length, c.lines.map((x: CheckLine) => `${x.level}: ${x.text}`));
   await click('.footer [data-check]');
   check('…the footer’s Check opens it as one list, each line a button', await until(() => page(`document.querySelectorAll('.checks [data-check-line]').length >= 3 && /problem/.test(document.querySelector('[data-check-summary]').textContent)`), 4000),
     await page(`[...document.querySelectorAll('.checks [data-check-line]')].map((b) => b.textContent)`));
@@ -66,9 +68,9 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   check('…Tools ▸ Run from the Selected Cue… shows that in a sheet before anything starts', await until(() => page(`/Starts 2 sounds/.test((document.querySelector('[data-run-from-text]') || {}).textContent || '')`), 4000) && !snap().engine.active.length);
   await shot('safety-run-from');
   await click('[data-run-from-go]');
-  const act = (ref) => snap().engine.active.find((x) => x.id === id(ref));
+  const act = (ref: string) => snap().engine.active.find((x) => x.id === id(ref));
   check('…and Run from here starts the loop and the music, the music at the −12 its fade left, with the playhead on the cue',
-    await until(() => act('rain') && act('music') && Math.abs(act('music').db - -12) < 0.1 && snap().engine.playhead === id('here'), 4000) && await until(async () => !(await has('[data-run-from]')), 4000),
+    await until(() => act('rain') && act('music') && Math.abs(act('music')!.db! - -12) < 0.1 && snap().engine.playhead === id('here'), 4000) && await until(async () => !(await has('[data-run-from]')), 4000),
     [snap().engine.active.map((x) => [x.name, x.db]), snap().engine.playhead]);
   host.cmd({ op: 'mode', mode: 'show' });
   check('…Show mode refuses it', !!host.cmd({ op: 'run-from', id: id('here') }).error);

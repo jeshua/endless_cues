@@ -16,14 +16,21 @@
  * Pure arithmetic: no Electron, no audio.
  */
 import * as Lanes from './lanes';
-const SHAPES = ['linear', 's-curve'];
+import type { LanePoint } from '../show/types';
+
+/** A fade's shape as a cue keeps it ('linear' is kept as nothing): s-curve, or custom points [[x, y], …]. */
+export type FadeShape = 's-curve' | [number, number][];
+/** A show's level limits, in dB. */
+export interface Limits { min: number; max: number }
+
+const SHAPES: readonly string[] = ['linear', 's-curve'];
 const SILENT_DB = -60;
-const r3 = (n) => Math.round(n * 1000) / 1000;
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /** A custom shape as it is kept: points in order from (0, 0) to (1, 1), every one inside the square. null: not one. */
-function cleanPoints(value) {
+function cleanPoints(value: unknown): [number, number][] | null {
   if (!Array.isArray(value)) return null;
-  const pts = [];
+  const pts: [number, number][] = [];
   for (const p of value) {
     const x = Array.isArray(p) ? Number(p[0]) : p && typeof p === 'object' ? Number(p.x) : NaN;
     const y = Array.isArray(p) ? Number(p[1]) : p && typeof p === 'object' ? Number(p.y) : NaN;
@@ -33,26 +40,26 @@ function cleanPoints(value) {
   pts.sort((a, b) => a[0] - b[0]);
   const mid = pts.filter((p) => p[0] > 0 && p[0] < 1);
   // two points at one moment would be a jump with no order to it: the first is kept
-  const out = [[0, 0]];
+  const out: [number, number][] = [[0, 0]];
   for (const p of mid) if (p[0] > out[out.length - 1][0]) out.push(p);
   out.push([1, 1]);
   return out;
 }
 
 /** A shape as a cue keeps it: 'linear' (kept as nothing), 's-curve', or custom points. { ok, value } | { ok: false, why }. */
-function cleanShape(value) {
+function cleanShape(value: unknown): { ok: true; value: FadeShape | undefined } | { ok: false; why: string } {
   if (value === 'linear') return { ok: true, value: undefined };
-  if (SHAPES.includes(value)) return { ok: true, value };
+  if (SHAPES.includes(value as string)) return { ok: true, value: value as 's-curve' };
   if (value === 'custom') return { ok: true, value: [[0, 0], [0.5, 0.5], [1, 1]] };      // a custom shape begins as the straight line, with one point to drag
   const pts = cleanPoints(value);
   if (!pts) return { ok: false, why: 'a fade shape is linear, s-curve, or a list of points [[x, y], …] from 0 to 1' };
   return { ok: true, value: pts };
 }
 
-const kindOf = (shape) => (Array.isArray(shape) ? 'custom' : SHAPES.includes(shape) ? shape : 'linear');
+const kindOf = (shape: unknown) => (Array.isArray(shape) ? 'custom' : SHAPES.includes(shape as string) ? shape as string : 'linear');
 
 /** How far along a fade of this shape is (0–1) when `x` (0–1) of its time has gone. */
-function shapeAt(shape, x) {
+function shapeAt(shape: FadeShape | string | null | undefined, x: number) {
   x = Math.max(0, Math.min(1, x));
   if (Array.isArray(shape)) {
     for (let i = 1; i < shape.length; i++) {
@@ -67,7 +74,7 @@ function shapeAt(shape, x) {
 
 /** A shape as `n` numbers for the audio window: progress at evenly spaced moments. `from` (0–1): only what is left
  *  of the shape from that moment on, as a whole fade of its own (a paused fade taken up where it stopped). */
-function progressOf(shape, n = 65, from = 0) {
+function progressOf(shape: FadeShape | string | null | undefined, n = 65, from = 0) {
   from = Math.max(0, Math.min(0.999, Number(from) || 0));
   const y0 = shapeAt(shape, from), span = 1 - y0;
   const out = new Array(n);
@@ -82,19 +89,19 @@ function progressOf(shape, n = 65, from = 0) {
 /** An envelope as a cue keeps it: [[seconds, dB, bend?], …] in time order, levels between silence and +12. null:
  *  not one. (It is the Volume lane of core/audio/lanes.js, where the arithmetic is; a point's third number bends the
  *  line to the next one, and an envelope with none is the straight lines in dB it always was.) */
-function cleanEnvelope(value) { return Lanes.cleanLane(value, Lanes.VOLUME); }
+function cleanEnvelope(value: unknown) { return Lanes.cleanLane(value, Lanes.VOLUME); }
 
 /** The envelope's level (dB on the cue's own) at `t` seconds into the file. No envelope: 0, no change. */
-function envelopeAt(env, t) { return Lanes.envelopeAt(env, t); }
+function envelopeAt(env: LanePoint[] | null | undefined, t: number) { return Lanes.envelopeAt(env, t); }
 
 /** A show's level limits (Settings ▸ Audio): a level above the maximum is played at the maximum; one at or
  *  below the minimum is silence. No limits set: the engine's own (silence at −60 dB, nothing above +12 by hand). */
-function cleanLimits(l) {
+function cleanLimits(l: { min?: unknown; max?: unknown }): Limits {
   const max = Number.isFinite(Number(l && l.max)) && l.max !== null && l.max !== '' ? Math.max(-40, Math.min(24, Number(l.max))) : 12;
   const min = Number.isFinite(Number(l && l.min)) && l.min !== null && l.min !== '' ? Math.max(SILENT_DB, Math.min(max - 1, Number(l.min))) : SILENT_DB;
   return { min, max };
 }
-function limitDb(db, limits) {
+function limitDb(db: number, limits?: Limits | null) {
   const { min, max } = limits || { min: SILENT_DB, max: Infinity };
   if (!Number.isFinite(db)) return db;
   if (db <= min) return SILENT_DB;

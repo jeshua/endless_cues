@@ -32,6 +32,57 @@
 import { cleanShape, cleanEnvelope } from '../audio/curves';
 import { TOOLS as SOUND_TOOLS, cleanChain, cleanSweep } from '../audio/chain';
 import { cleanAutomation } from '../audio/lanes';
+import type { Cue, CueList, CueIndex, CueType } from './types';
+
+/** A field of a cue type, as the table says it (the kinds and keys are those in the comment above). */
+export interface Field {
+  key: string;
+  kind: string;
+  label: string;
+  help?: string;
+  /** the one plain line the inspector's ⓘ shows (TIPS) */
+  tip?: string;
+  default?: unknown;
+  options?: readonly string[];
+  labels?: Record<string, string>;
+  required?: boolean;
+  min?: number;
+  max?: number;
+  signed?: boolean;
+  advanced?: boolean;
+  hidden?: boolean;
+  mono?: boolean;
+  placeholder?: string;
+  tab?: string;
+  live?: boolean;
+  accept?: string;
+  /** a file field: what kind of file it takes ('picture': a video or an image) */
+  media?: string;
+  engine?: string;
+  /** a cue field: the types it may aim at (null: any) */
+  targets?: readonly string[] | null;
+  lists?: boolean;
+  when?: Record<string, readonly unknown[]>;
+  whenTarget?: readonly string[];
+}
+
+/** One cue type: what the list and the inspector show, and its own fields. */
+export interface TypeDef {
+  label: string;
+  glyph: string;
+  summary: string;
+  fields: Field[];
+  container?: boolean;
+  heading?: boolean;
+  stage?: boolean;
+  /** the only fields of every cue it has */
+  common?: string[];
+  /** the engine's type, when it differs */
+  engineType?: string;
+}
+
+/** What `coerce` says of a value: the value as the field wants it, or why it cannot be. */
+export type Coerced = { ok: true; value: unknown } | { ok: false; why: string };
 
 const COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey',
   'coral', 'amber', 'lime', 'forest', 'mint', 'sky', 'indigo', 'lavender', 'magenta', 'brown'];
@@ -40,7 +91,7 @@ const COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'pur
 // '#rrggbb', so a show file's `color` is a name or a hex value and every reader takes both (`cleanColor`).
 const PALETTE = ['none', 'red', 'orange', 'yellow', 'green', 'blue'];
 /** A cue's colour as the show keeps it: a name from COLORS, or '#rrggbb' (lower case); null when it is neither. */
-function cleanColor(value) {
+function cleanColor(value: unknown) {
   const v = String(value ?? '').trim().toLowerCase();
   if (COLORS.includes(v)) return v;
   if (/^#[0-9a-f]{6}$/.test(v)) return v;
@@ -49,7 +100,7 @@ function cleanColor(value) {
 }
 
 /** Fields every cue has (QLab's Basics tab). */
-const COMMON = [
+const COMMON: Field[] = [
   { key: 'number', kind: 'text', label: 'Number', help: 'What the operator calls it. Any text, or none.' },
   { key: 'name', kind: 'text', label: 'Name' },
   { key: 'notes', kind: 'longtext', label: 'Notes', help: 'Shown in the masthead while it stands by.' },
@@ -91,12 +142,12 @@ const COMMON = [
     help: 'Its cart button, "row,column" from 1 ("2,3"). Empty: the first free one.' },
 ];
 
-const TARGET = (label, types, help, more = {}) => ({ key: 'target', kind: 'cue', label, targets: types, required: true, help, ...more });
+const TARGET = (label: string, types: readonly string[] | null, help?: string, more: Partial<Field> = {}): Field => ({ key: 'target', kind: 'cue', label, targets: types, required: true, help, ...more });
 
 /** How a picture is sized to the stage, and where it sits on it: shared by the Video, Text and Camera cues. */
-const FIT = { key: 'fit', kind: 'enum', label: 'Size', options: ['fit', 'fill', 'stretch', 'natural'], default: 'fit',
+const FIT: Field = { key: 'fit', kind: 'enum', label: 'Size', options: ['fit', 'fill', 'stretch', 'natural'], default: 'fit',
   help: 'fit: all of it. fill: covers, cropped. stretch: distorted. natural: 1:1.' };
-const GEOMETRY = [
+const GEOMETRY: Field[] = [
   { key: 'opacity', kind: 'number', label: 'Opacity', default: 100, help: 'Percent. 100 is solid.' },
   { key: 'x', kind: 'number', label: 'Position X', default: 0, advanced: true, help: 'Stage pixels from the centre; right is +.' },
   { key: 'y', kind: 'number', label: 'Position Y', default: 0, advanced: true, help: 'Stage pixels from the centre; up is +.' },
@@ -108,15 +159,15 @@ const STAGE_TYPES = ['video', 'text', 'camera'];
 
 /** What one sound is played through (the inspector's Sound design tab; core/audio/chain.js is what each means).
  *  (Neither help is drawn in the window: the Sound design tab draws its own. They are the assistant's reference.) */
-const EQ = { key: 'eq', kind: 'eq', label: 'EQ', tab: 'design',
+const EQ: Field = { key: 'eq', kind: 'eq', label: 'EQ', tab: 'design',
   help: 'Four bands on this one sound: { low, mid, mid2, high } (a low shelf at 250 Hz, bells at 1 kHz and 3 kHz, a high shelf at 4 kHz). A band is a level in dB (−40 takes it out), or { db, hz, q } to move it: "mid": { "db": 4, "hz": 1800, "q": 2 }. Empty: none.' };
-const CHAIN = { key: 'chain', kind: 'chain', label: 'Sound design', tab: 'design',
+const CHAIN: Field = { key: 'chain', kind: 'chain', label: 'Sound design', tab: 'design',
   help: `The tools this one sound is played through, one entry per tool in use, always run in this order: ${SOUND_TOOLS.map((t) => `${t.key} { ${t.params.map((p) => p.key).join(', ')} }`).join(', ')}. As in { "highpass": { "hz": 300, "slope": 24 }, "reverb": { "decay": 2.5, "mix": 0.3 }, "tail": true }. A tool with "on": false keeps its settings and is out of the path; "bypass": true takes the whole chain out; "tail": true lets a reverb or a delay ring out after the sound stops. The cue’s eq runs after the filters. Empty: the sound plays as it is.` };
 
 /** Where a sound sits between the speakers (equal power; a stereo sound is balanced): core/audio/lanes.js panGains. */
-const PAN = { key: 'pan', kind: 'number', label: 'Pan', default: 0, min: -100, max: 100, help: '−100 left, 0 the middle, 100 right.' };
+const PAN: Field = { key: 'pan', kind: 'number', label: 'Pan', default: 0, min: -100, max: 100, help: '−100 left, 0 the middle, 100 right.' };
 
-const TYPES = {
+const TYPES: Record<string, TypeDef> = {
   // A heading in the list: it organises the rows after it (up to the next section) and never plays. It holds no
   // cues of its own, so the show file stays flat and the engine never sees it (show.js toEngineDoc leaves it out).
   // `common`: the only fields of every cue it has.
@@ -414,7 +465,7 @@ const TYPES = {
 
 // The few fields whose name alone does not say what they do get an ⓘ in the inspector, clicked to read one plain
 // line. `help` stays what the assistant reads (it may hold JSON shapes) and is never shown. "type.key" wins over "key".
-const TIPS = {
+const TIPS: Record<string, string> = {
   flagged: 'A reminder to come back to it. Does nothing in the show.',
   armed: 'Off: GO skips it, but its continue still passes on.',
   preWait: 'Wait this long after GO before it starts.',
@@ -444,17 +495,17 @@ for (const [type, def] of Object.entries(TYPES)) for (const f of def.fields || [
   if (tip) f.tip = tip;
 }
 
-const TYPE_ORDER =['group', 'audio', 'fade', 'stop', 'start', 'pause', 'devamp', 'load', 'goto', 'arm', 'disarm', 'reset', 'target', 'wait', 'memo', 'mic', 'network', 'device', 'midi', 'midifile', 'timecode', 'light', 'mix', 'music', 'video', 'text', 'camera', 'script', 'section'];
+const TYPE_ORDER: CueType[] = ['group', 'audio', 'fade', 'stop', 'start', 'pause', 'devamp', 'load', 'goto', 'arm', 'disarm', 'reset', 'target', 'wait', 'memo', 'mic', 'network', 'device', 'midi', 'midifile', 'timecode', 'light', 'mix', 'music', 'video', 'text', 'camera', 'script', 'section'];
 
-function fieldsOf(type) {
+function fieldsOf(type: string): Field[] {
   const t = TYPES[type];
   // (a field a type has of its own, a Group's "Fade & stop others", takes the place of the common one of that name)
   return t ? [...COMMON.filter((c) => !t.fields.some((f) => f.key === c.key) && (!t.common || t.common.includes(c.key))), ...t.fields] : COMMON;
 }
-function fieldOf(type, key) { return fieldsOf(type).find((f) => f.key === key) || null; }
+function fieldOf(type: string, key: string) { return fieldsOf(type).find((f) => f.key === key) || null; }
 
 /** A value as the field's kind wants it. Returns { ok, value } or { ok: false, why }. `null`/'' clears an optional field. */
-function coerce(field, value) {
+function coerce(field: Field, value: unknown): Coerced {
   const clear = value === null || value === undefined || value === '';
   if (clear) return field.required ? { ok: false, why: `${field.label} is required` } : { ok: true, value: undefined };
   switch (field.kind) {
@@ -463,7 +514,7 @@ function coerce(field, value) {
     case 'args': {
       // (a Device cue's arguments: plain values by the parameter's key; whether they fit the command is the show's to say, show.problems)
       if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some((v) => v !== null && typeof v === 'object')) return { ok: false, why: `${field.label}: { "parameter": value } (each value a number or text)` };
-      const out = {};
+      const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) if (v !== null && v !== undefined && v !== '') out[k] = v;
       return { ok: true, value: Object.keys(out).length ? out : undefined };
     }
@@ -483,7 +534,7 @@ function coerce(field, value) {
         if (!c) return { ok: false, why: `${field.label}: one of ${COLORS.join(', ')}, or a colour as #rrggbb` };
         return { ok: true, value: c };
       }
-      if (!field.options.includes(value)) return { ok: false, why: `${field.label}: one of ${field.options.filter(Boolean).join(', ')}` };
+      if (!field.options!.includes(value as string)) return { ok: false, why: `${field.label}: one of ${field.options!.filter(Boolean).join(', ')}` };
       return { ok: true, value };
     case 'markers':
       if (!Array.isArray(value)) return { ok: false, why: 'markers: a list of {at, name}' };
@@ -510,13 +561,13 @@ function coerce(field, value) {
     case 'matrix': case 'eq': {
       const routing = require('../audio/routing');
       try { const v = field.kind === 'matrix' ? routing.cleanMatrix(value) : routing.cleanEq(value); return { ok: true, value: v === null ? undefined : v }; }
-      catch (err) { return { ok: false, why: err.message }; }
+      catch (err) { return { ok: false, why: (err as Error).message }; }
     }
     case 'chain': case 'sweep': {
       try { const v = field.kind === 'chain' ? cleanChain(value) : cleanSweep(value); return { ok: true, value: v === null ? undefined : v }; }
-      catch (err) { return { ok: false, why: err.message }; }
+      catch (err) { return { ok: false, why: (err as Error).message }; }
     }
-    case 'shape': { const r = cleanShape(value); return r.ok ? r : { ok: false, why: `${field.label}: ${r.why}` }; }
+    case 'shape': { const r = cleanShape(value); return r.ok ? { ok: true, value: r.value } : { ok: false, why: `${field.label}: ${r.why}` }; }
     case 'envelope': {
       const env = cleanEnvelope(value);
       if (!env) return { ok: false, why: 'level envelope: a list of [seconds, dB] points' };
@@ -524,7 +575,7 @@ function coerce(field, value) {
     }
     case 'automation': {
       try { const v = cleanAutomation(value, SOUND_TOOLS); return { ok: true, value: v === null ? undefined : v }; }
-      catch (err) { return { ok: false, why: err.message }; }
+      catch (err) { return { ok: false, why: (err as Error).message }; }
     }
     case 'numbers':
       if (!Array.isArray(value) || value.some((n) => !Number.isFinite(Number(n)))) return { ok: false, why: `${field.label}: a list of numbers` };
@@ -536,7 +587,7 @@ function coerce(field, value) {
     }
     case 'levels': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, why: 'levels: { bus: dB }' };
-      const out = {};
+      const out: Record<string, number> = {};
       for (const [k, v] of Object.entries(value)) if (Number.isFinite(Number(v))) out[k] = Number(v);
       return { ok: true, value: out };
     }
@@ -549,7 +600,7 @@ function coerce(field, value) {
  * "1:30" = 90 s, "1:02:03". Levels: a number with no sign is a cut ("12" = −12 dB), "+12" a
  * boost; "-inf" / "off" = −60 (the engine's silence).
  */
-function parseSmart(kind, text) {
+function parseSmart(kind: string, text: string) {
   const s = text.trim().toLowerCase();
   if (kind === 'seconds') {
     if (/^\d+(\.\d+)?$/.test(s)) return Number(s);
@@ -567,7 +618,7 @@ function parseSmart(kind, text) {
   return Number(s);
 }
 
-function formatSeconds(n, places = 2) {
+function formatSeconds(n: number, places = 2) {
   if (!Number.isFinite(n)) return '';
   const neg = n < 0; n = Math.abs(n);
   const h = Math.floor(n / 3600), m = Math.floor((n % 3600) / 60), s = n % 60;
@@ -583,17 +634,17 @@ function formatSeconds(n, places = 2) {
  * Audio, levels), at or below which a level is silence. `target`: the cue it is aimed at, when known.
  */
 const PICTURE_MOVES = ['opacity', 'x', 'y', 'scale', 'rotation'];
-function stopsTarget(cue, target = null, min = -60) {
+function stopsTarget(cue: Cue | null | undefined, target: Cue | null = null, min = -60) {
   if (!cue || cue.type !== 'fade') return false;
   if (cue.stopTarget !== undefined && cue.stopTarget !== null) return !!cue.stopTarget;
   // a dip from its own level, a duck in the voice band, a change of speed alone, a light going home: none of these
   // is the sound leaving
   if (cue.relative || cue.range === 'voice' || (cue.keepLevel && Number(cue.rate) > 0)) return false;
   if (target && target.type === 'light') return false;
-  const set = (v) => v !== undefined && v !== null && v !== '';
+  const set = (v: unknown) => v !== undefined && v !== null && v !== '';
   const level = set(cue.db) ? Number(cue.db) : null;
   if (target && STAGE_TYPES.includes(target.type)) {
-    const moves = PICTURE_MOVES.filter((k) => set(cue[k]));
+    const moves = PICTURE_MOVES.filter((k) => set(cue[k as keyof Cue]));
     if (!moves.length && level === null) return true;          // naming nothing, it takes the picture and its sound out
     const unseen = moves.includes('opacity') && Number(cue.opacity) <= 0;
     // (a title or a camera has no sound of its own: out of sight is gone)
@@ -602,30 +653,36 @@ function stopsTarget(cue, target = null, min = -60) {
   return (level === null ? -60 : level) <= min;
 }
 
+const isCue = (x: Cue | CueList): x is Cue => 'type' in x;
+/** What a target is called: its name, or (a cue's) its own default name, as far as `depth` allows. */
+function nameOf(target: Cue | CueList, byId: CueIndex | null | undefined, depth: number): string | undefined {
+  return target.name || (depth < 3 ? (isCue(target) ? defaultName(target, byId, depth + 1) : undefined) : (isCue(target) && target.number) || '…');
+}
+
 /** The name a cue shows when it has none of its own (QLab: "fade Fanfare"). `depth`: how many targets in it is
  *  (two Start cues with no names that start each other would otherwise name each other for ever). */
-function defaultName(cue, byId, depth = 0) {
+function defaultName(cue: Cue, byId?: CueIndex | null, depth = 0): string {
   const t = TYPES[cue.type];
   // (a target may be a whole cue list: show.index() hangs the lists on the map it returns)
   const target = cue.target && byId ? byId.get(cue.target) || (byId.lists && byId.lists.get(cue.target)) || null : null;
-  const tn = target ? (target.name || (depth < 3 ? defaultName(target, byId, depth + 1) : target.number || '…')) : cue.target ? '(missing)' : '';
+  const tn = target ? nameOf(target, byId, depth) : cue.target ? '(missing)' : '';
   switch (cue.type) {
-    case 'audio': return cue.file ? String(cue.file).split(/[\\/]/).pop().replace(/\.[a-z0-9]+$/i, '') : 'Audio';
-    case 'fade': return `fade ${tn || '…'}${stopsTarget(cue, target) ? ' out' : ''}`;
+    case 'audio': return cue.file ? String(cue.file).split(/[\\/]/).pop()!.replace(/\.[a-z0-9]+$/i, '') : 'Audio';
+    case 'fade': return `fade ${tn || '…'}${stopsTarget(cue, target && isCue(target) ? target : null) ? ' out' : ''}`;
     case 'stop': case 'start': case 'pause': case 'load': case 'arm': case 'disarm': case 'devamp': case 'reset':
       return `${cue.type} ${tn || '…'}`;
-    case 'target': { const to = cue.to && byId ? byId.get(cue.to) || (byId.lists && byId.lists.get(cue.to)) : null; return `aim ${tn || '…'} at ${to ? to.name || (depth < 3 ? defaultName(to, byId, depth + 1) : to.number || '…') : '…'}`; }
-    case 'goto': return `go to ${target ? (target.number || tn) : '…'}`;
+    case 'target': { const to = cue.to && byId ? byId.get(String(cue.to)) || (byId.lists && byId.lists.get(String(cue.to))) : null; return `aim ${tn || '…'} at ${to ? nameOf(to, byId, depth) : '…'}`; }
+    case 'goto': return `go to ${target ? ((isCue(target) && target.number) || tn) : '…'}`;
     case 'wait': return `wait ${Number(cue.duration) || 0} s`;
     case 'network': return cue.message || 'Network';
     // (the show's devices hang on the map show.index() returns, as its lists do)
-    case 'device': return require('../rig/devices').cueName(byId && byId.devices ? byId.devices.get(cue.device) : null, cue);
-    case 'video': return cue.file ? String(cue.file).split(/[\\/]/).pop().replace(/\.[a-z0-9]+$/i, '') : 'Video';
+    case 'device': return require('../rig/devices').cueName(byId && byId.devices ? byId.devices.get(cue.device ?? '') : null, cue);
+    case 'video': return cue.file ? String(cue.file).split(/[\\/]/).pop()!.replace(/\.[a-z0-9]+$/i, '') : 'Video';
     case 'text': return cue.text ? String(cue.text).trim().split('\n')[0].slice(0, 40) : 'Text';
     case 'camera': return `Camera${cue.camera ? ` ${cue.camera}` : ''}`;
     case 'mic': return `Mic${cue.input ? ` ${cue.input}` : ''}${Number(cue.channel) > 1 ? ` in ${cue.channel}` : ''}`;
     case 'midi': return cue.midi ? `MIDI ${cue.midi}` : 'MIDI';
-    case 'midifile': return cue.file ? String(cue.file).split(/[\\/]/).pop().replace(/\.[a-z0-9]+$/i, '') : 'MIDI File';
+    case 'midifile': return cue.file ? String(cue.file).split(/[\\/]/).pop()!.replace(/\.[a-z0-9]+$/i, '') : 'MIDI File';
     case 'timecode': return `${cue.output === 'ltc' ? 'LTC' : 'MTC'} from ${cue.timecode || '01:00:00:00'}`;
     case 'light': {
       // a cue of levels is named by them ("front = 80, cyc.red = 100"); a desk cue by its number

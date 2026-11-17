@@ -9,6 +9,12 @@ import * as starters from '../core/assistant/starters';
 import { helperProvider, LIST } from '../core/assistant/helper';
 import * as kit from '../core/kit/kit';
 import { build } from './helpers';
+import type { CheckFacts } from '../core/rig/check';
+import type { FolderEntry } from '../core/assistant/starters';
+import type { ToolContext } from '../core/assistant/tools';
+import type { Call } from '../core/assistant/assistant';
+import type { ShowDocument } from '../core/show/document';
+import type { ShowDoc } from '../core/show/types';
 
 const RIG_PAGE = fs.readFileSync(path.join(__dirname, '../app/renderer/Rig.ts'), 'utf8');
 
@@ -28,15 +34,15 @@ test('every button the check gives a row is one the Rig page carries out', () =>
   const states = [
     { saved: { untitled: true, dirty: false, changes: 0 }, files: { total: 2, missing: ['gone.wav'] }, stage: { open: false }, light: { held: true }, overrides, liveness: {}, ticks: {} },
     { saved: { untitled: false, dirty: true, changes: 2 }, files: { total: 2, missing: [] }, stage: { open: true, label: 'Display 2' }, light: {}, overrides: [], liveness: { lantern: { state: 'problem', text: 'not answering' } }, ticks: { k1: true } },
-  ];
-  const seen = new Set();
+  ] as unknown as CheckFacts[];      // (invented: only as much of each as the rows read)
+  const seen = new Set<string>();
   for (const facts of states) for (const item of check.items(doc, facts)) for (const a of item.actions || []) {
     seen.add(a.id);
     // the page sends the host's own command when there is one; the rest need the window, and are known to it by id
     const byId = new RegExp(`id === '${a.id}'`).test(RIG_PAGE);
     assert.ok(a.cmd || byId, `${item.id}: “${a.label}” (${a.id}) has no command and the page does not know it`);
     if (a.id === 'select') assert.ok(a.cue, 'Show it names the cue to show');
-    if (a.id === 'make-device') assert.equal(a.cmd.op, 'edit');
+    if (a.id === 'make-device') assert.equal(a.cmd!.op, 'edit');
   }
   for (const id of ['save', 'select', 'relink', 'stage-open', 'stage-pattern', 'let-go-dmx', 'let-go-osc', 'ask', 'try', 'make-device', 'tick']) assert.ok(seen.has(id), `${id} was among the buttons`);
   // and the groups are the ones the page has titles for
@@ -44,8 +50,8 @@ test('every button the check gives a row is one the Rig page carries out', () =>
 });
 
 test('every ask the first screen offers the built-in helper is a job the helper does', async () => {
-  const ctxOf = (doc) => ({ document: { doc, showDir: null }, draft: null, engine: null, found: [] });
-  const listing = (names) => names.map((p) => ({ path: p, kind: /\.wav$/.test(p) ? 'sound' : 'text', bytes: 1, usedBy: [] }));
+  const ctxOf = (doc: ShowDoc): ToolContext => ({ document: { doc, showDir: null } as ShowDocument, draft: null, engine: null, found: [] });
+  const listing = (names: string[]): FolderEntry[] => names.map((p) => ({ path: p, kind: /\.wav$/.test(p) ? 'sound' : 'text', bytes: 1, usedBy: [] }));
   const shows = {
     empty: { doc: show.newShow('T') },
     folder: { doc: show.newShow('T'), showDir: '/x', folder: listing(['01 a.wav', '02 b.wav']) },
@@ -59,7 +65,7 @@ test('every ask the first screen offers the built-in helper is a job the helper 
     assert.equal(first.state, name);
     for (const ask of first.asks) {
       assert.equal(ask.offline, true, `${name}: “${ask.label}” is offered to the helper, so the helper can do it`);
-      const r = await helperProvider().create({ messages: [{ role: 'user', content: ask.text }], ctx: ctxOf(input.doc) });
+      const r = await helperProvider().create!({ messages: [{ role: 'user', content: ask.text }], ctx: ctxOf(input.doc) } as Call);      // (the helper reads only the messages and the show)
       const text = r.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
       assert.notEqual(text, LIST, `${name}: “${ask.label}” (sent as “${ask.text}”) is understood`);
       asked++;
@@ -72,7 +78,7 @@ test('the Write firmware form draws from the kit’s table: every option has wha
   for (const f of kit.OPTIONS) {
     assert.ok(f.key && f.label && f.kind, `${f.key} has a label and a kind`);
     assert.ok(['enum', 'integer', 'text', 'look'].includes(f.kind), `${f.key}: the form knows the kind ${f.kind}`);
-    if (f.kind === 'enum') assert.ok(Array.isArray(f.options) && f.options.includes(f.default));
+    if (f.kind === 'enum') assert.ok(Array.isArray(f.options) && f.options.includes(f.default as string));
     if (f.only) assert.ok(['light', 'switch'].includes(f.only));
   }
   assert.equal(kit.OPTIONS[0].key, 'sketch');

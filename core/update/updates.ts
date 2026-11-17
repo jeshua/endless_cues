@@ -20,28 +20,49 @@ const TEST_FEED = `${FEED}test/`;
 const DAY = 24 * 3600e3;
 const RETRY = 3600e3;             // an automatic check that failed (no connection, most often) is tried again an hour later
 
+/** This computer's update settings, as settingsOf reads them. */
+export interface UpdateSettings { auto: boolean; test: boolean; lastCheck: number }
+/** What config.json keeps: `updates` is the part this file reads and writes. */
+export interface UpdateConfig { updates?: Partial<UpdateSettings> }
+/** A download's cancellation token. */
+export interface UpdateToken { cancel(): void }
+/** What the controller needs of an updater (electron-updater's autoUpdater, or a stand-in). */
+export interface Updater {
+  on(event: string, fn: (...args: any[]) => void): unknown;
+  setFeedURL(feed: { provider: 'generic'; url: string; channel?: string }): unknown;
+  checkForUpdates(): Promise<unknown>;
+  downloadUpdate(token?: UpdateToken | null): Promise<unknown>;
+  quitAndInstall(): unknown;
+}
+/** A version the feed offers, as the updater's events carry it. */
+interface UpdateInfo { version: string }
+export type UpdateStep = 'idle' | 'checking' | 'available' | 'downloading' | 'ready';
+export interface UpdateState { step: UpdateStep; version: string; percent: number; hidden: boolean }
+/** What the window is told: the state, and whether the line shows. */
+export type UpdateView = UpdateState & { visible: boolean };
+
 /** The feed for this computer's choice: everyone's, or the test versions'. EC_UPDATE_FEED (a test) overrides both. */
-function feedFor(settings, env = {}) {
+function feedFor(settings: { test?: boolean }, env: { EC_UPDATE_FEED?: string } = {}) {
   if (env.EC_UPDATE_FEED) return env.EC_UPDATE_FEED.replace(/\/*$/, '/');
   return settings.test ? TEST_FEED : FEED;
 }
 
 /** This computer's update settings (config.json's `updates`), with their defaults: checking on, test versions off. */
-function settingsOf(config) {
-  const u = (config && config.updates) || {};
+function settingsOf(config: UpdateConfig | null | undefined): UpdateSettings {
+  const u: Partial<UpdateSettings> = (config && config.updates) || {};
   return { auto: u.auto !== false, test: u.test === true, lastCheck: Number(u.lastCheck) || 0 };
 }
 
 /** Whether anything about updates may happen now: Edit mode, and nothing playing. */
-const quiet = ({ mode, sounding }) => mode !== 'show' && !sounding;
+const quiet = ({ mode, sounding }: { mode: string; sounding: boolean }) => mode !== 'show' && !sounding;
 
 /** Whether a check is due by itself: switched on, and a day since the last one that got an answer. */
-function due(settings, now) {
+function due(settings: UpdateSettings, now: number) {
   return settings.auto && (!settings.lastCheck || now - settings.lastCheck >= DAY);
 }
 
 /** An error from a check or a download, in plain words. */
-function said(err) {
+function said(err: any) {
   const m = String((err && (err.code || '')) + ' ' + ((err && err.message) || err || ''));
   if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENETUNREACH|INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NETWORK_CHANGED|CONNECTION_(REFUSED|RESET|CLOSED|TIMED_OUT|FAILED)|ADDRESS_UNREACHABLE/i.test(m)) return 'There is no connection to endlesscues.com.';
   if (/ERR_UPDATER_CHANNEL_FILE_NOT_FOUND|\b404\b/.test(m)) return 'The update server has no version for this computer yet.';
@@ -58,24 +79,42 @@ function said(err) {
  * one-off answer (a manual check's result). `quit()` asks what quitting asks (unsaved changes) and resolves to
  * true when the app may go; `install()` then quits and installs.
  */
+export interface UpdatesOptions {
+  updater: Updater;
+  token?: () => UpdateToken | null;
+  mode?: () => string;
+  sounding?: () => boolean;
+  getConfig?: () => UpdateConfig | null | undefined;
+  saveConfig?: (change: UpdateConfig) => void;
+  version?: string;
+  env?: { EC_UPDATE_FEED?: string };
+  log?: (line: string) => void;
+  now?: () => number;
+  told?: (view: UpdateView) => void;
+  ask?: (text: string) => void;
+  quit?: () => Promise<boolean>;
+  install?: () => void;
+  enabled?: boolean;
+}
+
 function createUpdates({ updater, token = () => null, mode = () => 'edit', sounding = () => false, getConfig = () => ({}), saveConfig = () => {},
-  version = '0.0.0', env = {}, log = () => {}, now = Date.now, told = () => {}, ask = () => {}, quit = async () => true, install = () => updater.quitAndInstall(), enabled = true }) {
+  version = '0.0.0', env = {}, log = () => {}, now = Date.now, told = () => {}, ask = () => {}, quit = async () => true, install = () => updater.quitAndInstall(), enabled = true }: UpdatesOptions) {
   // step: idle | checking | available | downloading | ready
-  let state = { step: 'idle', version: '', percent: 0, hidden: false };
+  let state: UpdateState = { step: 'idle', version: '', percent: 0, hidden: false };
   let manual = false;                 // the check under way was asked for: its answer is said, whatever it is
   let lastTry = 0;                    // when an automatic check was last tried (answered or not)
-  let download = null;                // the cancellation token of a download under way
+  let download: UpdateToken | null = null;                // the cancellation token of a download under way
   let feed = '';
 
-  const set = (change) => {
-    const next = { ...state, ...change };
-    if (Object.keys(next).every((k) => next[k] === state[k])) return;
+  const set = (change: Partial<UpdateState>) => {
+    const next: UpdateState = { ...state, ...change };
+    if ((Object.keys(next) as (keyof UpdateState)[]).every((k) => next[k] === state[k])) return;
     state = next;
     told(view());
   };
-  const view = () => ({ ...state, visible: !state.hidden && ['available', 'downloading', 'ready'].includes(state.step) });
+  const view = (): UpdateView => ({ ...state, visible: !state.hidden && ['available', 'downloading', 'ready'].includes(state.step) });
   const settings = () => settingsOf(getConfig());
-  const keep = (change) => saveConfig({ updates: { ...((getConfig() || {}).updates || {}), ...change } });
+  const keep = (change: Partial<UpdateSettings>) => saveConfig({ updates: { ...((getConfig() || {}).updates || {}), ...change } });
 
   function point() {
     const url = feedFor(settings(), env);
@@ -86,22 +125,22 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
   }
 
   if (enabled) {
-    updater.on('update-available', (info) => {
+    updater.on('update-available', (info: UpdateInfo) => {
       log(`${info.version} is available`);
       set({ step: 'available', version: info.version, percent: 0 });
     });
-    updater.on('update-not-available', (info) => {
+    updater.on('update-not-available', (info?: UpdateInfo) => {
       log(`none newer than ${version}${info && info.version ? ` (the feed has ${info.version})` : ''}`);
       if (state.step === 'checking') set({ step: 'idle' });
       if (manual) ask('You have the latest version.');
     });
-    updater.on('download-progress', (p) => { if (state.step === 'downloading') set({ percent: Math.floor(p.percent || 0) }); });
-    updater.on('update-downloaded', (info) => {
+    updater.on('download-progress', (p: { percent?: number }) => { if (state.step === 'downloading') set({ percent: Math.floor(p.percent || 0) }); });
+    updater.on('update-downloaded', (info: UpdateInfo) => {
       download = null;
       log(`${info.version} is downloaded: it installs when the app quits`);
       set({ step: 'ready', version: info.version, percent: 100 });
     });
-    updater.on('error', (err) => {
+    updater.on('error', (err: any) => {
       log(`error: ${(err && err.message) || err}`);
       // (on a Mac the system's installer takes the download after it is complete, and checks its signature then:
       // a refusal there means nothing will install on quit, so the line must not go on saying it will)
@@ -125,9 +164,9 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
       point();
       await updater.checkForUpdates();
       keep({ lastCheck: now() });
-      if (state.step === 'checking') set({ step: 'idle' });         // (an updater that answered nothing)
+      if ((state.step as UpdateStep) === 'checking') set({ step: 'idle' });         // (an updater that answered nothing)
       return { ok: true, step: state.step, version: state.version };
-    } catch (err) {
+    } catch (err: any) {
       log(`${asked ? '' : 'the daily '}check failed: ${(err && err.message) || err}`);
       set({ step: 'idle' });
       if (asked) ask(`Could not check for updates. ${said(err)}`);
@@ -145,11 +184,11 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
     try {
       await updater.downloadUpdate(download);
       return { ok: true };
-    } catch (err) {
+    } catch (err: any) {
       const stopped = !download || /cancel/i.test(String((err && err.message) || err));
       download = null;
       log(`download of ${v} ${stopped ? 'stopped' : `failed: ${(err && err.message) || err}`}`);
-      if (state.step === 'downloading') set({ step: 'available', percent: 0 });
+      if ((state.step as UpdateStep) === 'downloading') set({ step: 'available', percent: 0 });
       if (!stopped) ask(`Version ${v} could not be downloaded. ${said(err)}`);
       return { error: said(err) };
     }
@@ -186,9 +225,9 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
   }
 
   /** The two settings. Changing the feed forgets what the other one offered, and checks again soon. */
-  function configure(change = {}) {
+  function configure(change: { auto?: unknown; test?: unknown } = {}) {
     const was = settings();
-    const next = {};
+    const next: Partial<UpdateSettings> = {};
     if ('auto' in change) next.auto = !!change.auto;
     if ('test' in change) next.test = !!change.test;
     if ('test' in next && next.test !== was.test) {
@@ -202,5 +241,7 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
 
   return { check, download: get, later, restart, tick, configure, state: view, settings };
 }
+
+export type Updates = ReturnType<typeof createUpdates>;
 
 export { createUpdates, feedFor, settingsOf, quiet, due, said, FEED, TEST_FEED, DAY };

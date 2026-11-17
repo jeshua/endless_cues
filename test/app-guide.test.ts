@@ -7,9 +7,11 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createAssistant, demoProvider } from '../core/assistant/assistant';
+import type { Reply } from '../core/assistant/assistant';
 import { TOOLS, execute, lookup, SYSTEM } from '../core/assistant/tools';
 import * as appGuide from '../core/assistant/app-guide';
 import * as places from '../core/ui/places';
+import type { Place } from '../core/ui/places';
 import * as uiKeys from '../core/ui/keys';
 import { ShowDocument } from '../core/show/document';
 import { build } from './helpers';
@@ -20,12 +22,12 @@ const doc = () => new ShowDocument({ doc: build([
   { op: 'cue.add', cue: { type: 'memo', number: '3', name: 'Interval' } },
 ]).doc });
 /** A window that says yes to every place, and keeps what it was asked to show; `locked` is Show mode. */
-const fakeUi = ({ locked = false, ok = true } = {}) => { const shown = []; return { shown, locked: () => locked, point: async (p) => { shown.push(p); return ok ? { ok: true } : { ok: false, why: 'it is not on the screen' }; } }; };
-const renderer = (f) => fs.readFileSync(path.join(__dirname, '../app/renderer', f), 'utf8');
+const fakeUi = ({ locked = false, ok = true } = {}) => { const shown: (Place & { say: string })[] = []; return { shown, locked: () => locked, point: async (p: Record<string, unknown>) => { shown.push(p as Place & { say: string }); return ok ? { ok: true } : { ok: false, why: 'it is not on the screen' }; } }; };
+const renderer = (f: string) => fs.readFileSync(path.join(__dirname, '../app/renderer', f), 'utf8');
 
 test('every place the guide names is in the registry, and every fixed place is in the guide', () => {
   const named = appGuide.namedPlaces();
-  assert.ok(named.length > 40, named.length);
+  assert.ok(named.length > 40, String(named.length));
   for (const n of named) assert.ok(places.resolve(n).ok, `the guide names [${n}], which places.js does not know: ${places.resolve(n).why}`);
   const fixed = places.names().fixed;
   for (const n of fixed) assert.ok(named.includes(n), `${n} is a place no line of the guide says`);
@@ -33,7 +35,8 @@ test('every place the guide names is in the registry, and every fixed place is i
 
 test('each fixed place’s selector is one the window draws (its data attribute or class is in the renderer)', () => {
   const all = fs.readdirSync(path.join(__dirname, '../app/renderer')).filter((f) => f.endsWith('.ts')).map(renderer).join('\n');
-  for (const [name, p] of Object.entries(places.FIXED)) {
+  for (const [name, def] of Object.entries(places.FIXED)) {
+    const p = def!;
     if (p.sel === null) { assert.ok(p.words, `${name} has neither a selector nor words`); continue; }
     for (const attr of p.sel.match(/data-[a-z-]+/g) || []) assert.ok(all.includes(attr), `${name}: no element has ${attr}`);
   }
@@ -43,33 +46,33 @@ test('each fixed place’s selector is one the window draws (its data attribute 
 
 test('the families: tabs, cue types, inspector tabs and fields, cues, Settings panes; and what is refused', () => {
   const d = doc().doc;
-  assert.equal(places.resolve('tab:rig').place.sel, '.tabs-main [data-tab="rig"]');
-  assert.equal(places.resolve('rig').place.target, 'tab:rig', 'a plain word for a place');
-  const triggers = places.resolve('inspector-tab:triggers').place;
+  assert.equal(places.resolve('tab:rig').place!.sel, '.tabs-main [data-tab="rig"]');
+  assert.equal(places.resolve('rig').place!.target, 'tab:rig', 'a plain word for a place');
+  const triggers = places.resolve('inspector-tab:triggers').place!;
   assert.deepEqual(triggers.steps.map((s) => s.do), ['cues', 'select', 'tab']);
   assert.equal(triggers.steps[2].tab, 'triggers');
-  const colour = places.resolve('inspector-field:color').place;
+  const colour = places.resolve('inspector-field:color').place!;
   assert.equal(colour.sel, '[data-field="color"]');
-  assert.equal(colour.steps.find((s) => s.do === 'tab').tab, 'basics');
-  assert.ok(!colour.steps.find((s) => s.do === 'select').types.includes('section'), 'a section has no colour of its own to show');
-  const level = places.resolve('inspector-field:gainDb').place;
-  assert.equal(level.steps.find((s) => s.do === 'tab').tab, 'type');
-  assert.ok(level.steps.find((s) => s.do === 'select').types.includes('audio'));
-  assert.equal(places.resolve('inspector-field:loops').place.sel, '[data-insp-tab="time"]', 'a field drawn on Time & Loops is that tab');
-  assert.ok(places.resolve('inspector-field:color2').place.steps.some((s) => s.do === 'more'), 'an advanced field opens More');
-  const cue = places.resolve('cue:1', { doc: d }).place;
-  assert.match(cue.sel, /tr\[data-cue="/);
-  assert.equal(cue.steps.find((s) => s.do === 'reveal').cue, d.lists[0].cues[0].id);
+  assert.equal(colour.steps.find((s) => s.do === 'tab')!.tab, 'basics');
+  assert.ok(!colour.steps.find((s) => s.do === 'select')!.types!.includes('section'), 'a section has no colour of its own to show');
+  const level = places.resolve('inspector-field:gainDb').place!;
+  assert.equal(level.steps.find((s) => s.do === 'tab')!.tab, 'type');
+  assert.ok(level.steps.find((s) => s.do === 'select')!.types!.includes('audio'));
+  assert.equal(places.resolve('inspector-field:loops').place!.sel, '[data-insp-tab="time"]', 'a field drawn on Time & Loops is that tab');
+  assert.ok(places.resolve('inspector-field:color2').place!.steps.some((s) => s.do === 'more'), 'an advanced field opens More');
+  const cue = places.resolve('cue:1', { doc: d }).place!;
+  assert.match(cue.sel!, /tr\[data-cue="/);
+  assert.equal(cue.steps.find((s) => s.do === 'reveal')!.cue, d.lists[0].cues[0].id);
   assert.equal(places.resolve('cue:#2', { doc: d }).ok, true);
-  assert.match(places.resolve('settings:network').place.sel, /settings-subtabs \[data-section="network"\]/);
-  assert.match(places.resolve('settings:audio').place.sel, /nav \[data-section="audio"\]/);
-  assert.equal(places.resolve('add-type:fade').place.fallback.target, 'add-cue-more');
+  assert.match(places.resolve('settings:network').place!.sel!, /settings-subtabs \[data-section="network"\]/);
+  assert.match(places.resolve('settings:audio').place!.sel!, /nav \[data-section="audio"\]/);
+  assert.equal(places.resolve('add-type:fade').place!.fallback!.target, 'add-cue-more');
   // refused, with what there is
-  assert.match(places.resolve('the big red one').why, /no place called[\s\S]*panic/);
-  assert.match(places.resolve('cue:99', { doc: d }).why, /No cue 99/);
-  assert.match(places.resolve('inspector-field:wobble').why, /No cue has a field/);
-  assert.match(places.resolve('inspector-tab:extras').why, /basics\|type/);
-  assert.match(places.resolve('inspector-field:gainDb', { doc: d, cue: '#3' }).why, /Memo cue has no Level/);
+  assert.match(places.resolve('the big red one').why!, /no place called[\s\S]*panic/);
+  assert.match(places.resolve('cue:99', { doc: d }).why!, /No cue 99/);
+  assert.match(places.resolve('inspector-field:wobble').why!, /No cue has a field/);
+  assert.match(places.resolve('inspector-tab:extras').why!, /basics\|type/);
+  assert.match(places.resolve('inspector-field:gainDb', { doc: d, cue: '#3' }).why!, /Memo cue has no Level/);
 });
 
 test('the keys: one table, which the menus are built from and the window reads', () => {
@@ -116,7 +119,7 @@ test('show_in_app: a place resolved and shown; refused in Show mode, with no win
   assert.equal(ui.shown[0].sel, '[data-insp-tab="triggers"]');
   const onCue = await execute('show_in_app', { target: 'inspector-field:gainDb', cue: '#1' }, { document: d, ui });
   assert.ok(!onCue.is_error, onCue.content);
-  assert.equal(ui.shown[1].steps.find((s) => s.do === 'select').cue, d.doc.lists[0].cues[0].id);
+  assert.equal(ui.shown[1].steps.find((s) => s.do === 'select')!.cue, d.doc.lists[0].cues[0].id);
   // refusals: Show mode, no window, an unknown place, the window not finding it
   const locked = await execute('show_in_app', { target: 'panic' }, { document: d, ui: fakeUi({ locked: true }) });
   assert.ok(locked.is_error); assert.match(locked.content, /Show mode/);
@@ -133,25 +136,25 @@ test('show_in_app: a place resolved and shown; refused in Show mode, with no win
 
 test('a reply that pointed carries the place, so the drawer can show it again', async () => {
   const d = doc();
-  const replies = [
-    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'show_in_app', input: { target: 'panic', say: 'Esc does this too' } }] },
-    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Panic is top right.' }] },
+  const replies: Reply[] = [
+    { role: 'assistant', stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'show_in_app', input: { target: 'panic', say: 'Esc does this too' } }] },
+    { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Panic is top right.' }] },
   ];
-  const a = createAssistant({ provider: { name: 'scripted', async create() { return replies.shift(); } } });
+  const a = createAssistant({ provider: { name: 'scripted', async create() { return replies.shift()!; } } });
   const ui = fakeUi();
   await a.ask('where is panic', { document: d, ui });
   const last = a.status().transcript.at(-1);
-  assert.deepEqual(last.points, [{ target: 'panic', say: 'Esc does this too', cue: null }]);
+  assert.deepEqual(last!.points, [{ target: 'panic', say: 'Esc does this too', cue: null }]);
   assert.equal(ui.shown.length, 1);
 });
 
 test('the built-in helper answers where things are and what their keys are, from the guide, and points', async () => {
   const d = doc();
-  const ask = async (text, ui = fakeUi()) => { const a = createAssistant({ provider: demoProvider() }); await a.ask(text, { document: d, ui }); return { said: a.status().transcript.at(-1), ui }; };
+  const ask = async (text: string, ui = fakeUi()) => { const a = createAssistant({ provider: demoProvider() }); await a.ask(text, { document: d, ui }); return { said: a.status().transcript.at(-1)!, ui }; };
   let r = await ask('Where do I change the colour of a cue?');
   assert.equal(r.ui.shown[0].target, 'inspector-field:color');
   assert.match(r.said.text, /Basics ▸ Colour[\s\S]*ringed/);
-  assert.equal(r.said.points[0].target, 'inspector-field:color');
+  assert.equal(r.said.points![0].target, 'inspector-field:color');
   r = await ask('What’s the key for Panic?');
   assert.equal(r.ui.shown[0].target, 'panic');
   assert.match(r.said.text, /^The key is Esc\. Panic: fades everything out/);

@@ -18,10 +18,10 @@
 import * as path from 'path';
 import * as mcp from '../core/assistant/mcp';
 
-async function main(argv) {
-  const arg = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
+async function main(argv: string[]) {
+  const arg = (name: string) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
   const showDir = arg('--show');
-  let backend;
+  let backend: mcp.Backend | null;
   if (showDir) backend = mcp.fileBackend(path.resolve(showDir), { save: argv.includes('--save') });
   else {
     backend = await mcp.appBackend({ session: arg('--session') || undefined, client: arg('--client') || 'an agent' });

@@ -13,16 +13,34 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { send as sendReport, retryDelay } from './report';
+import type { Built, Outcome, SendOptions } from './report';
+
+/** A timer as setTimeout gives one (or a test's stand-in). */
+type Timer = { unref?(): unknown } | null;
+/** A report waiting on disk. */
+interface Kept { id: string; built: Built; notBefore: number; keptAt: string }
+/** What one flush did. */
+export interface Flushed { sent: number[]; held: number; refused: number }
+export interface OutboxOptions {
+  dir: string;
+  send?: (built: Built, options: SendOptions) => Promise<Outcome>;
+  sendOptions?: () => SendOptions;
+  now?: () => number;
+  setTimer?(fn: () => void, ms: number): Timer;
+  clearTimer?(timer: Timer): void;
+  log?: (line: string) => void;
+  told?: (out: Flushed) => void;
+}
 
 const SAFE = /^[A-Za-z0-9_.:-]{8,80}$/;
-const folderOf = (id) => id.replace(/:/g, '_');     // (a colon is not allowed in a folder name on Windows)
+const folderOf = (id: string) => id.replace(/:/g, '_');     // (a colon is not allowed in a folder name on Windows)
 
-function createOutbox({ dir, send = sendReport, sendOptions = () => ({}), now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout, log = () => {}, told = () => {} }) {
-  let timer = null;
+function createOutbox({ dir, send = sendReport, sendOptions = () => ({}), now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout as (timer: Timer) => void, log = () => {}, told = () => {} }: OutboxOptions) {
+  let timer: Timer | null = null;
   let autoTries = 0;                 // automatic tries since the app opened (at most three)
-  let busy = null;
+  let busy: Promise<Flushed> | null = null;
 
-  function put(built, notBefore = 0) {
+  function put(built: Built, notBefore = 0) {
     const id = built.fields.submission_id;
     if (!SAFE.test(String(id || ''))) throw new Error('a report kept for later needs a submission id');
     const folder = path.join(dir, folderOf(id));
@@ -32,38 +50,38 @@ function createOutbox({ dir, send = sendReport, sendOptions = () => ({}), now = 
     fs.writeFileSync(tmp, JSON.stringify({ fields: built.fields, files: Object.keys(built.files || {}), keptAt: new Date(now()).toISOString(), notBefore }, null, 2));
     fs.renameSync(tmp, path.join(folder, 'report.json'));
   }
-  function read(name) {
+  function read(name: string): Kept | null {
     try {
       const folder = path.join(dir, name);
       const j = JSON.parse(fs.readFileSync(path.join(folder, 'report.json'), 'utf8'));
-      const files = {};
+      const files: Record<string, Uint8Array> = {};
       for (const k of j.files || []) files[k] = new Uint8Array(fs.readFileSync(path.join(folder, `${k}.webp`)));
       return { id: j.fields.submission_id, built: { fields: j.fields, files }, notBefore: Number(j.notBefore) || 0, keptAt: j.keptAt };
     } catch { return null; }
   }
   function list() {
-    let names = [];
+    let names: string[] = [];
     try { names = fs.readdirSync(dir).filter((n) => n !== 'refused' && fs.existsSync(path.join(dir, n, 'report.json'))); } catch { /* nothing kept */ }
-    return names.map(read).filter(Boolean).sort((a, b) => String(a.keptAt).localeCompare(String(b.keptAt)));
+    return names.map(read).filter((k): k is Kept => !!k).sort((a, b) => String(a.keptAt).localeCompare(String(b.keptAt)));
   }
-  function remove(id) { try { fs.rmSync(path.join(dir, folderOf(id)), { recursive: true, force: true }); } catch { /* already gone */ } }
+  function remove(id: string) { try { fs.rmSync(path.join(dir, folderOf(id)), { recursive: true, force: true }); } catch { /* already gone */ } }
   // (one the service refused would be refused again: it is moved aside, never deleted, and never tried by itself)
-  function setAside(id) {
+  function setAside(id: string) {
     try { fs.mkdirSync(path.join(dir, 'refused'), { recursive: true }); fs.renameSync(path.join(dir, folderOf(id)), path.join(dir, 'refused', folderOf(id))); } catch { /* left where it was */ }
   }
 
-  function schedule(ms) {
+  function schedule(ms: number) {
     if (timer) clearTimer(timer);
     timer = setTimer(() => { timer = null; autoTries++; return flush({ auto: true }); }, ms);
     if (timer && timer.unref) timer.unref();
   }
   /** After a held answer: the next automatic try, if there is one left. */
-  function later(retryAfter) {
+  function later(retryAfter?: number) {
     const ms = retryDelay(autoTries, retryAfter);
     if (ms !== null) schedule(ms);
   }
 
-  async function sendOne(built) {
+  async function sendOne(built: Built) {
     const r = await send(built, sendOptions());
     const id = built.fields.submission_id;
     if (r.sent) { if (id) remove(id); log(`[report] sent: report ${r.id}${r.created ? '' : ' (it was already there)'}`); }
@@ -78,7 +96,7 @@ function createOutbox({ dir, send = sendReport, sendOptions = () => ({}), now = 
    * The person pressed Send: this report now, and every one waiting with it (whatever their retry_after: a person
    * asking is not a loop). Returns this one's outcome, `kept: true` when it is on disk for later.
    */
-  async function submit(built) {
+  async function submit(built: Built) {
     const r = await sendOne(built);
     if (r.held) { r.kept = !!built.fields.submission_id; later(r.retryAfter); }
     if (!r.held) await flush({ auto: false, except: built.fields.submission_id });
@@ -86,16 +104,16 @@ function createOutbox({ dir, send = sendReport, sendOptions = () => ({}), now = 
   }
 
   /** Try what is waiting. Automatic tries skip a report whose `retry_after` has not passed. */
-  async function flush({ auto = false, except = null } = {}) {
+  async function flush({ auto = false, except = null }: { auto?: boolean; except?: string | null } = {}): Promise<Flushed> {
     if (busy) return busy;
     busy = (async () => {
-      const out = { sent: [], held: 0, refused: 0 };
+      const out: Flushed = { sent: [], held: 0, refused: 0 };
       let wait = 0;
       for (const k of list()) {
         if (k.id === except) continue;
         if (auto && k.notBefore > now()) { out.held++; wait = Math.max(wait, (k.notBefore - now()) / 1000); continue; }
         const r = await sendOne(k.built);
-        if (r.sent) out.sent.push(r.id);
+        if (r.sent) out.sent.push(r.id!);
         else if (r.held) { out.held++; wait = Math.max(wait, r.retryAfter || 0); if (r.held === 'offline') break; }   // (no connection: the rest would fail the same way)
         else out.refused++;
       }

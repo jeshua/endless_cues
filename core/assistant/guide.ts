@@ -21,10 +21,14 @@ import * as path from 'path';
 import * as show from '../show/show';
 import * as devices from '../rig/devices';
 import * as kit from '../kit/kit';
+import type { Device, ShowDoc } from '../show/types';
+
+/** How this app's scripts are run here: the program, what it needs in its environment, and whether it is an installed app. */
+export interface Runner { command: string; env: Record<string, string>; packaged: boolean }
 
 // A path quoted for this computer's shell: a Unix shell escapes inside double quotes; PowerShell and cmd do not
 // (a Windows path has no quote in it, and its backslashes are separators, not escapes).
-const q = (p, win) => (/^[\w@%+=:,./-]+$/.test(p) ? p : win ? `"${p}"` : `"${String(p).replace(/(["\\$`])/g, '\\$1')}"`);
+const q = (p: string, win?: boolean) => (/^[\w@%+=:,./-]+$/.test(p) ? p : win ? `"${p}"` : `"${String(p).replace(/(["\\$`])/g, '\\$1')}"`);
 
 /**
  * How a script of this app (bin/ec.js, bin/ec-mcp.js) is run from a terminal on this computer.
@@ -32,7 +36,7 @@ const q = (p, win) => (/^[\w@%+=:,./-]+$/.test(p) ? p : win ? `"${p}"` : `"${Str
  * read, and the person may have no Node at all: the app's own program is run as Node instead (ELECTRON_RUN_AS_NODE),
  * which reads the archive. → { command, env }
  */
-function runner({ dir = __dirname, versions = process.versions, execPath = process.execPath } = {}) {
+function runner({ dir = __dirname, versions = process.versions, execPath = process.execPath }: { dir?: string; versions?: Record<string, string | undefined>; execPath?: string } = {}): Runner {
   const packaged = !!versions.electron && /\.asar([\\/]|$)/.test(dir);
   return packaged ? { command: execPath, env: { ELECTRON_RUN_AS_NODE: '1' }, packaged } : { command: 'node', env: {}, packaged };
 }
@@ -40,7 +44,7 @@ function runner({ dir = __dirname, versions = process.versions, execPath = proce
  * The command lines for a runner: one for a shell, and the one that gives Claude Code the app's tools.
  * On Windows the shell is PowerShell (the terminal Windows opens): `$env:` for a variable, `&` to run a quoted program.
  */
-function commandLines(script, run = runner(), platform = process.platform) {
+function commandLines(script: string, run: Runner = runner(), platform: string = process.platform) {
   const env = Object.entries(run.env || {}), win = platform === 'win32';
   const shell = win
     ? `${env.map(([k, v]) => `$env:${k}=${v}; `).join('')}${/^"/.test(q(run.command, win)) ? '& ' : ''}${q(run.command, win)} ${q(script, win)}`
@@ -52,7 +56,7 @@ function commandLines(script, run = runner(), platform = process.platform) {
   };
 }
 
-function deviceLines(d) {
+function deviceLines(d: Device) {
   const a = d.alive || {};
   const where = devices.isNetwork(d) ? `${devices.viaOf(d)} over ${d.protocol || 'udp'} to ${d.host && d.port ? `${d.host}:${d.port}` : 'no address yet'}` : 'MIDI, on the show’s MIDI output';
   const asked = a.how === 'ask' ? `asked “are you there?” with \`${a.send}\` every ${a.every || 2} s${a.reply ? `, answers \`${a.reply}\`` : ''}` : a.how === 'heartbeat' ? `listened for${a.hears ? ` (\`${a.hears}\`)` : ''}` : 'cannot be asked whether it is there';
@@ -62,12 +66,12 @@ function deviceLines(d) {
   return out;
 }
 
-function agentGuide(doc, { showDir = null, bin = path.join(__dirname, '../../bin'), run = runner(), platform = process.platform } = {}) {
+function agentGuide(doc: ShowDoc, { showDir = null, bin = path.join(__dirname, '../../bin'), run = runner(), platform = process.platform }: { showDir?: string | null; bin?: string; run?: Runner; platform?: string } = {}) {
   const join = (platform === 'win32' ? path.win32 : path.posix).join;
   let cues = 0; show.walk(doc, () => { cues++; });
   const devs = devices.list(doc);
   const rig = doc.settings.rig || {};
-  let props = [];
+  let props: string[] = [];
   if (showDir) { try { props = fs.readdirSync(path.join(showDir, 'props'), { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith('.')).map((d) => d.name).sort(); } catch { /* none */ } }
   const ec = commandLines(join(bin, 'ec.js'), run, platform).shell, mcp = commandLines(join(bin, 'ec-mcp.js'), run, platform).claude;
   const text = [

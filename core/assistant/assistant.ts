@@ -39,19 +39,91 @@ import * as history from './history';
 import { randomUUID } from 'crypto';
 
 import * as showFile from '../show/show';
+import type { ClientOptions } from '@anthropic-ai/sdk';
+import type { BetaContentBlock, BetaMessageParam, BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages/messages';
+import type { ChildProcess } from 'child_process';
+import type { EngineView, PointerService, RigService, Tool, ToolContext, ToolInput, ToolResult } from './tools';
+import type { FirstOptions } from './starters';
+import type { ShowDoc } from '../show/types';
+import type { ShowDocument } from '../show/document';
+
+// The conversation is kept in Anthropic's shape: messages of content blocks. These are the blocks it makes itself;
+// an Anthropic reply's own blocks (thinking, say) are kept as they came and sent back.
+export interface TextBlock { type: 'text'; text: string }
+export interface ToolUseBlock { type: 'tool_use'; id: string; name: string; input: unknown }
+export interface ToolResultBlock { type: 'tool_result'; tool_use_id: string; content: unknown; is_error?: boolean }
+/** The Endless Cues service's opaque reasoning, sent back as it came. */
+export interface StateBlock { type: 'ec_state'; data: string }
+export type Block = TextBlock | ToolUseBlock | ToolResultBlock | StateBlock | BetaContentBlock;
+export interface Message { role: 'user' | 'assistant'; content: string | Block[] }
+/** What one model call answers. */
+export interface Reply { role: 'assistant'; content: Block[]; stop_reason: string | null }
+/** One model call: the turn's id and how many calls it has made so far go to the services that count them. */
+export interface Call { system: string; tools: Tool[]; messages: Message[]; ctx?: ToolContext | null; turn?: string; step?: number }
+/** What a provider's failure may say about itself. */
+export type ProviderError = Error & { status?: number; code?: string; missing?: boolean };
+/** The month, as the Endless Cues service's answers say it. */
+export interface CloudUsage { tier?: string; used?: number; resets?: string; asks?: number; of?: number }
+/** How to start the MCP server an agent is given (bin/ec-mcp.js). */
+export interface McpServer { command: string; args: string[]; env?: Record<string, string> }
+/**
+ * Who answers. A model is called one step at a time (`create`); an agent that is installed here (Claude Code, Codex)
+ * runs the whole turn itself (`turn`), calling the tools over MCP.
+ */
+export interface Provider {
+  name: string;
+  label?: string;
+  kind?: string;
+  usage?: CloudUsage | null;
+  create?(call: Call): Promise<Reply>;
+  turn?(t: { system: string; prompt: string; session: string }): Promise<{ text: string }>;
+  explain?(err: ProviderError): string;
+  reset?(): void;
+  available?(): boolean;
+}
+/** This computer's choice of assistant (config.json in userData: never a show). */
+export interface AssistantConfig {
+  provider?: string | null; apiKey?: string; model?: string; baseURL?: string;
+  token?: string; endpoint?: string; version?: string; cloudSignedOut?: () => void; cloudEmail?: string;
+  mcpServer?: (session: string, client: string) => McpServer; noDoor?: string;
+  autoApply?: boolean;
+}
+/** A line of the conversation as the person sees it. */
+export interface TranscriptLine {
+  role: string; text: string; error?: boolean; external?: boolean;
+  steps?: string[]; points?: NonNullable<ToolResult['point']>[]; proposal?: string | null; applied?: boolean;
+}
+/** The Endless Cues account, as the app knows it. */
+export interface Account { email?: string; step?: string; code?: string; error?: string; usage?: CloudUsage | null }
+/** What the host gives a turn, beside the question. */
+export interface AskOptions { document: ShowDocument; engine?: EngineView | null; rig?: RigService | null; ui?: PointerService | null; canApply?: () => boolean }
+/** What the host gives status(), for the first screen. */
+export interface StatusContext { document: ShowDocument; engine?: EngineView | null; rig?: RigService | null; imported?: FirstOptions['imported'] }
+/** What the window is told of the assistant (status()). */
+export interface AssistantStatus {
+  available: boolean; provider: string; label: string; model: string | undefined; busy: boolean; activity: string[]; autoApply: boolean;
+  transcript: TranscriptLine[]; signedIn: boolean; chosen: string; missing: string;
+  cloud?: { email: string; step: string; code: string; error: string; usage: CloudUsage | null };
+  installed?: Record<string, boolean>;
+  first?: First | null;
+}
+/** What the window reads of the assistant: status(), or `{ available: false }` from a host with no assistant. */
+export type AssistantView = { available: boolean } & Partial<Omit<AssistantStatus, 'available'>>;
+export type Assistant = ReturnType<typeof createAssistant>;
+type First = ReturnType<typeof starters.first>;
 
 const MODEL = 'claude-opus-5-5';
 const MAX_STEPS = 40;             // model round-trips in one turn: enough to look, build, check, dry-run and fix
 const CLOUD_ENDPOINT = cloud.ENDPOINT;
 
 function loadSdk() {
-  const mod = require('@anthropic-ai/sdk');
+  const mod = require('@anthropic-ai/sdk') as typeof import('@anthropic-ai/sdk');
   return mod.Anthropic || mod.default || mod;
 }
 
 /** A provider is { name, create({ system, tools, messages }) -> an Anthropic Message }. */
-function sdkProvider(name, clientOptions) {
-  let client = null, Anthropic = null;
+function sdkProvider(name: string, clientOptions?: ClientOptions): Provider {
+  let client: InstanceType<ReturnType<typeof loadSdk>> | null = null, Anthropic: ReturnType<typeof loadSdk> | null = null;
   return {
     name,
     async create({ system, tools, messages }) {
@@ -69,8 +141,8 @@ function sdkProvider(name, clientOptions) {
         // and so is the conversation, up to its newest message: it only ever grows at the end (history.js), so each
         // call reads all of it before from the cache
         cache_control: { type: 'ephemeral' },
-        tools,
-        messages,
+        tools: tools as BetaToolUnion[],
+        messages: messages as BetaMessageParam[],
       });
     },
     explain(err) {
@@ -87,7 +159,7 @@ function sdkProvider(name, clientOptions) {
 }
 
 /** Providers that speak the OpenAI chat-completions protocol: where they live, and which environment variable holds a key. */
-const COMPATIBLE = {
+const COMPATIBLE: Record<string, { label: string; baseURL: string; env: string; needsKey: boolean; headers?: Record<string, string> }> = {
   openrouter: { label: 'OpenRouter', baseURL: 'https://openrouter.ai/api/v1', env: 'OPENROUTER_API_KEY', needsKey: true,
                 headers: { 'HTTP-Referer': 'https://endlesscues.com', 'X-Title': 'Endless Cues' } },
   openai: { label: 'OpenAI', baseURL: 'https://api.openai.com/v1', env: 'OPENAI_API_KEY', needsKey: true },
@@ -96,10 +168,18 @@ const COMPATIBLE = {
 };
 
 /** The conversation as chat-completions wants it: tool calls on the assistant message, each result a `tool` message. */
-function toChat(system, messages) {
-  const out = [{ role: 'system', content: system }];
+/** A message as chat-completions has it. */
+interface ChatMessage { role: string; content?: string | null; tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[]; tool_call_id?: string; ec_state?: string }
+/** A chat-completions answer, as JSON (any of it may be missing). */
+interface ChatReply {
+  choices?: { message?: { content?: string | { text?: string }[] | null; tool_calls?: { id?: string; function: { name: string; arguments?: string } }[]; ec_state?: unknown }; finish_reason?: string }[];
+  error?: { message?: string };
+}
+
+function toChat(system: string, messages: Message[]) {
+  const out: ChatMessage[] = [{ role: 'system', content: system }];
   for (const m of messages) {
-    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
+    const blocks: Block[] = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
     if (m.role === 'assistant') {
       const calls = blocks.filter((b) => b.type === 'tool_use');
       const state = blocks.find((b) => b.type === 'ec_state');      // (the Endless Cues service's opaque reasoning: sent back as it came)
@@ -117,14 +197,14 @@ function toChat(system, messages) {
 
 /** A chat-completions reply, back in the shape the turn loop reads. A tool call whose arguments are not JSON is
  *  handed on with a marker, so the model is told and can try again rather than the turn failing. */
-function fromChat(data) {
+function fromChat(data: ChatReply | null): Reply {
   const choice = data && data.choices && data.choices[0];
   if (!choice) throw new Error((data && data.error && (data.error.message || JSON.stringify(data.error))) || 'the model returned nothing');
   const msg = choice.message || {};
-  const content = [];
+  const content: Block[] = [];
   if (msg.content) content.push({ type: 'text', text: typeof msg.content === 'string' ? msg.content : msg.content.map((p) => p.text || '').join('') });
   for (const c of msg.tool_calls || []) {
-    let input;
+    let input: unknown;
     try { input = c.function.arguments ? JSON.parse(c.function.arguments) : {}; } catch { input = { __invalid_json: String(c.function.arguments).slice(0, 400) }; }
     content.push({ type: 'tool_use', id: c.id || `call_${content.length}`, name: c.function.name, input });
   }
@@ -134,14 +214,17 @@ function fromChat(data) {
 }
 
 /** `headers(call)` adds headers per call (call: { turn, step }); `onResponse(res)` sees each answer's headers. */
-function compatibleProvider(name, { baseURL, apiKey, model, fetchImpl = fetch, label = '', headers = null, onResponse = null }) {
+function compatibleProvider(name: string, { baseURL, apiKey, model, fetchImpl = fetch, label = '', headers = null, onResponse = null }: {
+  baseURL?: string; apiKey?: string; model?: string; fetchImpl?: typeof fetch; label?: string;
+  headers?: ((call: { turn: string; step: number }) => Record<string, string>) | null; onResponse?: ((res: Response) => void) | null;
+}): Provider {
   const def = { ...(COMPATIBLE[name] || COMPATIBLE.custom), ...(label ? { label } : {}) };
   const url = `${String(baseURL || def.baseURL).replace(/\/+$/, '')}/chat/completions`;
-  class HttpError extends Error { constructor(status, message, code = '') { super(message); this.status = status; this.code = code; } }
+  class HttpError extends Error { status: number; code: string; constructor(status: number, message: string, code = '') { super(message); this.status = status; this.code = code; } }
   return {
     name,
     async create({ system, tools, messages, turn = '', step = 0 }) {
-      let res;
+      let res: Response;
       try {
         res = await fetchImpl(url, {
           method: 'POST',
@@ -149,7 +232,7 @@ function compatibleProvider(name, { baseURL, apiKey, model, fetchImpl = fetch, l
           body: JSON.stringify({ model, messages: toChat(system, messages), tool_choice: 'auto',
                                  tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } })) }),
         });
-      } catch (err) { throw new HttpError(0, err.message); }
+      } catch (err) { throw new HttpError(0, (err as Error).message); }
       if (onResponse) onResponse(res);
       const text = await res.text();
       let data; try { data = JSON.parse(text); } catch { data = null; }
@@ -169,8 +252,10 @@ function compatibleProvider(name, { baseURL, apiKey, model, fetchImpl = fetch, l
 
 // ── the Endless Cues assistant: the service is OpenAI-compatible, so it is the provider above with three headers ──
 /** What the service's answers say about the month (x-ec-tier, x-ec-used, x-ec-resets) is kept on `usage`; a 401 calls signedOut(). */
-function cloudProvider({ endpoint = CLOUD_ENDPOINT, token, version = '', fetchImpl = fetch, signedOut = () => {} }) {
-  const p = { name: 'cloud', label: 'Endless Cues assistant', usage: null };
+function cloudProvider({ endpoint = CLOUD_ENDPOINT, token, version = '', fetchImpl = fetch, signedOut = () => {} }: {
+  endpoint?: string; token?: string; version?: string; fetchImpl?: typeof fetch; signedOut?: () => void;
+}) {
+  const p: Provider = { name: 'cloud', label: 'Endless Cues assistant', usage: null };
   const inner = compatibleProvider('cloud', {
     baseURL: `${String(endpoint || CLOUD_ENDPOINT).replace(/\/+$/, '')}/v1`, apiKey: token, model: 'endless-cues', fetchImpl, label: p.label,
     headers: ({ turn, step }) => ({ 'x-ec-turn': turn || randomUUID(), 'x-ec-step': String(step || 0), 'x-ec-version': version || 'dev', 'user-agent': `EndlessCues/${version || 'dev'} (${process.platform})` }),
@@ -180,14 +265,15 @@ function cloudProvider({ endpoint = CLOUD_ENDPOINT, token, version = '', fetchIm
     },
   });
   p.create = async (call) => {
-    try { return await inner.create(call); } catch (err) {
+    try { return await inner.create!(call); } catch (e) {
+      const err = e as ProviderError;
       if (err.status === 401) signedOut();
       if (err.code === 'allowance_used') p.usage = { ...(p.usage || {}), tier: 'used_up' };
       throw err;
     }
   };
   p.explain = (err) => {
-    if (err.status === 0 || err.status >= 500) return err.code === 'busy_today' ? 'The Endless Cues assistant is resting until tomorrow. Your show isn’t affected.' : 'The Endless Cues assistant isn’t answering. Your show isn’t affected.';
+    if (err.status === 0 || err.status! >= 500) return err.code === 'busy_today' ? 'The Endless Cues assistant is resting until tomorrow. Your show isn’t affected.' : 'The Endless Cues assistant isn’t answering. Your show isn’t affected.';
     if (err.status === 401) return 'Signed out. Sign in again in Settings ▸ Assistant.';
     if (err.code === 'allowance_used') return 'This month’s asks are used up: the built-in helper can still help.';
     if (err.code === 'build_not_allowed') return 'This build can’t use the hosted assistant. Use your own key.';
@@ -201,27 +287,31 @@ function cloudProvider({ endpoint = CLOUD_ENDPOINT, token, version = '', fetchIm
 // (bin/ec-mcp.js → the app's bridge), and come back with what they have to say. So a provider of this kind has
 // `turn()` instead of `create()`. They get only our tools: no shell, no files.
 const TOOL_NAMES = TOOLS.map((t) => t.name);      // (from the one table, so the allow-list can never fall behind it)
-const CLI = {
+const CLI: Record<string, { label: string; bin: string }> = {
   'claude-code': { label: 'Claude Code', bin: 'claude' },
   codex: { label: 'Codex', bin: 'codex' },
 };
 /** Where a command-line tool is, looking beyond the short PATH an app started from the Dock is given. */
-function findBinary(bin, env = process.env) {
-  const fs = require('fs'), path = require('path'), os = require('os');
+function findBinary(bin: string, env: NodeJS.ProcessEnv = process.env) {
+  const fs = require('fs') as typeof import('fs'), path = require('path') as typeof import('path'), os = require('os') as typeof import('os');
   const exts = process.platform === 'win32' ? ['.cmd', '.exe', '.bat', ''] : [''];
   const dirs = [...String(env.PATH || '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin',
                 path.join(os.homedir(), '.npm-global', 'bin'), path.join(os.homedir(), 'AppData', 'Roaming', 'npm')].filter(Boolean);
   for (const d of dirs) for (const e of exts) { const f = path.join(d, bin + e); try { if (fs.statSync(f).isFile()) return f; } catch { /* not there */ } }
   return null;
 }
-function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, find = findBinary } = {}) {
+function cliProvider(name: string, { mcpServer, spawn = (require('child_process') as typeof import('child_process')).spawn, find = findBinary }: {
+  mcpServer?: (session: string, client: string) => McpServer;
+  spawn?: (file: string, args: string[], options: { cwd: string; stdio: ('ignore' | 'pipe')[]; env: NodeJS.ProcessEnv }) => ChildProcess;
+  find?: (bin: string) => string | null;
+} = {}): Provider {
   const def = CLI[name];
-  const os = require('os'), fs = require('fs'), path = require('path');
-  let resume = null;        // Claude Code's session, so a follow-up question continues the conversation
-  const run = (file, args, { cwd }) => new Promise((resolve, reject) => {
+  const os = require('os') as typeof import('os'), fs = require('fs') as typeof import('fs'), path = require('path') as typeof import('path');
+  let resume: string | null = null;        // Claude Code's session, so a follow-up question continues the conversation
+  const run = (file: string, args: string[], { cwd }: { cwd: string }) => new Promise<{ code: number | null; out: string; err: string }>((resolve, reject) => {
     const child = spawn(file, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
     let out = '', err = '';
-    child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { err += d; });
+    child.stdout!.on('data', (d) => { out += d; }); child.stderr!.on('data', (d) => { err += d; });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code, out, err }));
   });
@@ -231,8 +321,8 @@ function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, 
     available: () => !!find(def.bin),
     async turn({ system, prompt, session }) {
       const file = find(def.bin);
-      if (!file) { const e = new Error('not installed'); e.missing = true; throw e; }
-      const server = mcpServer(session, def.label);      // { command, args, env }
+      if (!file) { const e: ProviderError = new Error('not installed'); e.missing = true; throw e; }
+      const server = mcpServer!(session, def.label);      // { command, args, env }
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-agent-'));   // an empty folder: it has no project to read or touch
       try {
         if (name === 'claude-code') {
@@ -241,7 +331,7 @@ function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, 
                         '--system-prompt', system, '--output-format', 'json', ...(resume ? ['--resume', resume] : [])];
           const r = await run(file, args, { cwd });
           const line = r.out.split('\n').reverse().find((l) => l.trim().startsWith('{') && l.includes('"result"'));
-          let j = null; try { j = line ? JSON.parse(line) : null; } catch { j = null; }
+          let j: { result?: unknown; session_id?: string; is_error?: boolean } | null = null; try { j = line ? JSON.parse(line) : null; } catch { j = null; }
           if (!j) throw new Error((r.err || r.out).trim().split('\n').slice(-3).join(' ').slice(0, 400) || `Claude Code exited with code ${r.code}`);
           if (j.session_id) resume = j.session_id;
           if (j.is_error) throw new Error(String(j.result || 'Claude Code reported an error').slice(0, 400));
@@ -251,7 +341,7 @@ function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, 
         // (Its own shell and file reading stay: its CLI documents no switch that takes them away, so the read-only sandbox
         // is what holds, and Settings ▸ Assistant says that Codex can read files on this computer.)
         const last = path.join(cwd, 'last.txt');
-        const toml = (v) => JSON.stringify(v);
+        const toml = (v: unknown) => JSON.stringify(v);
         const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '-o', last,
                       '-c', `mcp_servers.endless_cues.command=${toml(server.command)}`, '-c', `mcp_servers.endless_cues.args=${toml(server.args)}`,
                       ...(server.env ? ['-c', `mcp_servers.endless_cues.env={${Object.entries(server.env).map(([k, v]) => `${k}=${toml(v)}`).join(',')}}`] : []),
@@ -271,31 +361,32 @@ function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, 
 }
 
 /** No model: the built-in helper (helper.js). The name is kept for the tests and the configurations that have it. */
-function demoProvider() { return require('./helper').helperProvider(); }
+function demoProvider(): Provider { return (require('./helper') as typeof import('./helper')).helperProvider(); }
 
 /** The provider a configuration asks for, or null with the reason it cannot be used yet. A key typed into
  *  Settings wins; otherwise the provider's usual environment variable is read. */
-function providerFor(config = {}, env = process.env) {
+function providerFor(config: AssistantConfig = {}, env: NodeJS.ProcessEnv = process.env): Provider | null {
   const name = config.provider;
-  if (CLI[name]) return config.mcpServer ? cliProvider(name, { mcpServer: config.mcpServer }) : null;
+  if (CLI[name!]) return config.mcpServer ? cliProvider(name!, { mcpServer: config.mcpServer }) : null;
   if (name === 'cloud') return config.token ? cloudProvider({ endpoint: config.endpoint, token: config.token, version: config.version, signedOut: config.cloudSignedOut }) : null;
   if (name === 'anthropic') return sdkProvider('anthropic', config.apiKey ? { apiKey: config.apiKey } : {});
   if (name === 'demo') return demoProvider();
-  if (COMPATIBLE[name]) {
-    const def = COMPATIBLE[name];
+  if (COMPATIBLE[name!]) {
+    const def = COMPATIBLE[name!];
     const apiKey = config.apiKey || (def.env && env[def.env]) || '';
     if (!config.model || (def.needsKey && !apiKey) || !(config.baseURL || def.baseURL)) return null;
-    return compatibleProvider(name, { baseURL: config.baseURL, apiKey, model: config.model });
+    return compatibleProvider(name!, { baseURL: config.baseURL, apiKey, model: config.model });
   }
   return null;
 }
 /** Why a configuration gives no provider, in words for Settings. */
-function missingFor(config = {}, env = process.env) {
-  const def = COMPATIBLE[config.provider];
+function missingFor(config: AssistantConfig = {}, env: NodeJS.ProcessEnv = process.env) {
+  const provider = config.provider!;
+  const def = COMPATIBLE[provider];
   if (config.provider === 'cloud') return config.token ? '' : 'Sign in first.';
-  if (CLI[config.provider]) {
-    const label = CLI[config.provider].label;
-    if (!findBinary(CLI[config.provider].bin, env)) return `${label} wasn’t found on this computer.`;
+  if (CLI[provider]) {
+    const label = CLI[provider].label;
+    if (!findBinary(CLI[provider].bin, env)) return `${label} wasn’t found on this computer.`;
     // (found, but this window has no way to hand it the app's tools: `noDoor` says where that is so, a test window above all)
     return config.mcpServer ? '' : `${label} can’t be used ${config.noDoor || 'here'}.`;
   }
@@ -307,48 +398,49 @@ function missingFor(config = {}, env = process.env) {
   return '';
 }
 
-function createAssistant({ config = {}, log = () => {}, changed = () => {}, provider = null } = {}) {
+function createAssistant({ config = {}, log = () => {}, changed = () => {}, provider = null }: { config?: AssistantConfig; log?: (line: string) => void; changed?: () => void; provider?: Provider | null } = {}) {
   let cfg = { ...config };
   let active = provider || providerFor(cfg);
-  let messages = [];            // what the model is sent: append-only, a message once sent is never changed (history.js)
-  let told = null;              // what `messages` has told the model of the show so far (history.note's state)
-  let transcript = [];          // what the person sees: { role, text, proposal?, error? }
+  let messages: Message[] = [];            // what the model is sent: append-only, a message once sent is never changed (history.js)
+  let told: history.Sent | null = null;              // what `messages` has told the model of the show so far (history.note's state)
+  let transcript: TranscriptLine[] = [];          // what the person sees: { role, text, proposal?, error? }
   let busy = false;
-  let activity = [];            // what the agent has done so far this turn, for the person watching
-  let points = [];              // the places it pointed at this turn (show_in_app): its reply carries a "Show me" for each
-  let account = null;           // the Endless Cues account, as the app knows it: { email, step, code, error, usage }
+  let activity: string[] = [];            // what the agent has done so far this turn, for the person watching
+  let points: NonNullable<ToolResult['point']>[] = [];              // the places it pointed at this turn (show_in_app): its reply carries a "Show me" for each
+  let account: Account | null = null;           // the Endless Cues account, as the app knows it: { email, step, code, error, usage }
   const system = `${SYSTEM}\n\n${reference()}`;
 
   // The first screen is asked for with every state push, so what costs something is kept a moment: which agents
   // are installed (a look round the disk) for half a minute, the folder's file names for two seconds, and the
   // whole answer until the show, the provider or the Rig's summary changes.
-  let found = null, foundAt = 0;
+  let found: Record<string, boolean> | null = null, foundAt = 0;
   const installed = () => { const t = Date.now(); if (!found || t - foundAt > 30000) { found = Object.fromEntries(Object.entries(CLI).map(([id, def]) => [id, !!findBinary(def.bin)])); foundAt = t; } return found; };
-  let seen = { key: null, at: 0, first: null };
-  function firstFor(ctx, provider, inst) {
+  let seen: { key: string | null; at: number; first: First | null; doc?: ShowDoc } = { key: null, at: 0, first: null };
+  function firstFor(ctx: StatusContext, provider: string, inst: Record<string, boolean>) {
     const { document, rig = null, imported = null } = ctx;
-    let st = null; try { st = rig ? rig.status() : null; } catch { st = null; }
+    let st: ReturnType<RigService['status']> = null; try { st = rig ? rig.status() : null; } catch { st = null; }
     const t = Date.now();
     const key = [provider, document.showDir || '', st && st.summary ? st.summary.text : '', st ? JSON.stringify(Object.fromEntries(Object.entries(st.devices || {}).map(([id, d]) => [id, d && d.state]))) : '', imported ? 'imported' : '', JSON.stringify(inst)].join('|');
     if (seen.first && seen.doc === document.doc && seen.key === key && t - seen.at < 2000) return seen.first;
-    let listing = null;
+    let listing: ReturnType<typeof quickListing> | null = null;
     try { listing = document.showDir ? quickListing(document.showDir, document.doc) : null; } catch { listing = null; }
-    let first = null;
-    try { first = starters.first({ doc: document.doc, showDir: document.showDir, folder: listing, rig: st, imported, provider, installed: inst }); } catch (err) { log(`first screen: ${err.message}`); }
+    let first: First | null = null;
+    try { first = starters.first({ doc: document.doc, showDir: document.showDir, folder: listing, rig: st, imported, provider, installed: inst }); } catch (err) { log(`first screen: ${(err as Error).message}`); }
     seen = { doc: document.doc, key, at: t, first };
     return first;
   }
 
   /** A proposal that changes what the show listens on or sends to (its modules, its network patches, its devices) is
    *  always shown for review, even with "apply at once": show text the model read must not open a door by itself. */
-  function reachesOut(document) {
+  function reachesOut(document: ShowDocument) {
     const p = document.proposal, d = document.doc;
     if (!p || !p.doc) return false;
-    const part = (x) => JSON.stringify([x.modules, x.settings && x.settings.network, x.rig && x.rig.devices]);
+    // (`rig` is not a key of a show: its devices are settings.rig.devices)
+    const part = (x: ShowDoc & { rig?: { devices?: unknown } }) => JSON.stringify([x.modules, x.settings && x.settings.network, x.rig && x.rig.devices]);
     return part(p.doc) !== part(d);
   }
 
-  async function ask(text, { document, engine = null, ...opts }) {
+  async function ask(text: string, { document, engine = null, ...opts }: AskOptions) {
     text = String(text || '').trim();
     if (!text) return { error: 'nothing asked' };
     if (!active) return { error: 'The assistant is off. Turn it on in Settings ▸ Assistant.' };
@@ -374,10 +466,10 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
     const shown = history.note(told, now);
     told = shown.state;
     messages.push({ role: 'user', content: [{ type: 'text', text: `${shown.text}${about}` }, { type: 'text', text }] });
-    let proposal = null;
+    let proposal: string | null = null;
     // the draft lives for this turn: its edits reach the show only through a proposal
     // (with it: the rig, when there is a running app; and the files staged for the show folder, which start as the waiting proposal's)
-    const ctx = { document, engine, draft: waiting ? waiting.doc : null, base: waiting ? document.doc : null, log: null, rig: opts.rig || null, ui: opts.ui || null,
+    const ctx: ToolContext = { document, engine, draft: waiting ? waiting.doc : null, base: waiting ? document.doc : null, log: null, rig: opts.rig || null, ui: opts.ui || null,
                   files: new Map(((waiting && waiting.files) || []).map((f) => [f.path, f.text])) };
     activity = []; points = [];
     const turn = randomUUID();      // one id for every model call of this turn (the Endless Cues service counts asks by it)
@@ -389,12 +481,12 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
         proposal = document.proposal && document.proposal.id !== before ? document.proposal.id : null;
         messages.push({ role: 'assistant', content: [{ type: 'text', text: r.text }] });
         let applied = false;
-        if (proposal && cfg.autoApply && (!opts.canApply || opts.canApply()) && !reachesOut(document)) { try { document.accept(proposal); applied = true; } catch (err) { log(`could not apply: ${err.message}`); } }
+        if (proposal && cfg.autoApply && (!opts.canApply || opts.canApply()) && !reachesOut(document)) { try { document.accept(proposal); applied = true; } catch (err) { log(`could not apply: ${(err as Error).message}`); } }
         transcript.push({ role: 'assistant', text: r.text || (proposal ? 'Ready for review.' : '(no reply)'), steps: activity.slice(), ...(points.length ? { points: points.slice() } : {}), ...(proposal ? { proposal, applied } : {}) });
         return { ok: true, proposal, applied };
       }
       for (let step = 0; step < MAX_STEPS; step++) {
-        const res = await active.create({ system, tools: TOOLS, messages, ctx, turn, step });      // (ctx: the built-in helper reads the show to script its turn; a model never sees it)
+        const res = await active.create!({ system, tools: TOOLS, messages, ctx, turn, step });      // (ctx: the built-in helper reads the show to script its turn; a model never sees it)
         if (res.stop_reason === 'refusal') throw new Error('The assistant declined that request.');
         messages.push({ role: 'assistant', content: res.content });
         if (res.stop_reason === 'pause_turn') continue;
@@ -405,15 +497,16 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
           let applied = false;
           // "apply at once" (a choice made on this computer): the proposal lands without the review step. It is still
           // one undo step and still unsaved, and never happens in Show mode (the host passes canApply).
-          if (proposal && cfg.autoApply && (!opts.canApply || opts.canApply()) && !reachesOut(document)) { try { document.accept(proposal); applied = true; } catch (err) { log(`could not apply: ${err.message}`); } }
+          if (proposal && cfg.autoApply && (!opts.canApply || opts.canApply()) && !reachesOut(document)) { try { document.accept(proposal); applied = true; } catch (err) { log(`could not apply: ${(err as Error).message}`); } }
           transcript.push({ role: 'assistant', text: said || (proposal ? 'Ready for review.' : '(no reply)'), steps: activity.slice(), ...(points.length ? { points: points.slice() } : {}), ...(proposal ? { proposal, applied } : {}) });
           return { ok: true, proposal, applied };
         }
         // every tool call answered, all in one message
-        const results = [];
+        const results: ToolResultBlock[] = [];
         for (const call of calls) {
-          activity.push(describeCall(call.name, call.input || {})); changed();
-          const r = await execute(call.name, call.input || {}, ctx);      // (a tool that asks a device waits for its answer)
+          const input = (call.input || {}) as ToolInput;      // (the model's arguments: execute checks what it reads)
+          activity.push(describeCall(call.name, input)); changed();
+          const r = await execute(call.name, input, ctx);      // (a tool that asks a device waits for its answer)
           if (r.proposal) proposal = r.proposal;
           if (r.point) points.push(r.point);
           log(`${call.name}${r.is_error ? ' (error)' : ''}: ${String(r.content).slice(0, 160)}`);
@@ -422,10 +515,11 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
         messages.push({ role: 'user', content: results });
       }
       throw new Error('That took too many steps; try asking for it in smaller pieces.');
-    } catch (err) {
+    } catch (e) {
+      const err = e as ProviderError;
       messages.length = mark;       // a failed turn leaves no half-finished exchange behind (only the end goes: nothing earlier changes)
       told = wasTold;               // and what it told the model of the show went with it
-      const why = active.explain ? active.explain(err) : err.message;
+      const why = active!.explain ? active!.explain(err) : err.message;
       log(`failed: ${err.stack || err}`);
       // (what this turn staged goes; a change that was waiting before the turn, and that it replaced, is waiting again)
       if (document.proposal && proposal) document.withdraw(proposal);
@@ -438,19 +532,19 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
     ask,
     reset() { messages = []; told = null; transcript = []; if (active && active.reset) active.reset(); changed(); },
     /** A tool call made through the bridge (an agent outside this loop): shown as a step if it is this turn's. */
-    noteStep(text) { if (busy) { activity.push(text); changed(); } },
+    noteStep(text: string) { if (busy) { activity.push(text); changed(); } },
     /** A place an agent outside this loop pointed at (show_in_app through the bridge): its reply gets a "Show me" for it. */
-    notePoint(p) { if (busy && p) points.push(p); },
+    notePoint(p: NonNullable<ToolResult['point']> | null) { if (busy && p) points.push(p); },
     /** A change proposed by an agent the person is running themselves (Claude Code in a terminal, say). */
-    noteExternal(client, summary, applied) { if (busy) return; transcript.push({ role: 'assistant', text: `${client} proposed a change: ${summary}`, external: true, applied }); changed(); },
+    noteExternal(client: string, summary: string, applied: boolean) { if (busy) return; transcript.push({ role: 'assistant', text: `${client} proposed a change: ${summary}`, external: true, applied }); changed(); },
     get busy() { return busy; },
     /** What the app knows of the Endless Cues account (main.js tells it): signed in as, a sign-in under way, this month. null forgets it. */
-    setAccount(patch) { account = patch === null ? null : { ...(account || {}), ...patch }; changed(); },
-    configure(next) { cfg = { ...cfg, ...next }; active = providerFor(cfg); messages = []; told = null; changed(); return cfg; },
+    setAccount(patch: Account | null) { account = patch === null ? null : { ...(account || {}), ...patch }; changed(); },
+    configure(next: AssistantConfig) { cfg = { ...cfg, ...next }; active = providerFor(cfg); messages = []; told = null; changed(); return cfg; },
     /** `ctx` ({ document, engine, rig, imported }), when the host gives it, adds `first`: what the drawer shows before the first message (starters.js). */
-    status(ctx = null) {
+    status(ctx: StatusContext | null = null) {
       const provider = active ? active.name : 'off';
-      const out = { available: !!active, provider, label: active && active.label ? active.label : (CLI[provider] || COMPATIBLE[provider] || {}).label || '', model: active && COMPATIBLE[active.name] ? cfg.model : '', busy, activity: busy ? activity.slice(-6) : [], autoApply: !!cfg.autoApply, transcript: transcript.slice(-60), signedIn: !!cfg.token,
+      const out: AssistantStatus = { available: !!active, provider, label: active && active.label ? active.label : (CLI[provider] || COMPATIBLE[provider] || {}).label || '', model: active && COMPATIBLE[active.name] ? cfg.model : '', busy, activity: busy ? activity.slice(-6) : [], autoApply: !!cfg.autoApply, transcript: transcript.slice(-60), signedIn: !!cfg.token,
         // `chosen` is what was asked for, `provider` what is answering: when they differ, `missing` says why in one line
         chosen: cfg.provider || 'off', missing: active ? '' : missingFor(cfg) };
       if (cfg.provider === 'cloud') {

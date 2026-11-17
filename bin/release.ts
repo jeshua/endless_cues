@@ -39,21 +39,37 @@ import * as crypto from 'crypto';
 import { execFileSync, spawnSync } from 'child_process';
 import { siteDir } from './site-dir';
 
+/** One file of a build, as release.json records it (and the site, with where it is served from). */
+export interface FileRecord { file: string; arch: string; bytes: number; sha256: string; url?: string; platform?: string }
+/** release.json: what a build made. */
+export interface Release {
+  version: string; date?: string; commit?: string; signed: boolean; dirty?: boolean;
+  platform?: string; testSigned?: boolean; files: FileRecord[]; update?: FileRecord[]; notes?: string[];
+}
+/** How a publish reaches the bucket and checks what it serves (the command line's, or a test's). */
+export interface PublishOptions {
+  release: Release | null; dir: string; channel?: string; base?: string;
+  upload: (key: string, file: string, o: { contentType?: string; cacheControl?: string }) => Promise<unknown>;
+  size: (url: string) => Promise<number | null>;
+  text?: (url: string) => Promise<string | null>;
+  log?: (line: string) => void; dryRun?: boolean;
+}
+
 const ROOT = path.join(__dirname, '..');
-const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
-const write = (f, text) => fs.writeFileSync(path.join(ROOT, f), text);
+const read = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const write = (f: string, text: string) => fs.writeFileSync(path.join(ROOT, f), text);
 const pkg = () => JSON.parse(read('package.json'));
-const fail = (text) => { console.error(text); process.exit(1); };
-const git = (...a) => { try { return execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return ''; } };
+const fail: (text: string) => never = (text) => { console.error(text); process.exit(1); };
+const git = (...a: string[]) => { try { return execFileSync('git', a, { cwd: ROOT, encoding: 'utf8' }).trim(); } catch { return ''; } };
 // (the date here, where the release is made: not UTC's, which is tomorrow for an evening's work west of Greenwich)
-const today = () => { const d = new Date(), p2 = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
+const today = () => { const d = new Date(), p2 = (n: number) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
 /** x.y.z or x.y.z-alpha.n / -beta.n / -rc.n, as numbers to compare. */
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?$/;
-function parts(v) { const m = SEMVER.exec(v); return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? ['alpha', 'beta', 'rc'].indexOf(m[4]) : 3, Number(m[5] || 0)] : null; }
-function newer(a, b) { const x = parts(a), y = parts(b); for (let i = 0; i < 5; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; }
+function parts(v: string) { const m = SEMVER.exec(v); return m ? [Number(m[1]), Number(m[2]), Number(m[3]), m[4] ? ['alpha', 'beta', 'rc'].indexOf(m[4]) : 3, Number(m[5] || 0)] : null; }
+function newer(a: string, b: string) { const x = parts(a)!, y = parts(b)!; for (let i = 0; i < 5; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; }
 
-function setVersion(v) {
+function setVersion(v: string) {
   if (!parts(v)) fail(`"${v}" is not a version this project uses: 0.2.0, 0.2.0-alpha.1, 1.0.0-rc.2`);
   const was = pkg().version;
   if (!newer(v, was)) fail(`${v} is not after ${was}`);
@@ -74,13 +90,13 @@ function setVersion(v) {
 }
 
 /** What this version's part of the changelog says, as plain lines. */
-function notesOf(v) {
+function notesOf(v: string) {
   const m = new RegExp(`^## ${v.replace(/[.]/g, '\\.')} · .*$`, 'm').exec(read('CHANGELOG.md'));
   if (!m) return [];
   return read('CHANGELOG.md').slice(m.index + m[0].length).split(/^## /m)[0].split('\n').map((l) => l.trim()).filter((l) => l.startsWith('- ')).map((l) => l.slice(2));
 }
 
-function buildMac(flags) {
+function buildMac(flags: string[]) {
   if (process.platform !== 'darwin') fail('A .dmg is built on a Mac.');
   const v = pkg().version;
   const dirty = git('status', '--porcelain') !== '';
@@ -112,7 +128,7 @@ function buildMac(flags) {
   fs.rmSync(path.join(ROOT, 'app/build-info.json'), { force: true });
   if (r.status !== 0) fail('The build failed.');
   const out = path.join(ROOT, 'dist.noindex');
-  const record = (f) => {
+  const record = (f: string): FileRecord => {
     const bytes = fs.readFileSync(path.join(out, f));
     return { file: f, arch: /arm64/.test(f) ? 'arm64' : 'x64', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   };
@@ -122,7 +138,7 @@ function buildMac(flags) {
   const update = fs.readdirSync(out).filter((f) => /\.(zip|zip\.blockmap|dmg\.blockmap)$/.test(f) || f === FEED_FILE).sort().map(record);
   // What macOS itself will say of the app in each build, asked now and not assumed: "accepted" with "Notarized Developer ID".
   if (signed) for (const d of fs.readdirSync(out).filter((x) => /^mac/.test(x))) {
-    const appPath = path.join(out, d, fs.readdirSync(path.join(out, d)).find((x) => x.endsWith('.app')));
+    const appPath = path.join(out, d, fs.readdirSync(path.join(out, d)).find((x) => x.endsWith('.app'))!);
     const g = spawnSync('spctl', ['-a', '-vv', '-t', 'exec', appPath], { encoding: 'utf8' });
     const verdict = `${g.stdout || ''}${g.stderr || ''}`.trim().split('\n').slice(0, 2).join(' · ');
     console.log(`  ${d}: ${verdict}`);
@@ -152,7 +168,7 @@ const WIN_OUT = 'dist-win.noindex';
  * SmartScreen warns the first time. Every signature is checked after. Downloads only: no update feed is written for
  * Windows, and an installed copy says the server has no version for it.
  */
-function buildWin(flags) {
+function buildWin(flags: string[]) {
   const v = pkg().version;
   const dirty = git('status', '--porcelain') !== '';
   const info = { version: v, commit: git('rev-parse', '--short', 'HEAD'), date: today(), ...(dirty ? { dirty: true } : {}) };
@@ -160,9 +176,9 @@ function buildWin(flags) {
   const out = path.join(ROOT, WIN_OUT);
   fs.rmSync(out, { recursive: true, force: true });
   write('app/build-info.json', JSON.stringify(info, null, 2) + '\n');
-  const { signatureBytes } = require('../build/sign-win');
+  const { signatureBytes } = require('../build/sign-win') as typeof import('../build/sign-win');
   const how = process.env.EC_WIN_SIGN_P12 ? 'test' : process.env.EC_WIN_SIGNING ? 'azure' : null;
-  const env = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' };
+  const env: NodeJS.ProcessEnv = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' };
   if (how === 'azure') {
     // (one token for the whole build: it lasts an hour; jsign reads it from the environment, never from its arguments)
     const t = spawnSync('az', ['account', 'get-access-token', '--resource', 'https://codesigning.azure.net', '--query', 'accessToken', '-o', 'tsv'], { encoding: 'utf8' });
@@ -180,7 +196,7 @@ function buildWin(flags) {
       if (r.status !== 0) fail(`The ${a} build failed.`);
     }
   } finally { fs.rmSync(path.join(ROOT, 'app/build-info.json'), { force: true }); }
-  const files = fs.readdirSync(out).filter((f) => /-win-(x64|arm64)-setup\.exe$/.test(f)).sort().map((f) => {
+  const files = fs.readdirSync(out).filter((f) => /-win-(x64|arm64)-setup\.exe$/.test(f)).sort().map((f): FileRecord => {
     const bytes = fs.readFileSync(path.join(out, f));
     return { file: f, arch: /arm64/.test(f) ? 'arm64' : 'x64', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   });
@@ -205,8 +221,8 @@ function buildWin(flags) {
  * Publish the Windows installers: each uploaded and checked by the size its address answers with. There is no feed
  * to change, so nothing can be offered a missing file; unsigned is allowed (nothing installs it unasked).
  */
-async function publishDownloads({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, log = () => {}, dryRun = false }) {
-  const refuse = (why) => { throw new Error(`Not published: ${why}`); };
+async function publishDownloads({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, log = () => {}, dryRun = false }: PublishOptions) {
+  const refuse: (why: string) => never = (why) => { throw new Error(`Not published: ${why}`); };
   if (!['latest', 'test'].includes(channel)) refuse(`there is no channel "${channel}" (latest or test)`);
   if (!r || !r.version) refuse(`there is no ${WIN_OUT}/release.json: build first (node bin/release.js win)`);
   if (r.platform !== 'win') refuse('that release.json is not a Windows build.');
@@ -219,7 +235,7 @@ async function publishDownloads({ release: r, dir, channel = 'latest', base = DO
     if (fs.statSync(p).size !== f.bytes) refuse(`${f.file} is not the file that was built (its size has changed).`);
   }
   const folder = channel === 'test' ? 'test/' : '';
-  const uploaded = [];
+  const uploaded: string[] = [];
   for (const f of r.files) {
     const key = folder + f.file;
     log(`  ${dryRun ? 'would upload' : 'uploading'} ${key}`);
@@ -243,14 +259,14 @@ const BUCKET = 'endlesscues-downloads';
 const FEED_FILE = 'latest-mac.yml';
 
 /** What a feed file says: its version and the files it names. (Only what is needed: it is electron-builder's YAML.) */
-function readFeed(text) {
+function readFeed(text: string) {
   const version = (/^version:\s*['"]?([^'"\s]+)/m.exec(text) || [])[1] || '';
   const named = [...text.matchAll(/^[ \t]*(?:-[ \t]*)?(?:url|path):[ \t]*['"]?([^'"\s]+)/gm)].map((m) => m[1]);
   return { version, named: [...new Set(named)] };
 }
 /** The same feed for the test channel's folder: each file it names, by its full address in everyone's folder. */
-function feedPointingAt(text, base) {
-  return text.replace(/^([ \t]*(?:-[ \t]*)?(?:url|path):[ \t]*)['"]?([^'"\s]+)['"]?[ \t]*$/gm, (_m, a, f) => `${a}${/^https?:/.test(f) ? f : base + f}`);
+function feedPointingAt(text: string, base: string) {
+  return text.replace(/^([ \t]*(?:-[ \t]*)?(?:url|path):[ \t]*)['"]?([^'"\s]+)['"]?[ \t]*$/gm, (_m, a: string, f: string) => `${a}${/^https?:/.test(f) ? f : base + f}`);
 }
 
 /**
@@ -263,8 +279,8 @@ function feedPointingAt(text, base) {
  *   text(url)        resolves to what that address answers with, past any cache (null: not there)
  * Resolves to { uploaded: [keys in order] }, or throws an Error whose message says why nothing (more) was sent.
  */
-async function publishRelease({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, text, log = () => {}, dryRun = false }) {
-  const refuse = (why) => { throw new Error(`Not published: ${why}`); };
+async function publishRelease({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, text, log = () => {}, dryRun = false }: PublishOptions) {
+  const refuse: (why: string) => never = (why) => { throw new Error(`Not published: ${why}`); };
   if (!['latest', 'test'].includes(channel)) refuse(`there is no channel "${channel}" (latest or test)`);
   if (!r || !r.version) refuse('there is no release.json: build first (node bin/release.js mac)');
   if (r.dirty) refuse('that build was made with uncommitted changes. Commit, build again, then publish.');
@@ -285,15 +301,15 @@ async function publishRelease({ release: r, dir, channel = 'latest', base = DOWN
   for (const d of r.files) if (!r.update.some((f) => f.file.endsWith('.zip') && f.arch === d.arch)) refuse(`there is no update zip for ${d.arch}.`);
 
   const folder = channel === 'test' ? 'test/' : '';
-  const url = (key) => `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
-  const uploaded = [];
-  const put = async (key, file, o) => {
+  const url = (key: string) => `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
+  const uploaded: string[] = [];
+  const put = async (key: string, file: string, o: { contentType?: string; cacheControl?: string }) => {
     log(`  ${dryRun ? 'would upload' : 'uploading'} ${key}`);
     if (!dryRun) await upload(key, file, o);
     uploaded.push(key);
   };
   // 1. the binaries, each checked where it is served before anything names it
-  const kind = (f) => (f.endsWith('.dmg') ? 0 : f.endsWith('.zip') ? 1 : 2);
+  const kind = (f: string) => (f.endsWith('.dmg') ? 0 : f.endsWith('.zip') ? 1 : 2);
   const binaries = all.filter((f) => f.file !== FEED_FILE).sort((a, b) => kind(a.file) - kind(b.file) || a.file.localeCompare(b.file));
   for (const f of binaries) {
     const key = folder + f.file;
@@ -305,69 +321,69 @@ async function publishRelease({ release: r, dir, channel = 'latest', base = DOWN
   // 2. the feed, last; never cached, so a new version is offered as soon as it is there
   const feedKey = folder + FEED_FILE;
   await put(feedKey, path.join(dir, FEED_FILE), { contentType: 'text/yaml', cacheControl: 'no-cache' });
-  if (!dryRun && (await text(url(feedKey))) !== feedText) refuse(`${url(feedKey)} does not answer with the feed just uploaded.`);
+  if (!dryRun && (await text!(url(feedKey))) !== feedText) refuse(`${url(feedKey)} does not answer with the feed just uploaded.`);
   // 3. everyone's version is a test version too: the test feed is moved on to it, unless it already offers a newer one
   if (channel === 'latest') {
     const testKey = `test/${FEED_FILE}`;
-    const was = dryRun ? null : await text(url(testKey));
+    const was = dryRun ? null : await text!(url(testKey));
     const wasVersion = was ? readFeed(was).version : '';
     if (wasVersion && parts(wasVersion) && !newer(r.version, wasVersion)) log(`  the test feed offers ${wasVersion}, which is not older: left as it is`);
     else {
       const copy = feedPointingAt(feedText, base);
-      const tmp = path.join(fs.mkdtempSync(path.join(require('os').tmpdir(), 'ec-feed-')), FEED_FILE);
+      const tmp = path.join(fs.mkdtempSync(path.join((require('os') as typeof import('os')).tmpdir(), 'ec-feed-')), FEED_FILE);
       fs.writeFileSync(tmp, copy);
       await put(testKey, tmp, { contentType: 'text/yaml', cacheControl: 'no-cache' });
-      if (!dryRun && (await text(url(testKey))) !== copy) refuse(`${url(testKey)} does not answer with the feed just uploaded.`);
+      if (!dryRun && (await text!(url(testKey))) !== copy) refuse(`${url(testKey)} does not answer with the feed just uploaded.`);
     }
   }
   return { uploaded };
 }
 
 /** `publish` from the command line: wrangler through `cf` (this project's Cloudflare token), and fetch to check. */
-async function publish(flags) {
+async function publish(flags: string[]) {
   const channel = flags.includes('--channel') ? flags[flags.indexOf('--channel') + 1] : 'latest';
   const win = flags.includes('--win');
   const file = flags.includes('--release') ? path.resolve(flags[flags.indexOf('--release') + 1] || '') : path.join(ROOT, win ? WIN_OUT : 'dist.noindex', 'release.json');
-  const r = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+  const r: Release | null = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
   const dryRun = flags.includes('--dry-run');
-  const upload = async (key, src, o) => {
+  const upload = async (key: string, src: string, o: { contentType?: string; cacheControl?: string }) => {
     const args = ['cues/cloudflare', 'r2', 'object', 'put', `${BUCKET}/${key}`, '--file', src, '--remote',
       ...(o.contentType ? ['--content-type', o.contentType] : []), ...(o.cacheControl ? ['--cache-control', o.cacheControl] : [])];
     const x = spawnSync('cf', args, { stdio: 'inherit', env: { ...process.env, AWS_PROFILE: 'cues' } });
     if (x.status !== 0) throw new Error(`the upload of ${key} failed (cf ${args.join(' ')})`);
   };
-  const fresh = (u) => `${u}${u.includes('?') ? '&' : '?'}check=${Date.now()}`;
+  const fresh = (u: string) => `${u}${u.includes('?') ? '&' : '?'}check=${Date.now()}`;
   // (as a downloader gets it: the plain address, through Cloudflare's cache, which can still hold an older file of the
   // same name for hours; the first byte alone answers with the whole file's size)
-  const size = async (u) => {
+  const size = async (u: string) => {
     const x = await fetch(u, { headers: { range: 'bytes=0-0' } });
     if (!x.ok) return null;
     const whole = /\/(\d+)$/.exec(x.headers.get('content-range') || '');
     return whole ? Number(whole[1]) : Number(x.headers.get('content-length'));
   };
-  const text = async (u) => { const x = await fetch(fresh(u), { headers: { 'cache-control': 'no-cache' } }); return x.ok ? x.text() : null; };
+  const text = async (u: string) => { const x = await fetch(fresh(u), { headers: { 'cache-control': 'no-cache' } }); return x.ok ? x.text() : null; };
   console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${win ? ' for Windows' : ''} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
   if (win) {
     try {
       const out = await publishDownloads({ release: r, dir: path.dirname(file), channel, upload, size, log: (l) => console.log(l), dryRun });
-      console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: the Windows installers for ${r.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}.`);
+      console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: the Windows installers for ${r!.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}.`);
       if (channel !== 'test') console.log(`Next: node bin/release.js site --base ${DOWNLOADS}`);
-    } catch (err) { fail(err.message); }
+    } catch (err) { fail((err as Error).message); }
     return;
   }
   try {
     const out = await publishRelease({ release: r, dir: path.dirname(file), channel, upload, size, text, log: (l) => console.log(l), dryRun });
-    console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}${FEED_FILE} offers ${r.version}.`);
+    console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}${FEED_FILE} offers ${r!.version}.`);
     console.log(channel === 'test' ? 'Next: in an installed app, Settings ▸ General ▸ Test versions, then Help ▸ Check for Updates….'
       : `Next: node bin/release.js site --base ${DOWNLOADS}`);
-  } catch (err) { fail(err.message); }
+  } catch (err) { fail((err as Error).message); }
 }
 
 /** The part of a page between <!-- release:NAME --> and <!-- /release:NAME -->, replaced. */
-function fill(html, name, inner) {
+function fill(html: string, name: string, inner: string) {
   const re = new RegExp(`(<!-- release:${name} -->)[\\s\\S]*?(<!-- /release:${name} -->)`);
   if (!re.test(html)) fail(`the site's index.html has no <!-- release:${name} --> part`);
-  return html.replace(re, (_m, a, b) => `${a}\n${inner}\n${b}`);
+  return html.replace(re, (_m, a: string, b: string) => `${a}\n${inner}\n${b}`);
 }
 const EMAIL = 'jeshua@endlessformspuppetry.com';
 const NOTIFY = `mailto:${EMAIL}?subject=Tell%20me%20when%20Endless%20Cues%20is%20out`;
@@ -378,11 +394,11 @@ const MANUAL = '<a href="/docs/">The manual</a>';
 const FINAL_NONE = `    <h2 id="h-final">Want to know when there&rsquo;s a download?</h2>
     <p class="lede">Email <a data-link="notify" href="${NOTIFY}"><span data-fill="email">${EMAIL}</span></a> and I&rsquo;ll tell you when there is one. If you like, say what you run your shows on now.</p>`;
 
-function site(flags) {
+function site(flags: string[]) {
   const dir = siteDir(flags);
   if (!fs.existsSync(path.join(dir, 'index.html'))) fail(`There is no site at ${dir}.\nThe site lives in the service repository (endless_cues_service/site): check it out beside this one, or say where it is with --site-dir <dir>.`);
-  const readSite = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
-  const writeSite = (f, text) => fs.writeFileSync(path.join(dir, f), text);
+  const readSite = (f: string) => fs.readFileSync(path.join(dir, f), 'utf8');
+  const writeSite = (f: string, text: string) => fs.writeFileSync(path.join(dir, f), text);
   let html = readSite('index.html');
   if (flags.includes('--none')) {
     html = fill(html, 'hero', `        <a class="cta primary" data-link="notify" href="${NOTIFY}">Get notified</a>\n        ${WRITE}`);
@@ -400,14 +416,14 @@ function site(flags) {
   // A fresh build for each platform (dist.noindex/ for the Mac, dist-win.noindex/ for Windows, or --release and
   // --win-release); a platform with none keeps what the site offers already (its releases.json).
   const named = flags.includes('--release') || flags.includes('--win-release');
-  const fileOf = (flag, dflt) => (flags.includes(flag) ? path.resolve(flags[flags.indexOf(flag) + 1] || '') : named ? null : path.join(ROOT, dflt, 'release.json'));
-  const fresh = (f) => (f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null);
+  const fileOf = (flag: string, dflt: string) => (flags.includes(flag) ? path.resolve(flags[flags.indexOf(flag) + 1] || '') : named ? null : path.join(ROOT, dflt, 'release.json'));
+  const fresh = (f: string | null): Release | null => (f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null);
   const macFile = fileOf('--release', 'dist.noindex'), winFile = fileOf('--win-release', WIN_OUT);
-  if (flags.includes('--release') && !fs.existsSync(macFile)) fail(`There is no ${path.relative(ROOT, macFile)}: build first (node bin/release.js mac)`);
-  if (flags.includes('--win-release') && !fs.existsSync(winFile)) fail(`There is no ${path.relative(ROOT, winFile)}: build first (node bin/release.js win)`);
-  let prior = {}; try { prior = JSON.parse(readSite('releases.json')); } catch { /* nothing offered yet */ }
-  const url = (f) => `${base.replace(/\/+$/, '')}/${encodeURIComponent(f.file)}`;
-  const offer = (r, kept) => {
+  if (flags.includes('--release') && !fs.existsSync(macFile!)) fail(`There is no ${path.relative(ROOT, macFile!)}: build first (node bin/release.js mac)`);
+  if (flags.includes('--win-release') && !fs.existsSync(winFile!)) fail(`There is no ${path.relative(ROOT, winFile!)}: build first (node bin/release.js win)`);
+  let prior: { latest?: Release; windows?: Release } = {}; try { prior = JSON.parse(readSite('releases.json')); } catch { /* nothing offered yet */ }
+  const url = (f: FileRecord) => `${base.replace(/\/+$/, '')}/${encodeURIComponent(f.file)}`;
+  const offer = (r: Release | null, kept: Release | undefined) => {
     if (r && r.dirty) fail('That build was made with uncommitted changes. Commit, build again, then write the site.');
     if (r && r.testSigned) fail('That Windows build is signed with a test certificate. Build it again without EC_WIN_SIGN_P12.');
     if (r) return { ...r, files: r.files.map((f) => ({ ...f, url: url(f) })) };
@@ -417,33 +433,33 @@ function site(flags) {
   if (!mac && !win) fail('There is no build to offer: build first (node bin/release.js mac, or win)');
   const arm = mac && mac.files.find((f) => f.arch === 'arm64'), intel = mac && mac.files.find((f) => f.arch === 'x64');
   const pc = win && win.files.find((f) => f.arch === 'x64'), winArm = win && win.files.find((f) => f.arch === 'arm64');
-  const mb = (f) => `${Math.round(f.bytes / 1e6)} MB`;
-  const dateOf = (r) => new Date(`${r.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const mb = (f: FileRecord) => `${Math.round(f.bytes / 1e6)} MB`;
+  const dateOf = (r: Release) => new Date(`${r.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const esc = (s: unknown) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // /download/… are the addresses the pages link to; where they lead is this one file, so the files can move
   writeSite('_redirects', ['# Written by bin/release.js: the addresses the site links to, and where the files are now.',
     ...(arm ? [`/download/mac-arm64 ${arm.url} 302`, `/download/mac ${arm.url} 302`] : []),
     ...(intel ? [`/download/mac-intel ${intel.url} 302`, ...(arm ? [] : [`/download/mac ${intel.url} 302`])] : []),
     ...(pc ? [`/download/windows ${pc.url} 302`] : []), ...(winArm ? [`/download/windows-arm64 ${winArm.url} 302`] : []), ''].join('\n'));
   // (the notes are kept here for anything that reads this file; the page links to the changelog instead of listing them)
-  const record = (r, platform) => ({ version: r.version, date: r.date, commit: r.commit, signed: r.signed, files: r.files.map((f) => ({ ...f, platform })), notes: r.notes });
+  const record = (r: Release, platform: string) => ({ version: r.version, date: r.date, commit: r.commit, signed: r.signed, files: r.files.map((f) => ({ ...f, platform })), notes: r.notes });
   writeSite('releases.json', JSON.stringify({ ...(mac ? { latest: record(mac, 'mac') } : {}), ...(win ? { windows: record(win, 'windows') } : {}) }, null, 2) + '\n');
   // the buttons: in the hero by name alone, in the download part with their sizes
-  const button = (f, cls, href, label, bits) => `<a class="cta${cls}" href="${href}">${label}${bits.length ? ` <span class="cta-sub">${bits.join(' · ')}</span>` : ''}</a>`;
-  const macButtons = (size) => [arm && button(arm, ' primary', '/download/mac-arm64', 'Download for Mac', ['Apple silicon', ...(size ? [mb(arm)] : [])]),
+  const button = (f: FileRecord, cls: string, href: string, label: string, bits: string[]) => `<a class="cta${cls}" href="${href}">${label}${bits.length ? ` <span class="cta-sub">${bits.join(' · ')}</span>` : ''}</a>`;
+  const macButtons = (size: boolean) => [arm && button(arm, ' primary', '/download/mac-arm64', 'Download for Mac', ['Apple silicon', ...(size ? [mb(arm)] : [])]),
     intel && button(intel, arm ? '' : ' primary', '/download/mac-intel', arm ? 'Intel Mac' : 'Download for Mac', [...(arm ? [] : ['Intel']), ...(size ? [mb(intel)] : [])])].filter(Boolean);
-  const winButtons = (size) => [pc && button(pc, mac ? '' : ' primary', '/download/windows', size || !mac ? 'Download for Windows' : 'Windows', size ? ['64-bit', mb(pc)] : []),
+  const winButtons = (size: boolean) => [pc && button(pc, mac ? '' : ' primary', '/download/windows', size || !mac ? 'Download for Windows' : 'Windows', size ? ['64-bit', mb(pc)] : []),
     winArm && size && button(winArm, '', '/download/windows-arm64', 'Windows on Arm', [mb(winArm)])].filter(Boolean);
   html = fill(html, 'hero', `        ${[...macButtons(false), ...winButtons(false)].join('\n        ')}\n        ${WRITE}`);
   const same = mac && win && mac.version === win.version;
   const forWhat = [mac && 'macOS 12 or later', win && 'Windows 10 or 11'].filter(Boolean).join(' and ');
   const howTo = (mac && !mac.signed) || win ? 'How to open it, and checksums' : 'Checksums';
-  const versions = !mac || !win || same ? `Version ${esc((mac || win).version)}, ${dateOf(mac || win)}, for ${forWhat}.`
+  const versions = !mac || !win || same ? `Version ${esc((mac || win)!.version)}, ${dateOf((mac || win)!)}, for ${forWhat}.`
     : `Mac: version ${esc(mac.version)}, ${dateOf(mac)}. Windows: version ${esc(win.version)}, ${dateOf(win)}.`;
   html = fill(html, 'hero-fine', `      <p class="fine">${versions} <a href="#download">${howTo}</a>. ${MANUAL}.</p>`);
-  const out = !mac || !win || same ? `Version ${esc((mac || win).version)} is out${mac && win ? ' for Mac and Windows' : ''}.` : `Version ${esc(mac.version)} is out for the Mac, and ${esc(win.version)} for Windows.`;
+  const out = !mac || !win || same ? `Version ${esc((mac || win)!.version)} is out${mac && win ? ' for Mac and Windows' : ''}.` : `Version ${esc(mac.version)} is out for the Mac, and ${esc(win.version)} for Windows.`;
   html = fill(html, 'status', `      <p class="lede">${out} It is an early alpha: try it well before a show depends on it.</p>`);
-  const sum = (f) => `          <dt>${esc(f.file)}</dt><dd><code>${esc(f.sha256)}</code></dd>`;
+  const sum = (f: FileRecord) => `          <dt>${esc(f.file)}</dt><dd><code>${esc(f.sha256)}</code></dd>`;
   const macOpen = mac && !mac.signed ? `      <p class="open"><b>Opening it the first time.</b> I haven&rsquo;t signed this build with an Apple Developer ID yet, so macOS will refuse to open it and may say it&rsquo;s damaged. It isn&rsquo;t. Drag the app to Applications, then in Terminal run <code>xattr -dr com.apple.quarantine "/Applications/Endless Cues Public Alpha.app"</code> and open it again.</p>\n` : '';
   // (a new certificate has no reputation with SmartScreen yet, so even a signed installer may be warned about at first)
   const winOpen = win && win.signed ? `      <p class="open"><b>Opening it on Windows.</b> The installer is signed, but while it is new to Windows it may still say &ldquo;Windows protected your PC&rdquo;. Click <b>More info</b>, then <b>Run anyway</b>. It installs for you alone and doesn&rsquo;t ask for an administrator.</p>\n`
@@ -452,8 +468,8 @@ function site(flags) {
   <div class="wrap dl">
     <div>
       <p class="kicker"><span class="dot go"></span>Download</p>
-      <h2 id="h-download">Endless Cues ${esc(!mac || !win || same ? (mac || win).version : `${mac.version} · ${win.version}`)}</h2>
-      <p class="lede">${dateOf(mac || win)}. For ${forWhat}.${mac && mac.signed ? ' The Mac app is signed and notarised by Apple.' : ''}${win && win.signed ? ' The Windows installer is signed through Microsoft.' : ''}</p>
+      <h2 id="h-download">Endless Cues ${esc(!mac || !win || same ? (mac || win)!.version : `${mac.version} · ${win.version}`)}</h2>
+      <p class="lede">${dateOf((mac || win)!)}. For ${forWhat}.${mac && mac.signed ? ' The Mac app is signed and notarised by Apple.' : ''}${win && win.signed ? ' The Windows installer is signed through Microsoft.' : ''}</p>
     </div>
     <div>
 ${mac ? `      <div class="cta-row">
@@ -465,7 +481,7 @@ ${mac ? `      <div class="cta-row">
 ` : ''}${macOpen}${winOpen}      <details class="sums">
         <summary>SHA-256 checksums</summary>
         <dl>
-${[arm, intel, pc, winArm].filter(Boolean).map(sum).join('\n')}
+${[arm, intel, pc, winArm].filter((f): f is FileRecord => !!f).map(sum).join('\n')}
         </dl>
         <p>${[mac && 'On a Mac, in Terminal: <code>shasum -a 256</code> and the file&rsquo;s name.', win && 'On Windows, in PowerShell: <code>Get-FileHash</code> and the file&rsquo;s name.'].filter(Boolean).join(' ')}</p>
       </details>

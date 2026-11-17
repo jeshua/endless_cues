@@ -14,20 +14,20 @@ import { applyOps } from '../core/show/ops';
 
 const RATE = 44100;
 
-function writeWav(file, left, right = left) {
+function writeWav(file: string, left: Float32Array, right = left) {
   const n = left.length;
   const buf = Buffer.alloc(44 + n * 4);
   buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 4, 4); buf.write('WAVE', 8);
   buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(2, 22);
   buf.writeUInt32LE(RATE, 24); buf.writeUInt32LE(RATE * 4, 28); buf.writeUInt16LE(4, 32); buf.writeUInt16LE(16, 34);
   buf.write('data', 36); buf.writeUInt32LE(n * 4, 40);
-  const s16 = (x) => Math.max(-32768, Math.min(32767, Math.round(x * 32767)));
+  const s16 = (x: number) => Math.max(-32768, Math.min(32767, Math.round(x * 32767)));
   for (let i = 0; i < n; i++) { buf.writeInt16LE(s16(left[i]), 44 + i * 4); buf.writeInt16LE(s16(right[i]), 46 + i * 4); }
   fs.writeFileSync(file, buf);
 }
 
 // a small deterministic noise source, so the files are the same every time
-function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
+function rng(seed: number) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 const TAU = Math.PI * 2;
 
 /** The underscore: 16 bars at 120 bpm, a pad that changes chord every 4 bars over a soft pulse. Loops cleanly per 4 bars. */
@@ -95,7 +95,7 @@ function bell(secs = 4, f = 660) {
   return { L, R };
 }
 
-function makeDemo(dir) {
+function makeDemo(dir: string) {
   const media = path.join(dir, 'media');
   fs.mkdirSync(media, { recursive: true });
   const u = underscore();

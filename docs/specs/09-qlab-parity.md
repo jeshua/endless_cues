@@ -442,7 +442,7 @@ All of this is tested to the byte against the MIDI, MTC, MSC, Standard MIDI File
 | The whole workspace scriptable from outside | AppleScript dictionary, OSC | 🟡 | The show is a readable JSON file with a command line (`ec validate / outline / diff / simulate / versions / apply / import-qlab`) and an MCP server. A running show can be driven and partly read and written over OSC (section 13): transport, ten cue properties, the lists. Not levels, not making or moving cues. |
 | An assistant that edits the show and proposes the change for review | No | ➕ | A private draft, a diff to accept or reject; bring your own key or use Claude Code or Codex. Its tools are tested directly and one live turn was run; the key-based providers have not met a live service. |
 | Other agents can work on a show (MCP) | No | ➕ | Against the open app or a show folder. |
-| Edit a show file from the command line, checked as every edit is | No | ➕ | `ec apply <show> <ops.json>`: the same operations the app and the assistant write, shape-checked in one place (`core/show/ops.js`) and refused with the reason (tested). |
+| Edit a show file from the command line, checked as every edit is | No | ➕ | `ec apply <show> <ops.json>`: the same operations the app and the assistant write, shape-checked in one place (`core/show/ops.ts`) and refused with the reason (tested). |
 
 ## 17. Collaboration, remote and controllers
 
@@ -544,7 +544,7 @@ Things the first audit turned up in our own code, none of which depends on QLab,
 **Says one thing, does another.**
 
 - The engine's header and the Mix cue's summary saying Mix "turns ducking on or off": corrected.
-- `core/show/versions.js` saying every edit is saved at once: corrected.
+- `core/show/versions.ts` saying every edit is saved at once: corrected.
 - The "Endless Cues account" assistant provider: no longer offered (it shows only in a show already set to it).
 - `.ecshow` declared as a file type with nothing to open one: a handler is written for a show folder, a `show.json` and a `.qlab5`. Not run from the desktop in a packaged build.
 - `docs/specs/12-roadmap.md` listing built things as future: brought up to date (R18).

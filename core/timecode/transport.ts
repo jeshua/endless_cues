@@ -24,35 +24,77 @@ import * as tc from './timecode';
 import { Chaser } from './chase';
 import { Playout, mtcSource } from '../net/playout';
 import * as smf from '../net/smf';
+import type { PlayoutMessage } from '../net/playout';
+import type { Cue, ShowDoc } from '../show/types';
+import type { TC, RateIn } from './timecode';
+
+/** What of the cue engine the transport reads and moves. */
+export interface TransportEngine {
+  fades: Map<string, { run?: unknown; startedAt: number; pausedAt?: number | null }>;
+  byId: Map<string, unknown>;
+  playhead: string | null | undefined;
+  changed(): void;
+  lengthOf(id: string): number;
+  fire(id: string, offset: number): unknown;
+  start(id: string): unknown;
+  topOf(id: string): string | null | undefined;
+  setPlayhead(id: string | null | undefined): unknown;
+}
+/** The show's chase settings (settings.timecode). */
+export interface ChaseSettings { source?: string; rate?: string; catchUp?: boolean; follow?: boolean }
+/** What the audio window is told of an LTC stream. */
+export interface LtcCmd { op: 'ltc'; key: string; on: boolean; rate?: RateIn; frames?: number; at?: number; channel?: number; db?: number }
+/** A line for the network monitor. */
+export interface TransportRecord { dir: 'out'; who: string; patch: null; text: string; ok: boolean; why?: string; label: string }
+export interface TransportDeps {
+  engine: TransportEngine;
+  now: () => number;
+  every: (fn: () => void, ms: number) => () => void;
+  soon?: (fn: () => void) => unknown;
+  sendMidi: (messages: PlayoutMessage[]) => void;
+  audio: (cmd: LtcCmd) => void;
+  record?: (line: TransportRecord) => void;
+  log?: (text: string) => void;
+  notice?: (text: string, ms?: number) => void;
+  read: (file: string) => Buffer;
+  midiWhyNot?: () => string;
+  settings?: () => ChaseSettings | null | undefined;
+}
+/** A Timecode or MIDI File cue, as the engine fires it. */
+export type TransportCue = Pick<Cue, 'id' | 'number' | 'name' | 'file' | 'rate' | 'fps' | 'timecode' | 'output' | 'channel' | 'gainDb' | 'duration'> & { type: string };
+/** What is playing out, by cue id. */
+type Run = { kind: 'file'; label: string }
+  | { kind: 'mtc'; rate: RateIn; start: number; label: string }
+  | { kind: 'ltc'; rate: RateIn; start: number; on: boolean; startedAt: number | null; label: string; channel: number; db: number };
 
 const TICK_MS = 20;
 const LOOKAHEAD = 0.1;           // s: how far ahead MIDI is handed over
 const GONE_AFTER = 0.25;         // s without a frame: incoming timecode has stopped
 
-function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().then(fn), sendMidi, audio, record = () => {}, log = () => {}, notice = () => {}, read, midiWhyNot = () => '', settings = () => ({}) }) {
+function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().then(fn), sendMidi, audio, record = () => {}, log = () => {}, notice = () => {}, read, midiWhyNot = () => '', settings = () => ({}) }: TransportDeps) {
   const playout = new Playout({ lookahead: LOOKAHEAD });
-  const runs = new Map();          // cue id -> { kind: 'mtc' | 'ltc' | 'file', rate, start (frames), on, startedAt, label }
-  let stopTick = null;
+  const runs = new Map<string, Run>();          // cue id -> { kind: 'mtc' | 'ltc' | 'file', rate, start (frames), on, startedAt, label }
+  let stopTick: (() => void) | null = null;
   const reader = new tc.MtcReader();
   const chaser = new Chaser();
-  let heard = null;                // { frames, rate, at, source, running }: the last incoming timecode
-  let texts = [];                  // [{ id, text }]: the show's timecode triggers, as written
-  let chaseRate = '';              // the rate the chaser's frames were worked out at
+  let heard: { frames: number; rate: RateIn; at: number; source: 'mtc' | 'ltc'; running: boolean } | null = null;                // { frames, rate, at, source, running }: the last incoming timecode
+  let texts: { id: string; text: string }[] = [];                  // [{ id, text }]: the show's timecode triggers, as written
+  let chaseRate: RateIn = '';              // the rate the chaser's frames were worked out at
 
-  const entryOf = (id) => { const f = engine.fades.get(id); return f && f.run ? f : null; };
+  const entryOf = (id: string) => { const f = engine.fades.get(id); return f && f.run ? f : null; };
   // (and a first look as soon as the engine has filed what it just started, rather than up to 20 ms later)
   const wake = () => { if (!stopTick) stopTick = every(tick, TICK_MS); soon(() => { if (stopTick) tick(); }); };
   const sleepIfIdle = () => { if (stopTick && !runs.size && !(heard && heard.running)) { stopTick(); stopTick = null; } };
-  const labelOf = (cue) => `${cue.number || ''} ${cue.name || ''}`.trim();
+  const labelOf = (cue: TransportCue) => `${cue.number || ''} ${cue.name || ''}`.trim();
 
   /** The engine fires a Timecode or MIDI File cue. Throws (and the engine logs it) when it cannot play. */
-  function run(cue, offset = 0) {
+  function run(cue: TransportCue, offset = 0) {
     const label = labelOf(cue);
-    const fail = (why, text) => { record({ dir: 'out', who: 'MIDI', patch: null, text, ok: false, why, label }); notice(`${cue.number ? `${cue.number} · ` : ''}${cue.name || 'A cue'} did not start: ${why}`, 8000); throw new Error(why); };
+    const fail: (why: string, text: string) => never = (why, text) => { record({ dir: 'out', who: 'MIDI', patch: null, text, ok: false, why, label }); notice(`${cue.number ? `${cue.number} · ` : ''}${cue.name || 'A cue'} did not start: ${why}`, 8000); throw new Error(why); };
     drop(cue.id);
     if (cue.type === 'midifile') {
       let file;
-      try { file = smf.parse(read(cue.file)); } catch (err) { fail(/ENOENT|no such file/.test(err.message) ? 'its file is missing' : err.message, `MIDI file ${cue.file}`); }
+      try { file = smf.parse(read(cue.file!)); } catch (err) { fail(/ENOENT|no such file/.test((err as Error).message) ? 'its file is missing' : (err as Error).message, `MIDI file ${cue.file}`); }
       const why = midiWhyNot();
       if (why) fail(why, `MIDI file ${cue.file}`);
       const stream = new smf.MidiFileStream(file, { rate: cue.rate });
@@ -62,11 +104,11 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
       wake();
       return stream.total;
     }
-    const rate = tc.RATES[cue.fps] ? cue.fps : '30';
+    const rate = tc.RATES[cue.fps!] ? cue.fps : '30';
     const at = tc.parse(cue.timecode === undefined ? '01:00:00:00' : cue.timecode);
     const bad = tc.whyNot(at, rate);
     if (bad) fail(bad, `timecode ${cue.timecode}`);
-    const start = tc.toFrames(at, rate);
+    const start = tc.toFrames(at!, rate);
     const text = `${cue.output === 'ltc' ? 'LTC' : 'MTC'} from ${tc.format(at, rate)} at ${tc.rateOf(rate).label} fps`;
     if (cue.output === 'ltc') {
       runs.set(cue.id, { kind: 'ltc', rate, start, on: false, startedAt: null, label, channel: Math.max(1, Math.round(Number(cue.channel) || 1)), db: Number.isFinite(Number(cue.gainDb)) ? Number(cue.gainDb) : -12 });
@@ -81,7 +123,7 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
     wake();
     return Number(cue.duration) > 0 ? Number(cue.duration) : 0;
   }
-  function drop(id) {
+  function drop(id: string) {
     const r = runs.get(id);
     if (!r) return;
     runs.delete(id);
@@ -91,7 +133,7 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
   function tick() {
     const t = now();
     // MIDI: what is due in the next tenth of a second, and the ends of what has stopped
-    const state = (id) => { const f = entryOf(id); return f ? { startedAt: f.startedAt, pausedAt: f.pausedAt == null ? null : f.pausedAt } : null; };
+    const state = (id: string) => { const f = entryOf(id); return f ? { startedAt: f.startedAt, pausedAt: f.pausedAt == null ? null : f.pausedAt } : null; };
     const due = playout.tick(t, state);
     if (due.length) sendMidi(due);
     for (const [id, r] of [...runs]) {
@@ -110,20 +152,20 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
 
   // ── in ─────────────────────────────────────────────────────────────────────────────────────────────────
   const source = () => { const s = (settings() || {}).source; return s === 'mtc' || s === 'ltc' ? s : 'off'; };
-  function setChase(rate) {
+  function setChase(rate: RateIn) {
     chaseRate = rate;
-    chaser.set(texts.map((x) => ({ id: x.id, frames: tc.framesOf(x.text, rate), length: () => engine.lengthOf(x.id) })).filter((x) => x.frames != null));
+    chaser.set(texts.map((x) => ({ id: x.id, frames: tc.framesOf(x.text, rate), length: () => engine.lengthOf(x.id) })).filter((x): x is typeof x & { frames: number } => x.frames != null));
   }
-  function configure(doc) {
+  function configure(doc: ShowDoc) {
     texts = [];
-    const walk = (cues) => { for (const c of cues || []) { if (c.timecodeTrigger) texts.push({ id: c.id, text: c.timecodeTrigger }); walk(c.children); } };
+    const walk = (cues: Cue[] | undefined) => { for (const c of cues || []) { if (c.timecodeTrigger) texts.push({ id: c.id, text: c.timecodeTrigger }); walk(c.children); } };
     for (const l of doc.lists || []) walk(l.cues);
     setChase(chaseRate || (settings() || {}).rate || '30');
     if (source() === 'off' && heard) { heard = null; chaser.park(); }
   }
   /** Where incoming timecode is: `frames` (a fraction allowed) at `at` on this clock. `located`: said outright
    *  while not running (an MTC full frame), so it is shown and nothing is started by it. */
-  function arrived(src, frames, rate, at, located) {
+  function arrived(src: 'mtc' | 'ltc', frames: number, rate: RateIn, at: number, located: boolean) {
     const was = heard;
     heard = { frames, rate, at, source: src, running: !located };
     if (rate !== chaseRate) setChase(rate);
@@ -140,7 +182,7 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
     if (cfg.follow !== false && (fire.length || !was || !was.running)) { const next = chaser.next(frames); if (next && engine.byId.has(next) && engine.playhead !== engine.topOf(next)) engine.setPlayhead(engine.topOf(next)); }
     if (!was || !was.running) engine.changed();
   }
-  function midiIn(bytes, at = now()) {
+  function midiIn(bytes: ArrayLike<number>, at = now()) {
     const quarter = bytes[0] === 0xf1, full = bytes[0] === 0xf0 && bytes[1] === 0x7f && bytes[3] === 0x01 && bytes[4] === 0x01;
     if (!quarter && !full) return false;
     if (source() !== 'mtc') return true;                 // timecode nobody asked for: not shown 120 times a second in the monitor either
@@ -148,16 +190,16 @@ function createTransport({ engine, now, every, soon = (fn) => Promise.resolve().
     if (r) arrived('mtc', r.frames, r.rate, at, r.full);
     return true;
   }
-  function ltcIn(frame, at = now()) {
+  function ltcIn(frame: { tc?: TC; rate?: RateIn } | null | undefined, at = now()) {
     if (source() !== 'ltc' || !frame || !frame.tc) return;
-    const rate = tc.RATES[frame.rate] ? frame.rate : '30';
+    const rate = tc.RATES[frame.rate as string] ? frame.rate : '30';
     if (tc.whyNot(frame.tc, rate)) return;
     arrived('ltc', tc.toFrames(frame.tc, rate) + 1, rate, at, false);      // (a frame is known once it has gone by: the time now is the one after)
   }
 
-  function lengthOf(file) { try { return smf.parse(read(file)).seconds; } catch { return 0; } }
+  function lengthOf(file: string) { try { return smf.parse(read(file)).seconds; } catch { return 0; } }
   function status() {
-    const t = now(), out = [];
+    const t = now(), out: { id: string; kind: Run['kind']; paused: boolean; rate?: RateIn; text?: string }[] = [];
     for (const [id, r] of runs) {
       const f = entryOf(id);
       if (!f) continue;

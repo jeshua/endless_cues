@@ -10,15 +10,15 @@ Two ways a show reaches its lights, and a show may use either or both:
 ## 1. The pieces
 
 ```
-show.json  settings.light ─▶ core/light/patch.js     names, fixtures, addresses, groups; what cannot work → problems
-                              core/light/fixtures.js  what a kind of light is: its channels, homes, default parameter
-Light cue  levels (text)  ─▶ core/light/commands.js  "front = 80" → { 'front.intensity': 80 }
-cue engine (GO, pause…)   ─▶ core/light/lighting.js  the glue, and the one timer (40 Hz)
-                              core/light/rig.js       every level now; moves between states; DMX per universe
-                              core/light/output.js    sockets: Art-Net (artnet.js), sACN (sacn.js)
+show.json  settings.light ─▶ core/light/patch.ts     names, fixtures, addresses, groups; what cannot work → problems
+                              core/light/fixtures.ts  what a kind of light is: its channels, homes, default parameter
+Light cue  levels (text)  ─▶ core/light/commands.ts  "front = 80" → { 'front.intensity': 80 }
+cue engine (GO, pause…)   ─▶ core/light/lighting.ts  the glue, and the one timer (40 Hz)
+                              core/light/rig.ts       every level now; moves between states; DMX per universe
+                              core/light/output.ts    sockets: Art-Net (artnet.ts), sACN (sacn.ts)
 ```
 
-Everything under `core/light/` is plain Node and tested with `node --test` (`test/light*.test.js`). The host (`app/main/host.js`) makes one `createLighting`, hands it the engine, gives it `settings.light` whenever the show changes, and passes on Panic, Reset and the `light-…` commands.
+Everything under `core/light/` is plain Node and tested with `node --test` (`test/light*.test.js`). The host (`app/main/host.ts`) makes one `createLighting`, hands it the engine, gives it `settings.light` whenever the show changes, and passes on Panic, Reset and the `light-…` commands.
 
 ## 2. The patch (`settings.light`)
 
@@ -61,7 +61,7 @@ Not read: QLab's `= cue A` (a pull from another cue; reported as an error on tha
 
 ## 4. Light cues
 
-The `light` type (`core/show/cue-types.js`) has `levels` (the text), `duration` (the fade time, default 3 s), `block` ("Full state"), and the desk's `lightCue` and `follows`. A cue with neither levels nor a desk cue number is an error.
+The `light` type (`core/show/cue-types.ts`) has `levels` (the text), `duration` (the fade time, default 3 s), `block` ("Full state"), and the desk's `lightCue` and `follows`. A cue with neither levels nor a desk cue number is an error.
 
 - **Tracking.** A level stays where it was put until something moves it: a cue says only what changes. A cue with **Full state** also sends every parameter it does not name home, so the stage is that cue whatever ran before. There is no "collate previous cues": jumping into the middle of a show gives whatever is live plus that cue, unless it is a full state.
 - **The fade** is linear, one time for the whole cue. In the engine it is an entry in `fades` (`light: true`): it shows in Active Cues, an auto-follow waits for it, it pauses and resumes with its cue, and a Stop cue aimed at it (or S) leaves the lights where they have got to. The rig has no clock for it: every refresh, `lighting.step()` reads how far the engine's fade has got. That is why pause, resume and stop need no second timer.
@@ -77,7 +77,7 @@ The **Lights** drawer (⇧⌘D, View ▸ Light Dashboard) sits beside the cue li
 - **New cue: everything** records every level, marked Full state.
 - **Update** writes the hand-moved levels into the one Light cue selected: a line that set exactly that level is rewritten in place, anything else is added at the end.
 
-Recording is an edit (`cue.add` / `cue.set` through `core/show/ops.js`), so it is undoable and locked in Show mode. Host commands: `light-set { text, secs }`, `light-level { name, param, value, secs }`, `light-blackout { on }`, `light-clear { secs }`, `light-revert { secs }`, `light-record { mode: 'changes' | 'all', id?, after? }`, `light-fixture { id?, name, text }`. The pushed state has `light`: instruments with their parameters, groups, `blackout`, `changed`, universes with what was sent, Art-Net nodes heard, patch problems, the fixture list.
+Recording is an edit (`cue.add` / `cue.set` through `core/show/ops.ts`), so it is undoable and locked in Show mode. Host commands: `light-set { text, secs }`, `light-level { name, param, value, secs }`, `light-blackout { on }`, `light-clear { secs }`, `light-revert { secs }`, `light-record { mode: 'changes' | 'all', id?, after? }`, `light-fixture { id?, name, text }`. The pushed state has `light`: instruments with their parameters, groups, `blackout`, `changed`, universes with what was sent, Art-Net nodes heard, patch problems, the fixture list.
 
 Not built: parking, subcontrollers, an audition (blind) tab, undo of dashboard changes, update-originating-cues, MIDI control of the dashboard, a DMX status window, fade curves.
 
@@ -90,13 +90,13 @@ Not built: parking, subcontrollers, an audition (blind) tab, undo of dashboard c
 ## 7. On the wire
 
 - One timer in the main process, at `rate` (40 Hz): moves advance, every universe is rendered and **sent whether it changed or not**. That steady stream is how the last frame is held; there is no "send on change" mode. With no instrument there is no timer; with Send DMX off or no universe there is no socket.
-- **Art-Net** (`artnet.js`): ArtDmx with a 1–255 sequence per universe, always 512 levels. One socket bound to UDP 6454: it answers another controller's ArtPoll with an ArtPollReply (style: controller; up to four universes of one Net and Sub-Net declared), and polls every 3 s itself so the nodes that answer can be listed in Settings ▸ Integrations ▸ Light. If 6454 is taken the levels are still sent from another port and nodes cannot be listed. A universe with no address is broadcast to every interface's broadcast address; it is not unicast to the nodes that subscribe to it (Art-Net 4's preferred way), and no interface can be chosen.
-- **sACN** (`sacn.js`): E1.31 data packets, priority 100, a CID made from the computer's name, multicast or unicast; three stream-terminated packets when a universe stops being sent. No synchronisation packets, no universe discovery, no per-address priority, and the multicast interface is the operating system's choice.
-- **A test run sends nothing.** `createLighting({ dryRun })`, set by the host for `--smoke` and for a driven session without network ports, exactly as `core/net/hub.js` takes it: every packet is built and the last one kept (`output.last(id)`), and no socket is opened. The unit tests use loopback sockets or bytes only.
+- **Art-Net** (`artnet.ts`): ArtDmx with a 1–255 sequence per universe, always 512 levels. One socket bound to UDP 6454: it answers another controller's ArtPoll with an ArtPollReply (style: controller; up to four universes of one Net and Sub-Net declared), and polls every 3 s itself so the nodes that answer can be listed in Settings ▸ Integrations ▸ Light. If 6454 is taken the levels are still sent from another port and nodes cannot be listed. A universe with no address is broadcast to every interface's broadcast address; it is not unicast to the nodes that subscribe to it (Art-Net 4's preferred way), and no interface can be chosen.
+- **sACN** (`sacn.ts`): E1.31 data packets, priority 100, a CID made from the computer's name, multicast or unicast; three stream-terminated packets when a universe stops being sent. No synchronisation packets, no universe discovery, no per-address priority, and the multicast interface is the operating system's choice.
+- **A test run sends nothing.** `createLighting({ dryRun })`, set by the host for `--smoke` and for a driven session without network ports, exactly as `core/net/hub.ts` takes it: every packet is built and the last one kept (`output.last(id)`), and no socket is opened. The unit tests use loopback sockets or bytes only.
 
 ## 8. USB DMX: what it would take
 
-Not supported. A USB interface is a serial port, and Node has none of its own: it needs the native `serialport` module, built per platform and architecture, unpacked from the asar and signed with the app. That is the first native dependency in an app that has none, so it waits for a decision rather than being slipped in. What is ready: `core/light/usb.js` builds the Enttec DMX USB Pro "send DMX" message (label 6; also spoken by the Pro Mk2 and DMXking's ultraDMX family), tested to the byte. What remains: the dependency and its packaging; listing ports and choosing one (this computer's setting, not the show's); a third `protocol` for a universe (`usb`); writing a frame only when it changes (the widget repeats the last one itself) and reopening the port when the cable comes back. The cheap "Open DMX" cables have no processor and need break timing JavaScript cannot give: they are out of scope.
+Not supported. A USB interface is a serial port, and Node has none of its own: it needs the native `serialport` module, built per platform and architecture, unpacked from the asar and signed with the app. That is the first native dependency in an app that has none, so it waits for a decision rather than being slipped in. What is ready: `core/light/usb.ts` builds the Enttec DMX USB Pro "send DMX" message (label 6; also spoken by the Pro Mk2 and DMXking's ultraDMX family), tested to the byte. What remains: the dependency and its packaging; listing ports and choosing one (this computer's setting, not the show's); a third `protocol` for a universe (`usb`); writing a frame only when it changes (the widget repeats the last one itself) and reopening the port when the cable comes back. The cheap "Open DMX" cables have no processor and need break timing JavaScript cannot give: they are out of scope.
 
 ## 9. Test script: the first real fixtures
 

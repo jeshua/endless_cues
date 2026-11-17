@@ -18,41 +18,45 @@
  */
 import * as dgram from 'dgram';
 import * as osc from '../net/osc';
+import type { OscValue } from '../net/osc';
+
+/** What `onMessage` is told of each message that arrives. */
+export interface FakePropEvent { text: string; from: string; repeat: boolean; hello: boolean; did: string; unknown?: boolean }
 
 const PORT = 53100;
 const EFFECTS = ['steady', 'breathe', 'pulse', 'flicker'];
 
-function createFakeProp({ name = 'lantern', kind = 'light', port = 0, host = '127.0.0.1', fw = '1.0', battery = 87, signal = -52, onMessage = null } = {}) {
-  let sock = null, bound = 0, quiet = false;
+function createFakeProp({ name = 'lantern', kind = 'light', port = 0, host = '127.0.0.1', fw = '1.0', battery = 87, signal = -52, onMessage = null }: { name?: string; kind?: string; port?: number; host?: string; fw?: string; battery?: number; signal?: number; onMessage?: ((e: FakePropEvent) => void) | null } = {}) {
+  let sock: dgram.Socket | null = null, bound = 0, quiet = false;
   const started = Date.now();
-  const heard = [];
-  const ids = [];                   // the last eight message ids it acted on
+  const heard: { at: number; text: string; from: string }[] = [];
+  const ids: string[] = [];                   // the last eight message ids it acted on
   const light = kind !== 'switch';
   // what it is doing: a light comes up in its own look; a switch starts off
   const st = { word: light ? 'own' : 'off', level: light ? 0.4 : 0, color: [255, 160, 60], look: 0, effect: 'steady', on: light, identified: 0 };
-  let pulseTimer = null;
+  let pulseTimer: NodeJS.Timeout | undefined;
   const prop = {
     heard, repeats: 0, hellos: 0,
     state: () => st.word,
     detail: () => ({ ...st, color: [...st.color], battery, signal }),
-    set(v = {}) { if (v.battery !== undefined) battery = Math.round(Number(v.battery)); if (v.signal !== undefined) signal = Math.round(Number(v.signal)); },
+    set(v: { battery?: unknown; signal?: unknown } = {}) { if (v.battery !== undefined) battery = Math.round(Number(v.battery)); if (v.signal !== undefined) signal = Math.round(Number(v.signal)); },
     silent(on = true) { quiet = !!on; },
     get port() { return bound; },
-    here: () => ['/ec/here', [name, light ? 'light' : 'switch', String(fw), st.word, Math.round((Date.now() - started) / 1000), signal, battery]],
+    here: (): [string, (string | number)[]] => ['/ec/here', [name, light ? 'light' : 'switch', String(fw), st.word, Math.round((Date.now() - started) / 1000), signal, battery]],
     start() {
-      return new Promise((resolve, reject) => {
+      return new Promise<{ port: number }>((resolve, reject) => {
         sock = dgram.createSocket({ type: 'udp4', reuseAddr: false });
         sock.once('error', reject);
         sock.on('message', (buf, from) => { try { arrived(buf, from); } catch { /* not OSC: a prop ignores what it cannot read */ } });
-        sock.bind(port, host, () => { sock.removeListener('error', reject); sock.on('error', () => {}); bound = sock.address().port; resolve({ port: bound }); });
+        sock.bind(port, host, () => { sock!.removeListener('error', reject); sock!.on('error', () => {}); bound = sock!.address().port; resolve({ port: bound }); });
       });
     },
     stop() { clearTimeout(pulseTimer); try { sock && sock.close(); } catch { /* closed */ } sock = null; },
   };
 
   /** What a command does, in a few words (for whoever is watching); null: not a command it has. */
-  function obey(address, args) {
-    const secs = (i) => (Number(args[i]) > 0 ? ` over ${Number(args[i])} s` : '');
+  function obey(address: string, args: OscValue[]): string | null {
+    const secs = (i: number) => (Number(args[i]) > 0 ? ` over ${Number(args[i])} s` : '');
     switch (address) {
       case '/ec/identify': st.identified++; return light ? 'blinks white for 2 s, then goes back to what it was doing' : 'answers (a switch shows nothing)';
       case '/ec/look': { const n = Math.max(0, Math.min(8, Math.round(Number(args[0]) || 0))); st.look = n; st.word = n ? `look${n}` : 'own'; st.on = true; return `${n ? `look ${n}` : 'its own look'}${secs(1)}`; }
@@ -66,22 +70,22 @@ function createFakeProp({ name = 'lantern', kind = 'light', port = 0, host = '12
     }
   }
 
-  function arrived(buf, from) {
+  function arrived(buf: Buffer, from: dgram.RemoteInfo) {
     if (quiet) return;
     for (const msg of osc.decodeAll(buf)) {
       const text = osc.toText(msg);
       const who = `${from.address}:${from.port}`;
       const args = [...msg.args];
       // one more string argument beginning "#" is the message's id: acted on once
-      let id = null;
-      if (typeof args[args.length - 1] === 'string' && /^#\w+/.test(args[args.length - 1])) id = args.pop();
+      let id: string | null = null;
+      if (typeof args[args.length - 1] === 'string' && /^#\w+/.test(args[args.length - 1] as string)) id = args.pop() as string;
       if (id && ids.includes(id)) { prop.repeats++; if (onMessage) onMessage({ text, from: who, repeat: true, hello: false, did: 'a repeat: ignored' }); continue; }
       if (id) { ids.push(id); if (ids.length > 8) ids.shift(); }
       if (msg.address === '/ec/hello') {
         prop.hellos++;
         heard.push({ at: Date.now(), text, from: who });
         const [address, values] = prop.here();
-        sock.send(osc.encode(address, values), from.port, from.address, () => {});
+        sock!.send(osc.encode(address, values), from.port, from.address, () => {});
         if (onMessage) onMessage({ text, from: who, repeat: false, hello: true, did: `answered ${osc.toText({ address, args: values })}` });
         continue;
       }

@@ -1,6 +1,6 @@
 # Releasing
 
-How a version of Endless Cues is numbered, built and offered. `bin/release.js` does the mechanical parts; it uploads
+How a version of Endless Cues is numbered, built and offered. `bin/release.ts` does the mechanical parts; it uploads
 only when a person runs `publish`, and never deploys, commits, tags or pushes: those are a person's decisions.
 
 ## Numbers
@@ -14,7 +14,7 @@ only when a person runs `publish`, and never deploys, commits, tags or pushes: t
     nobody has found a fault in for a fortnight of use.
   - The product is called "Endless Cues Public Alpha" until the first beta; then the name in `package.json`
     (`productName`) changes, and with it the app's file name.
-- **The show file's version** (`version` in `show.json`, `core/show/show.js`) is a different number. It goes up only
+- **The show file's version** (`version` in `show.json`, `core/show/show.ts`) is a different number. It goes up only
   when an older app could not safely open a newer file. A newer app always opens an older file; an older app refuses
   a newer file with a reason, and never guesses.
 - **A tag** `v<version>` marks the commit a published build was made from.
@@ -82,8 +82,8 @@ finds no `latest.yml`, and says the server has no version for this computer yet.
 Through **Azure Artifact Signing** (Microsoft's signing service, once called Trusted Signing): Microsoft holds the
 certificate and signs each file's hash, so there is no key file or token to keep. It takes individual developers in
 the United States and Canada (organisations in more places), on its Basic plan (about $10 a month).
-`build/sign-win.js` signs each file electron-builder signs (the app, its uninstaller, the installer) with
-[jsign](https://ebourg.github.io/jsign/), which runs on a Mac; `bin/release.js win` then reads every signature back
+`build/sign-win.ts` signs each file electron-builder signs (the app, its uninstaller, the installer) with
+[jsign](https://ebourg.github.io/jsign/), which runs on a Mac; `bin/release.ts win` then reads every signature back
 and refuses a build in which one is missing.
 
 Once, in the Azure portal (portal.azure.com):
@@ -121,7 +121,7 @@ An installed app (from 0.3.0-alpha.2) reads `latest-mac.yml` from `https://downl
 `…/test/` with Settings ▸ General ▸ Test versions on: once a day in Edit mode with nothing playing, and on Help ▸
 Check for Updates…. A newer version there is offered in one line in the title bar; nothing is downloaded until the
 person presses Download, and it installs when they quit (or press Restart now). The rules are in
-`core/update/updates.js` and [`docs/specs/00-defaults.md`](specs/00-defaults.md).
+`core/update/updates.ts` and [`docs/specs/00-defaults.md`](specs/00-defaults.md).
 
 - **macOS installs only a build signed by the same Developer ID as the one running.** An unsigned build can find and
   download an update and then be refused; never publish one (`publish` will not).
@@ -144,7 +144,7 @@ person presses Download, and it installs when they quit (or press Restart now). 
 ## Signing
 
 A Mac will not open an app downloaded from the web unless Apple has notarised it, which needs an Apple Developer ID
-(a paid developer account). `bin/release.js mac` signs and notarises when this computer's keychain has a
+(a paid developer account). `bin/release.ts mac` signs and notarises when this computer's keychain has a
 "Developer ID Application" certificate and the notary's credentials: a keychain profile called `endless-cues`
 (made once with `xcrun notarytool store-credentials "endless-cues" --key <AuthKey.p8> --key-id <id> --issuer <id>`;
 `EC_NOTARY_PROFILE` names another), or, failing that, the environment's own, never a file here:

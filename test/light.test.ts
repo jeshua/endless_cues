@@ -20,21 +20,21 @@ const LIGHT = {
   ],
   groups: [{ name: 'wash', members: ['front', 'side l'] }, { name: 'colour', members: ['cyc', 'par'] }, { name: 'everything lit', members: ['wash', 'colour'] }],
 };
-const levelsOf = (text, p = patchLib.compile(LIGHT)) => Object.fromEntries(commands.evaluate(text, p).levels);
+const levelsOf = (text: string, p = patchLib.compile(LIGHT)) => Object.fromEntries(commands.evaluate(text, p).levels);
 
 test('the fixture library: channels in DMX order, a default parameter, and a made-up intensity for a light with none', () => {
   const all = fixtures.all();
   assert.deepEqual([...all.keys()], ['dimmer', 'rgb', 'rgbw', 'rgba', 'dimmer-rgb', 'dimmer-rgbw', 'mover', 'mover-16']);
-  assert.equal(all.get('dimmer').footprint, 1);
-  assert.equal(all.get('rgbw').footprint, 4);
-  assert.equal(all.get('mover-16').footprint, 5);
-  assert.deepEqual(all.get('mover-16').params.map((p) => [p.key, p.offset, p.bits, p.home]), [['intensity', 0, 8, 0], ['pan', 1, 16, 50], ['tilt', 3, 16, 50]]);
+  assert.equal(all.get('dimmer')!.footprint, 1);
+  assert.equal(all.get('rgbw')!.footprint, 4);
+  assert.equal(all.get('mover-16')!.footprint, 5);
+  assert.deepEqual(all.get('mover-16')!.params.map((p) => [p.key, p.offset, p.bits, p.home]), [['intensity', 0, 8, 0], ['pan', 1, 16, 50], ['tilt', 3, 16, 50]]);
   // an RGB light has no dimmer channel: its intensity scales its colours and takes no channel
-  const rgb = all.get('rgb');
+  const rgb = all.get('rgb')!;
   assert.equal(rgb.virtual, true);
   assert.equal(rgb.default, 'intensity');
   assert.deepEqual(rgb.params.find((p) => p.key === 'intensity'), { key: 'intensity', bits: 8, home: 0, offset: -1, virtual: true });
-  assert.equal(all.get('dimmer-rgb').virtual, false);
+  assert.equal(all.get('dimmer-rgb')!.virtual, false);
 });
 
 test('a fixture of the show’s own is written as text, one parameter a line', () => {
@@ -44,23 +44,23 @@ test('a fixture of the show’s own is written as text, one parameter a line', (
     { key: 'intensity', bits: 8, home: 0 }, { key: 'red', bits: 8, home: 100 }, { key: 'green', bits: 8, home: 100 }, { key: 'blue', bits: 8, home: 100 },
     { key: 'pan', bits: 16, home: 50 }, { key: 'tilt', bits: 16, home: 40 }, { key: 'strobe', bits: 8, home: 0 }, { key: 'iris', bits: 8, home: 100 },
   ]);
-  const def = fixtures.all([{ id: 'wash7', name: 'Wash 7', params: r.params }]).get('wash7');
+  const def = fixtures.all([{ id: 'wash7', name: 'Wash 7', params: r.params }]).get('wash7')!;
   assert.equal(def.footprint, 10);
   assert.equal(def.builtIn, false);
   // and it reads back as the same text
-  assert.deepEqual(fixtures.parseText(fixtures.toText(def)).params, r.params);
-  assert.match(fixtures.parseText('red\nred').why, /twice/);
-  assert.match(fixtures.parseText('two words here').why, /line 1/);
-  assert.match(fixtures.parseText('').why, /at least one/);
+  assert.deepEqual((fixtures.parseText(fixtures.toText(def)) as { params: unknown }).params, r.params);
+  assert.match((fixtures.parseText('red\nred') as { why: string }).why, /twice/);
+  assert.match((fixtures.parseText('two words here') as { why: string }).why, /line 1/);
+  assert.match((fixtures.parseText('') as { why: string }).why, /at least one/);
 });
 
 test('the patch: addresses, groups of groups, and what cannot work is reported, not thrown', () => {
   const p = patchLib.compile(LIGHT);
   assert.deepEqual(p.problems, []);
-  assert.equal(p.instruments.get('side l').name, 'Side L');
+  assert.equal(p.instruments.get('side l')!.name, 'Side L');
   assert.deepEqual(p.resolve('WASH'), ['front', 'side l']);
   assert.deepEqual(p.resolve('everything lit'), ['front', 'side l', 'cyc', 'par']);
-  assert.equal(p.resolve('all').length, 8);
+  assert.equal(p.resolve('all')!.length, 8);
   assert.equal(p.resolve('nobody'), null);
   assert.equal(patchLib.nextFree(p, 1, 1), 3);
   assert.equal(patchLib.nextFree(p, 1, 8), 25);       // 3–9 is seven channels: an eight-channel fixture goes after the par
@@ -75,12 +75,12 @@ test('the patch: addresses, groups of groups, and what cannot work is reported, 
     ],
     groups: [{ name: 'g', members: ['a', 'h', 'ghost'] }, { name: 'h', members: ['g', 'b'] }, { name: 'a', members: [] }],
   });
-  const why = (where) => bad.problems.filter((x) => x.where === where).map((x) => x.why).join(' | ');
+  const why = (where: string) => bad.problems.filter((x) => x.where === where).map((x) => x.why).join(' | ');
   assert.match(why('universe 1'), /0 to 32767/);
   assert.match(bad.problems.map((x) => x.why).join('|'), /is there twice/);
   assert.match(why('universe 3'), /1 to 63999/);
   assert.match(why('b'), /shares DMX channels with a/);
-  assert.equal(bad.instruments.get('b').patched, false);
+  assert.equal(bad.instruments.get('b')!.patched, false);
   assert.match(why('A'), /two instruments have this name/);
   assert.match(why('all'), /word the light commands use/);
   assert.match(why('1-3'), /range/);
@@ -88,13 +88,13 @@ test('the patch: addresses, groups of groups, and what cannot work is reported, 
   assert.match(why('end'), /does not fit/);
   assert.match(why('odd'), /not in the library/);
   assert.match(why('far'), /universe 9 is not set up/);
-  assert.equal(bad.instruments.get('loose').patched, false);       // no address yet: fine, and not a problem
+  assert.equal(bad.instruments.get('loose')!.patched, false);       // no address yet: fine, and not a problem
   assert.equal(why('loose'), '');
   assert.match(why('g'), /“ghost” is not an instrument or a group/);
-  assert.deepEqual(bad.groups.get('g').members, ['a', 'b']);       // g holds h holds g: it stops there
+  assert.deepEqual(bad.groups.get('g')!.members, ['a', 'b']);       // g holds h holds g: it stops there
   assert.match(why('a'), /already an instrument/);
   assert.doesNotThrow(() => patchLib.compile(null));
-  assert.doesNotThrow(() => patchLib.compile({ instruments: 'no', groups: 7, universes: [null] }));
+  assert.doesNotThrow(() => patchLib.compile({ instruments: 'no', groups: 7, universes: [null] } as unknown as Parameters<typeof patchLib.compile>[0]));
 });
 
 test('light commands: instruments, groups, all, parameters, colours, ranges and lists', () => {
@@ -153,13 +153,13 @@ test('levels are written back as text a person can read, and merged into a cue�
   assert.equal(commands.merge('', new Map([['front.intensity', 70]]), p), 'front = 70');
 });
 
-const dmx = (rig, universe, from, n) => [...rig.render().get(universe).subarray(from - 1, from - 1 + n)];
+const dmx = (rig: ReturnType<typeof createRig>, universe: number, from: number, n: number) => [...rig.render().get(universe)!.subarray(from - 1, from - 1 + n)];
 
 test('the rig renders DMX: 8- and 16-bit channels at their addresses, home levels, a made-up intensity scaling colours', () => {
   const rig = createRig();
   rig.setPatch(LIGHT);
   assert.deepEqual([...rig.render().keys()], [1, 2]);
-  assert.equal(rig.render().get(1).length, 512);
+  assert.equal(rig.render().get(1)!.length, 512);
   assert.deepEqual(dmx(rig, 1, 1, 2), [0, 0]);
   assert.deepEqual(dmx(rig, 2, 101, 5), [0, 0x80, 0x00, 0x80, 0x00]);       // the mover at home: dark, pan and tilt in the middle (32768)
   rig.run({ id: 'a', levels: 'front = 100\nside l = 50\ncyc = 50\ncyc.blue = 0\npar = 100\npar.white = 20\nspot = 10\nspot.pan = 25\nspot.tilt = 100' });
@@ -172,7 +172,7 @@ test('the rig renders DMX: 8- and 16-bit channels at their addresses, home level
   rig.run({ id: 'b', levels: 'loose = 100' });
   assert.equal(rig.level('loose.intensity'), 100);
   assert.equal(rig.level('front.intensity'), 100);                          // and a patch change kept what was live
-  assert.equal(rig.render().get(1).reduce((a, b) => a + b, 0), 255 + 128 + 128 + 128 + 255 * 4 + 51);
+  assert.equal(rig.render().get(1)!.reduce((a, b) => a + b, 0), 255 + 128 + 128 + 128 + 255 * 4 + 51);
 });
 
 test('levels track: a cue changes only what it names; a full-state cue sends the rest home', () => {
@@ -183,8 +183,8 @@ test('levels track: a cue changes only what it names; a full-state cue sends the
   assert.equal(rig.level('front.intensity'), 80);
   assert.equal(rig.level('side l.intensity'), 30);
   const s = rig.snapshot();
-  assert.equal(s.instruments.find((i) => i.name === 'front').params[0].cue, 'a');
-  assert.equal(s.instruments.find((i) => i.name === 'Side L').params[0].cue, 'b');
+  assert.equal(s.instruments.find((i) => i.name === 'front')!.params[0].cue, 'a');
+  assert.equal(s.instruments.find((i) => i.name === 'Side L')!.params[0].cue, 'b');
   assert.equal(s.latest, 'b');
   rig.run({ id: 'c', levels: 'side l = 40', block: true });
   assert.equal(rig.level('front.intensity'), 0);
@@ -304,12 +304,12 @@ test('the dashboard’s picture: each instrument’s level, its colour as data, 
   rig.setPatch(LIGHT);
   rig.run({ id: 'a', levels: 'front = 100\nside l = 20\ncyc = 80\ncyc.colour = #ff8000' });
   const s = rig.snapshot();
-  const cyc = s.instruments.find((i) => i.name === 'cyc');
+  const cyc = s.instruments.find((i) => i.name === 'cyc')!;
   assert.equal(cyc.level, 80);
   assert.equal(cyc.colour, '#ff8000');
   assert.equal(cyc.address, 10); assert.equal(cyc.footprint, 3); assert.equal(cyc.patched, true);
-  assert.equal(s.instruments.find((i) => i.name === 'front').colour, null);
-  const wash = s.groups.find((g) => g.name === 'wash');
+  assert.equal(s.instruments.find((i) => i.name === 'front')!.colour, null);
+  const wash = s.groups.find((g) => g.name === 'wash')!;
   assert.deepEqual([wash.level, wash.mixed, wash.members], [100, true, ['front', 'Side L']]);
   assert.equal(s.changed, 0);
 });

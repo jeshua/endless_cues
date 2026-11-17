@@ -1,6 +1,6 @@
 # 03 · The show file
 
-Source: `core/show/` (`show.js`, `cue-types.js`, `ops.js`, `diff.js`, `versions.js`, `document.js`), tested by `test/show.test.js`.
+Source: `core/show/` (`show.ts`, `cue-types.ts`, `ops.ts`, `diff.ts`, `versions.ts`, `document.ts`), tested by `test/show.test.ts`.
 
 ## On disk
 
@@ -11,9 +11,9 @@ MyShow.ecshow/
   versions/
     index.json       [{ id, at, note, author, hash, cues }], oldest first
     <hash>.json      a whole show.json as it was
-  backups/           timed copies of the working document: "2026-03-14 19.05.09.json" (core/show/backups.js)
-  logs/playback.csv  what played, when, for how long (core/engine/playlog.js)
-  logs/<date time>.log, .csv   the show log, one sitting each: GOs, cues, triggers, problems (core/log/show-log.js)
+  backups/           timed copies of the working document: "2026-03-14 19.05.09.json" (core/show/backups.ts)
+  logs/playback.csv  what played, when, for how long (core/engine/playlog.ts)
+  logs/<date time>.log, .csv   the show log, one sitting each: GOs, cues, triggers, problems (core/log/show-log.ts)
   recordings/        the show's sound, when ● Rec is on
 ```
 
@@ -34,7 +34,7 @@ A cue's `file` is relative to the show folder (`media/rain.wav`). Sounds dropped
     "go":      { "doubleGoProtection": 0.3, "panicFade": 1 },
     "editing": { "autoNumber": true, "numberStep": 1,     // a new cue takes the next number, counting by the step
                  "lockPlayhead": true },                  // selecting a cue stands by on it; false: the two go their own ways
-    "templates": { "fade": { "duration": 5, "stopTarget": true } },   // what a new cue of a type starts with (core/show/templates.js)
+    "templates": { "fade": { "duration": 5, "stopTarget": true } },   // what a new cue of a type starts with (core/show/templates.ts)
     "audio":   { "masterDb": 0, "limiter": true,
                  "levels": { "min": -60, "max": 12 }, "monitor": { "on": false, "out": 3, "db": -12 },
                  "buses": [ { "id": "music", "name": "Music", "db": 0, "kind": "music" }, … ] },     // a kind is a label; 05 · Audio
@@ -60,12 +60,12 @@ A cue:
 
 ```jsonc
 {
-  "type": "group",              // one of the types in core/show/cue-types.js
+  "type": "group",              // one of the types in core/show/cue-types.ts
   "number": "3",                // what the operator calls it: any text, may be empty, need not be unique (a warning if not)
   "name": "Thunder",            // empty: a default is shown ("fade Rain", the file's name)
   "id": "c_9f8e7d6c",           // stable for the cue's life; targets refer to this, never to the number
   "notes": "On “…and the sky answered.”",
-  "color": "orange", "flagged": false, "armed": true,   // twenty colours (COLORS in cue-types.js)
+  "color": "orange", "flagged": false, "armed": true,   // twenty colours (COLORS in cue-types.ts)
   "color2": "grey",             // optional: the colour it shows once it has fired, until Reset
   "preWait": 0, "postWait": 0, "continue": "none",      // none | auto-continue | auto-follow
   /* …the type's own fields… */
@@ -73,9 +73,9 @@ A cue:
 }
 ```
 
-Times are seconds. Levels are dB (0 is the file's own level; −60 is silence). The fields each type has, with their kinds, defaults and help text, are one table: `core/show/cue-types.js`. Validation, the inspector, the assistant's reference and [04 · The cue engine](04-cue-engine.md) all read it.
+Times are seconds. Levels are dB (0 is the file's own level; −60 is silence). The fields each type has, with their kinds, defaults and help text, are one table: `core/show/cue-types.ts`. Validation, the inspector, the assistant's reference and [04 · The cue engine](04-cue-engine.md) all read it.
 
-**Sections.** A heading in a list is an ordinary entry, `{ "id", "type": "section", "name", "color", "notes" }` and nothing else (no number, waits, continue or triggers). It holds the top-level cues after it up to the next section; it never holds them in `children`, so the file stays flat and a show without sections is unchanged. A section is only ever a top-level entry of a list that is not a cart: an edit that would put one inside a group or in a cart is refused (`core/show/sections.js` `trouble`), and renumbering passes over it. It never plays: `toEngineDoc` leaves it out (04, section 2). Which sections are folded is not in the file.
+**Sections.** A heading in a list is an ordinary entry, `{ "id", "type": "section", "name", "color", "notes" }` and nothing else (no number, waits, continue or triggers). It holds the top-level cues after it up to the next section; it never holds them in `children`, so the file stays flat and a show without sections is unchanged. A section is only ever a top-level entry of a list that is not a cart: an edit that would put one inside a group or in a cart is refused (`core/show/sections.ts` `trouble`), and renumbering passes over it. It never plays: `toEngineDoc` leaves it out (04, section 2). Which sections are folded is not in the file.
 
 **Ids and numbers.** A cue's `id` never changes; its `number` is a label. Targets (`"target": "c_…"`) use ids, so renumbering can never break a fade. People and the assistant name cues by number; operations accept `"#3"` and resolve it.
 
@@ -91,7 +91,7 @@ Times are seconds. Levels are dB (0 is the file's own level; −60 is silence). 
 
 ## Edit operations
 
-`applyOps(doc, ops)` in `core/show/ops.js` is the only way a show changes. It is pure (the input is never touched), atomic (any invalid operation fails the whole batch with an `OpError` naming which one and why), and its result is normalised, so it is always a show the app can open.
+`applyOps(doc, ops)` in `core/show/ops.ts` is the only way a show changes. It is pure (the input is never touched), atomic (any invalid operation fails the whole batch with an `OpError` naming which one and why), and its result is normalised, so it is always a show the app can open.
 
 | Operation | |
 |---|---|
@@ -105,7 +105,7 @@ Times are seconds. Levels are dB (0 is the file's own level; −60 is silence). 
 | `{ op: "list.add", name, cart? }` · `list.rename` · `list.remove` | A show keeps at least one list. `cart: { rows, columns }` makes the new list a cue cart. |
 | `{ op: "list.cart", id, rows, columns }` | A list becomes a cart of that size, or a cart is resized (1 to 15 each way). `rows: null`: a plain list again. |
 | `{ op: "show.set", path, value }` | `title`, `notes`, `settings.…`, `modules.…` only. |
-| `{ op: "device.add", device: { name, …fields } }` | Adds a piece of equipment ([15](15-assistant-and-rig.md), `core/rig/devices.js`). `id` is made from the name if left out; with `model` and no commands, the model's commands, port and way of being asked are copied in. Refused with a sentence if the device is not one that can be kept. |
+| `{ op: "device.add", device: { name, …fields } }` | Adds a piece of equipment ([15](15-assistant-and-rig.md), `core/rig/devices.ts`). `id` is made from the name if left out; with `model` and no commands, the model's commands, port and way of being asked are copied in. Refused with a sentence if the device is not one that can be kept. |
 | `{ op: "device.set", id, props: { field: value \| null } }` | Sets fields; `null` clears. `commands`, `reports` and `alive` are set whole. `id` cannot be set. |
 | `{ op: "device.remove", id }` | Cues that named it become broken, and are reported as cues that lose a target are. |
 
@@ -116,11 +116,11 @@ A cue is named by its id, by `"#<number>"`, or by `"@<ref>"` for one added earli
   { "op": "cue.add", "cue": { "type": "fade", "number": "5", "target": "@rain", "db": -60, "duration": 6, "stopTarget": true } } ]
 ```
 
-**Checked before it is applied.** An operation may carry only the keys it takes (`OP_KEYS` in `ops.js`: a `to` on a `cue.move`, or a field beside `props` instead of in it, is refused, not ignored), a move must say where to, `cue.set` needs `props`, `show.set` needs `value`. In a `show.set` path a bus or a patch may be named by its id (`settings.audio.buses.music.db`). And the batch as a whole may not leave a setting as something it cannot be: a number where text belongs, a patch with no port, two buses with one id (`settingsTrouble`; what was already wrong before the batch is not held against it). These checks are in `applyOps` itself, so the inspector, `ec apply` and the assistant are all held to them and are all told the same sentence.
+**Checked before it is applied.** An operation may carry only the keys it takes (`OP_KEYS` in `ops.ts`: a `to` on a `cue.move`, or a field beside `props` instead of in it, is refused, not ignored), a move must say where to, `cue.set` needs `props`, `show.set` needs `value`. In a `show.set` path a bus or a patch may be named by its id (`settings.audio.buses.music.db`). And the batch as a whole may not leave a setting as something it cannot be: a number where text belongs, a patch with no port, two buses with one id (`settingsTrouble`; what was already wrong before the batch is not held against it). These checks are in `applyOps` itself, so the inspector, `ec apply` and the assistant are all held to them and are all told the same sentence.
 
 Why operations rather than "send the new document": a batch is small enough to read, it says what was meant, it fails with a reason a person (or a model) can act on, and the same batch can be previewed, applied, undone and recorded.
 
-**The rig** (`settings.rig`: `{ devices: [], checks: [], script: '' }`). The show's equipment lives in the show file, so undo, versions, compare and the review of a proposal cover it. A device is its address, its named commands (messages with `{holes}` for typed parameters), how to tell it is there (`alive`) and what to read out of what it says (`reports`); the fields are one table in `core/rig/devices.js` (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`, `REPORT_FIELDS`), read by validation, the device editor and the assistant's reference. Devices change only through the three operations above: `show.set` on `settings.rig.devices` is refused with a sentence naming them. `settings.rig.checks` (the operator's own lines, `[{ id, text }]`, set whole) and `settings.rig.script` (a text file in the show folder) are ordinary settings. A device and a network patch may not share an id, which is checked on the batch as a whole, so a patch is made a device in one edit: `device.add` with the patch's id and a `show.set` that removes the patch, in either order; every cue that named the patch then names the device. **A rig with nothing in it is not written to `show.json`**: a show with no equipment is, on disk, exactly what it was before there was a rig, and no format version was bumped.
+**The rig** (`settings.rig`: `{ devices: [], checks: [], script: '' }`). The show's equipment lives in the show file, so undo, versions, compare and the review of a proposal cover it. A device is its address, its named commands (messages with `{holes}` for typed parameters), how to tell it is there (`alive`) and what to read out of what it says (`reports`); the fields are one table in `core/rig/devices.ts` (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`, `REPORT_FIELDS`), read by validation, the device editor and the assistant's reference. Devices change only through the three operations above: `show.set` on `settings.rig.devices` is refused with a sentence naming them. `settings.rig.checks` (the operator's own lines, `[{ id, text }]`, set whole) and `settings.rig.script` (a text file in the show folder) are ordinary settings. A device and a network patch may not share an id, which is checked on the batch as a whole, so a patch is made a device in one edit: `device.add` with the patch's id and a `show.set` that removes the patch, in either order; every cue that named the patch then names the device. **A rig with nothing in it is not written to `show.json`**: a show with no equipment is, on disk, exactly what it was before there was a rig, and no format version was bumped.
 
 **A Device cue** (`type: "device"`: `device`, `command`, `args`, and for a command with a value that fades `fadeTo`, `duration`, `curve`) sends one of a device's named commands. The engine has no such type: `show.toEngineDoc` resolves it into the Network cue (to the device's id, which the hub finds as it finds a patch) or the MIDI cue it makes, and one that cannot be sent (its device or command gone, a value out of range, no address) is marked broken and plays as a Memo, so nothing half-made reaches the equipment.
 
@@ -147,7 +147,7 @@ A show is a folder that is meant to travel, so a show can arrive from anywhere: 
 
 One quiet line in the title bar says so: *This show came from another computer. Its network features are off until you turn them on.* and **Turn on**, which gives it all back at once, without stopping anything that is playing, and is remembered for that show on this computer. Only this computer's window can turn it on (`turn-on`; a command that came in from anywhere else is refused).
 
-Nothing about this is in the show file, which stays the same whichever computer saved it. This computer keeps a record in its own `config.json` (`shows`: each show folder, by its real path, with the id of the show in it, the last 400): a show is this computer's when its folder is there with its id. A show is put in the record when it is made here (a new folder, New Show, an import or a template once saved, Start from a Folder), saved here, saved somewhere else with Save As, or turned on. A save does not turn on a show that came from elsewhere. The demo, which lives in this computer's settings folder, is its own. So a show moved or copied to another folder asks once more, and a show put in place of one of yours (another id) is not taken for yours. The first time the record is made, the recent shows (File ▸ Open Recent) are taken as this computer's, so an update holds back nothing that already worked here. A show written by the `ec` command line is not in the record and asks once. `core/show/trust.js`, tested by `test/trust.test.js`.
+Nothing about this is in the show file, which stays the same whichever computer saved it. This computer keeps a record in its own `config.json` (`shows`: each show folder, by its real path, with the id of the show in it, the last 400): a show is this computer's when its folder is there with its id. A show is put in the record when it is made here (a new folder, New Show, an import or a template once saved, Start from a Folder), saved here, saved somewhere else with Save As, or turned on. A save does not turn on a show that came from elsewhere. The demo, which lives in this computer's settings folder, is its own. So a show moved or copied to another folder asks once more, and a show put in place of one of yours (another id) is not taken for yours. The first time the record is made, the recent shows (File ▸ Open Recent) are taken as this computer's, so an update holds back nothing that already worked here. A show written by the `ec` command line is not in the record and asks once. `core/show/trust.ts`, tested by `test/trust.test.ts`.
 
 ## Versions
 
@@ -172,16 +172,16 @@ document.reject(id)
 
 `accept` refuses if the show has changed since the proposal was made (its base hash no longer matches): a stale diff is not what the person reviewed. An accepted proposal is an ordinary pending edit: undoable, marked like any other change, and kept only when the show is saved; the version that save records is authored `assistant`.
 
-**Files.** `propose(ops, { summary, author, files })` and `proposeDocument(draft, { …, files })` may carry text files for the show folder, `[{ path, text }]`, written when the proposal is accepted (each atomically); a proposal may be files alone. `core/show/files.js` decides what may be written, and nothing else does: `AGENTS.md` and `CLAUDE.md` at the top of the show folder and anything under `props/`; text, at most 200 KB each and 24 in a proposal; never a path that leaves the folder, by `..`, by an absolute path or through a link. Each is marked `replaces` when a different file is already there, and an existing `secrets.h` is never replaced. An untitled show has no folder, and the proposal is refused before it is staged ("Save the show to a folder first: this writes files into it."). If a file cannot be written when the proposal is accepted, nothing has changed and the proposal is still waiting. Undo takes back the change to the show and leaves the files.
+**Files.** `propose(ops, { summary, author, files })` and `proposeDocument(draft, { …, files })` may carry text files for the show folder, `[{ path, text }]`, written when the proposal is accepted (each atomically); a proposal may be files alone. `core/show/files.ts` decides what may be written, and nothing else does: `AGENTS.md` and `CLAUDE.md` at the top of the show folder and anything under `props/`; text, at most 200 KB each and 24 in a proposal; never a path that leaves the folder, by `..`, by an absolute path or through a link. Each is marked `replaces` when a different file is already there, and an existing `secrets.h` is never replaced. An untitled show has no folder, and the proposal is refused before it is staged ("Save the show to a folder first: this writes files into it."). If a file cannot be written when the proposal is accepted, nothing has changed and the proposal is still waiting. Undo takes back the change to the show and leaves the files.
 
 Only one proposal is pending at a time. This is the whole mechanism behind the assistant ([08](08-assistant.md)); nothing about it is specific to AI, and the same path will carry "import these cues from a QLab workspace" and "apply this change a collaborator sent".
 
 ## Carts
 
-A cue cart is a list with `"cart": { "rows": 3, "columns": 4 }` on it (each 1 to 15), drawn as a grid of buttons. A cue in it may say which button it is with `"cell": "2,3"` (row, column, from 1); one that does not, or whose cell is taken or outside the grid, takes the first free button in reading order. `core/show/cart.js` `layout(list)` is the one place that decides, and the host sends its answer to every view (`carts` in the pushed state). Cues beyond the last button are a warning on the cue, not lost. Nothing else about a cart's cues differs: a button is `host.cmd({ op: 'start', id })`, the same start a hotkey or a remote makes, so the list being run keeps its playhead.
+A cue cart is a list with `"cart": { "rows": 3, "columns": 4 }` on it (each 1 to 15), drawn as a grid of buttons. A cue in it may say which button it is with `"cell": "2,3"` (row, column, from 1); one that does not, or whose cell is taken or outside the grid, takes the first free button in reading order. `core/show/cart.ts` `layout(list)` is the one place that decides, and the host sends its answer to every view (`carts` in the pushed state). Cues beyond the last button are a warning on the cue, not lost. Nothing else about a cart's cues differs: a button is `host.cmd({ op: 'start', id })`, the same start a hotkey or a remote makes, so the list being run keeps its playhead.
 
 ## Backups, templates, settings files
 
-- **Backups** (`core/show/backups.js`). `settings.backup` is `{ minutes: 5, keep: 30 }`. While the working document is changing, the host writes it (unsaved changes included) to `backups/` every `minutes`; an unchanged document is never written twice. Pruned on each write: the newest `keep`, then the last of each day for 14 days. A show with no folder is backed up under the app's settings folder. `ShowDocument.replace(doc)` goes back to one: an undoable, unsaved edit.
-- **Templates** (`core/show/show-templates.js`; a cue type's template is another thing, `core/show/templates.js`). `{ format: "endless-cues-template", version: 1, name, show }`, a `.ectemplate` file: a whole show with every passcode and key emptied and its sounds named by absolute path. `showFrom` gives it a new id and no folder.
+- **Backups** (`core/show/backups.ts`). `settings.backup` is `{ minutes: 5, keep: 30 }`. While the working document is changing, the host writes it (unsaved changes included) to `backups/` every `minutes`; an unchanged document is never written twice. Pruned on each write: the newest `keep`, then the last of each day for 14 days. A show with no folder is backed up under the app's settings folder. `ShowDocument.replace(doc)` goes back to one: an undoable, unsaved edit.
+- **Templates** (`core/show/show-templates.ts`; a cue type's template is another thing, `core/show/templates.ts`). `{ format: "endless-cues-template", version: 1, name, show }`, a `.ectemplate` file: a whole show with every passcode and key emptied and its sounds named by absolute path. `showFrom` gives it a new id and no folder.
 - **Settings files.** `{ format: "endless-cues-settings", version: 1, from, settings, modules }`, a `.ecsettings` file, again with no secrets. Importing one is `settingsOps(file, doc)`: a `show.set` for each group of settings and each module, keeping the open show's own passcodes, applied as one edit and refused whole if anything in it cannot be held.

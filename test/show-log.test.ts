@@ -9,12 +9,12 @@ import { createGoGuard } from '../core/engine/go-guard';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ec-log-'));
 // a timer that waits to be told: the log is written only when the test says time has passed
-function laterTimer() { const due = []; const t = (fn) => { due.push(fn); return {}; }; t.run = () => { while (due.length) due.shift()(); }; return t; }
+function laterTimer() { const due: (() => void)[] = []; const t = (fn: () => void) => { due.push(fn); return {}; }; t.run = () => { while (due.length) due.shift()!(); }; return t; }
 
 test('adding a line never writes: the lines are written together, later, without waiting', async () => {
   const dir = tmp(), timer = laterTimer();
   let writes = 0;
-  const counting = { ...fs.promises, appendFile: (...a) => { writes++; return fs.promises.appendFile(...a); } };
+  const counting = { ...fs.promises, appendFile: (...a: Parameters<typeof fs.promises.appendFile>) => { writes++; return fs.promises.appendFile(...a); } };
   const log = new ShowLog({ version: '1.2.3', timer, fs: counting, now: () => new Date(2026, 10, 16, 19, 30, 2, 5).getTime() });
   log.open(dir, 'Rain');
   for (let i = 0; i < 50; i++) log.add('go', `GO ${i}`, { cue: String(i) });

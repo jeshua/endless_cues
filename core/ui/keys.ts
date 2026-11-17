@@ -13,8 +13,12 @@
  * Nothing here needs a window or Electron: it is data and two small functions.
  */
 
+export type ActionRow = [id: string, what: string, keys: string[]];
+export type MenuRow = [id: string, accelerator: string, what: string, where: string];
+export type PageRow = [id: string, what: string, shown: string];
+
 // [id, what it does, its keys as KeyboardEvent.key names (the first is the one the action is known by)]
-const ACTIONS = [
+const ACTIONS: [group: string, actions: ActionRow[]][] = [
   ['Running the show', [
     ['go', 'GO', [' ']], ['panic', 'Panic (again: stop dead)', ['Escape']], ['up', 'Playhead up', ['ArrowUp']], ['down', 'Playhead down', ['ArrowDown']],
     ['nextSeq', 'Next cue that needs a GO', ['=']], ['prevSeq', 'Previous cue that needs a GO', ['-']],
@@ -31,7 +35,7 @@ const ACTIONS = [
 
 // [id, accelerator, what it does, the menu item it is on]. `Settings…` is in the app's own menu on a Mac and in File
 // elsewhere; the reload is the developers' (View ▸ Reload).
-const MENU = [
+const MENU: MenuRow[] = [
   ['settings', 'CmdOrCtrl+,', 'Settings', 'Endless Cues ▸ Settings… (File ▸ Settings… on Windows and Linux)'],
   ['newShow', 'CmdOrCtrl+N', 'New show', 'File ▸ New Show'],
   ['open', 'CmdOrCtrl+O', 'Open a show', 'File ▸ Open…'],
@@ -63,39 +67,40 @@ const MENU = [
 ];
 
 // [id, what it does, the keys as shown]: the window's own (app/renderer/app.js handles each)
-const PAGE = [
+const PAGE: PageRow[] = [
   ['undo', 'Undo / redo', '⌘Z  ⇧⌘Z'], ['selectAll', 'Select all', '⌘A'], ['duplicate', 'Duplicate', '⌘D'],
   ['group', 'Group · Ungroup', '⌘G  ⇧⌘G'], ['move', 'Move cue up / down', '⌥⌘↑  ⌥⌘↓'], ['extend', 'Extend the selection', '⇧↑  ⇧↓'],
   ['addCue', 'Add a cue (toolbar order)', '⌘1 … ⌘0'], ['zoom', 'Zoom the cue list out / in / back', '⌘−  ⌘=  ⌘0'],
 ];
 
 // Settings ▸ Keys, "Fixed": [label, menu ids separated by spaces, or a page id]
-const SHOWN = [['Find', 'find'], ['Load to time', 'loadToTime'], ['Jump to cue', 'jump'], ['Renumber the selection', 'renumber'], ['Undo / redo', 'undo'], ['Select all', 'selectAll'], ['Duplicate', 'duplicate'],
+const SHOWN: [label: string, ref: string][] = [['Find', 'find'], ['Load to time', 'loadToTime'], ['Jump to cue', 'jump'], ['Renumber the selection', 'renumber'], ['Undo / redo', 'undo'], ['Select all', 'selectAll'], ['Duplicate', 'duplicate'],
   ['Cut · Copy · Paste cues', 'cut copy paste'], ['Paste cue properties', 'pasteProps'], ['Go to the target', 'target'], ['Check the show', 'checks'], ['Group · Ungroup', 'group'], ['Move cue up / down', 'move'], ['Extend the selection', 'extend'], ['Add a cue (toolbar order)', 'addCue'], ['Zoom the cue list', 'zoom'],
   ['Save a version', 'save'], ['Save with a note', 'saveNote'], ['Add sounds', 'addSounds'], ['Versions', 'versions'], ['Live mixer', 'live'], ['Assistant', 'assistant'], ['Monitor', 'monitor'], ['Show log', 'log'], ['The Rig', 'rig'],
   ['Lights dashboard', 'lights'], ['Stage blackout, or back', 'blackout'], ['This list in a window', 'ownList'], ['Inspector in a window', 'ownInspector'], ['Show mode', 'showMode'], ['Settings', 'settings'], ['New show · Open', 'newShow open']];
 
-const byId = (rows) => Object.fromEntries(rows.map((r) => [r[0], r]));
+const byId = <R extends string[]>(rows: R[]): Record<string, R | undefined> => Object.fromEntries(rows.map((r) => [r[0], r]));
 const MENU_BY_ID = byId(MENU), PAGE_BY_ID = byId(PAGE);
 
 /** An accelerator as a Mac writes it: "Shift+CmdOrCtrl+S" → "⇧⌘S". (The window's keys() makes Ctrl+Shift+S of it elsewhere.) */
-function glyphs(accel) {
+function glyphs(accel: string) {
   const parts = String(accel).split('+');
   const key = parts.pop() || '+';
-  const has = (w) => parts.some((p) => p.toLowerCase() === w);
+  const has = (w: string) => parts.some((p) => p.toLowerCase() === w);
   return `${has('alt') ? '⌥' : ''}${has('shift') ? '⇧' : ''}${has('cmdorctrl') || has('cmd') || has('ctrl') || has('commandorcontrol') ? '⌘' : ''}${key.length === 1 ? key.toUpperCase() : key}`;
 }
 /** A menu item's accelerator, for main.js. Throws on an id that is not in the table, so a typo cannot drop a key. */
-function accel(id) { const r = MENU_BY_ID[id]; if (!r) throw new Error(`no menu key "${id}"`); return r[1]; }
+function accel(id: string) { const r = MENU_BY_ID[id]; if (!r) throw new Error(`no menu key "${id}"`); return r[1]; }
 /** The keys for one SHOWN line: a page id's own, or each menu id's accelerator. */
-function shownKeys(ref) {
-  if (PAGE_BY_ID[ref]) return PAGE_BY_ID[ref][2];
+function shownKeys(ref: string) {
+  const page = PAGE_BY_ID[ref];
+  if (page) return page[2];
   return ref.split(' ').map((id) => glyphs(accel(id))).join('  ');
 }
 
 /** A single key as its cap shows it (the default keys of ACTIONS): " " → Space, "Escape" → Esc, "shift+i" → ⇧I. */
-const CAP = { ' ': 'Space', Escape: 'Esc', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backspace: '⌫', Delete: 'Del', Enter: 'Enter' };
-const cap = (k) => (CAP[k] || (/^shift\+/.test(k) ? `⇧${k.slice(6).toUpperCase()}` : k.length === 1 ? k.toUpperCase() : k));
+const CAP: Record<string, string> = { ' ': 'Space', Escape: 'Esc', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backspace: '⌫', Delete: 'Del', Enter: 'Enter' };
+const cap = (k: string) => (CAP[k] || (/^shift\+/.test(k) ? `⇧${k.slice(6).toUpperCase()}` : k.length === 1 ? k.toUpperCase() : k));
 
 /** What the window is handed (the preload asks for it once, before the page's modules load). */
 function forPage() {

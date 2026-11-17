@@ -26,41 +26,62 @@
  */
 import * as osc from '../net/osc';
 import { viaOf, isNetwork } from './devices';
+import type { OscMessage } from '../net/osc';
+import type { Device } from '../show/types';
+
+/** What a send says happened (the hub's monitor entry will do). */
+export interface SendResult { ok?: boolean; held?: boolean; why?: string }
+/** A clock to run on: a test's fake one, whose timers' handles are its own. */
+export interface LiveClock { now(): number; setTimeout?(fn: () => void, ms: number): unknown; clearTimeout?(t: unknown): void }
+/** One device's state, as the Rig shows it. */
+export interface LiveState {
+  how: string; state: string; text: string; heardAt: number; ageMs: number | null; lastIn: string; held?: boolean;
+  reports: { key: string; label: string; value: unknown; unit?: string; warn: boolean }[];
+}
+/** What `ask` resolves with. */
+export interface AskResult { ok: boolean; held: boolean; answered: boolean; ms: number; text: string; why: string }
+interface Live {
+  since: number; askedAt: number; sentAt: number; heardAt: number; rtt: number | null; lastIn: string; values: Record<string, unknown>;
+  was: string; waiters: Set<(msg: OscMessage | null) => void>; error: string; key?: string;
+}
 
 const ASK_WAIT_MS = 1500;
 const CANNOT = 'It cannot be asked. Press Try and look at it.';
 
-const ago = (ms) => (ms < 1500 ? 'a moment ago' : ms < 90000 ? `${Math.round(ms / 1000)} s ago` : ms < 5400000 ? `${Math.round(ms / 60000)} min ago` : `${Math.round(ms / 3600000)} h ago`);
-const textOf = (msg) => { try { return osc.toText(msg); } catch { return String((msg && msg.address) || ''); } };
+const ago = (ms: number) => (ms < 1500 ? 'a moment ago' : ms < 90000 ? `${Math.round(ms / 1000)} s ago` : ms < 5400000 ? `${Math.round(ms / 60000)} min ago` : `${Math.round(ms / 3600000)} h ago`);
+const textOf = (msg: OscMessage) => { try { return osc.toText(msg); } catch { return String((msg && msg.address) || ''); } };
 
-function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with' }), clock = null, log = () => {}, changed = () => {}, stopped = () => {}, facts = () => ({}) } = {}) {
+function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with' }), clock = null, log = () => {}, changed = () => {}, stopped = () => {}, facts = () => ({}) }: {
+  send?: (device: Device, text: string | undefined) => SendResult | null | undefined; clock?: LiveClock | null; log?: (line: string) => void; changed?: () => void;
+  stopped?: (device: Device, state: LiveState | null) => void; facts?: (id: string) => { tcp?: boolean; midi?: boolean } | null | undefined;
+} = {}) {
   const now = clock && clock.now ? () => clock.now() : Date.now;
-  const later = clock && clock.setTimeout ? (fn, ms) => clock.setTimeout(fn, ms) : (fn, ms) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; };
+  const later = clock && clock.setTimeout ? (fn: () => void, ms: number) => clock.setTimeout!(fn, ms) : (fn: () => void, ms: number) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; };
   // an ask's wait is awaited, so it keeps the process alive (`ec try` would otherwise exit before its answer)
   const awaited = clock && clock.setTimeout ? later : setTimeout;
-  const cancel = clock && clock.clearTimeout ? (t) => clock.clearTimeout(t) : clearTimeout;
-  let devices = [];
+  const cancel = clock && clock.clearTimeout ? (t: unknown) => clock.clearTimeout!(t) : clearTimeout as (t: unknown) => void;
+  let devices: Device[] = [];
   let held = '';
-  const live = new Map();           // device id -> { since, askedAt, sentAt, heardAt, rtt, lastIn, values, was, waiters }
-  const of = (id) => { if (!live.has(id)) live.set(id, { since: now(), askedAt: 0, sentAt: 0, heardAt: 0, rtt: null, lastIn: '', values: {}, was: '', waiters: new Set(), error: '' }); return live.get(id); };
-  const addressed = (d) => !isNetwork(d) || (!!d.host && Number(d.port) > 0);
+  const live = new Map<string, Live>();           // device id -> { since, askedAt, sentAt, heardAt, rtt, lastIn, values, was, waiters }
+  const of = (id: string): Live => { if (!live.has(id)) live.set(id, { since: now(), askedAt: 0, sentAt: 0, heardAt: 0, rtt: null, lastIn: '', values: {}, was: '', waiters: new Set(), error: '' }); return live.get(id)!; };
+  const addressed = (d: Device) => !isNetwork(d) || (!!d.host && Number(d.port) > 0);
 
-  function askNow(d) {
+  function askNow(d: Device): SendResult {
     const l = of(d.id);
     l.askedAt = now();
-    let r;
-    try { r = send(d, d.alive.send) || {}; } catch (err) { r = { ok: false, why: err.message }; }
+    let r: SendResult;
+    try { r = send(d, d.alive.send) || {}; } catch (err) { r = { ok: false, why: (err as Error).message }; }
     if (r.ok === false && !r.held) l.error = r.why || 'could not be sent'; else l.error = '';
     if (r.ok !== false) l.sentAt = l.askedAt;
     return r;
   }
 
   /** One device's state as the Rig shows it. */
-  function state(id) {
+  function state(id: string): LiveState | null {
     const d = devices.find((x) => x.id === id);
     if (!d) return null;
     const l = of(id), t = now(), a = d.alive || { how: 'none' };
-    const out = { how: a.how || 'none', state: 'unknown', text: '', heardAt: l.heardAt || 0, ageMs: l.heardAt ? Math.max(0, t - l.heardAt) : null, reports: [], lastIn: l.lastIn };
+    const out: LiveState = { how: a.how || 'none', state: 'unknown', text: '', heardAt: l.heardAt || 0, ageMs: l.heardAt ? Math.max(0, t - l.heardAt) : null, reports: [], lastIn: l.lastIn };
     for (const r of d.reports || []) {
       const v = l.values[r.key];
       if (v === undefined || (r.none !== undefined && v === r.none)) continue;
@@ -92,10 +113,10 @@ function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with'
 
   return {
     /** The show's devices, whenever they change. `held`: why nothing is being sent ('' when it is). */
-    configure(list = [], { held: why = '' } = {}) {
+    configure(list: Device[] = [], { held: why = '' } = {}) {
       devices = list.map((d) => ({ ...d }));
       const was = held; held = String(why || '');
-      for (const id of [...live.keys()]) if (!devices.some((d) => d.id === id)) { for (const w of live.get(id).waiters) w(null); live.delete(id); }
+      for (const id of [...live.keys()]) if (!devices.some((d) => d.id === id)) { for (const w of live.get(id)!.waiters) w(null); live.delete(id); }
       for (const d of devices) {
         const l = of(d.id);
         const key = JSON.stringify([d.alive || null, d.host || '', d.port || 0, d.protocol || 'udp', viaOf(d)]);
@@ -106,7 +127,7 @@ function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with'
     },
 
     /** A message arrived from a device. Returns true when it counts as "it is there". */
-    heard(id, msg, at = now()) {
+    heard(id: string, msg: OscMessage | null | undefined, at = now()): boolean {
       const d = devices.find((x) => x.id === id);
       if (!d || !msg) return false;
       const l = of(id), a = d.alive || { how: 'none' };
@@ -127,12 +148,12 @@ function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with'
       for (const d of devices) {
         const a = d.alive || {}, l = of(d.id);
         if (a.how === 'ask' && !held && addressed(d) && t - l.askedAt >= (Number(a.every) || 2) * 1000) askNow(d);
-        const s = state(d.id).state;
+        const s = state(d.id)!.state;
         if (s !== l.was) {
           // said on the change, never again every two seconds
           if (l.was === 'ready' && s === 'problem') { log(`${d.name} has stopped answering`); try { stopped(d, state(d.id)); } catch { /* the caller's */ } }
           else if (s === 'ready' && l.was === 'problem') log(`${d.name} is answering again`);
-          else if (s === 'problem' && l.was !== 'ready') log(`${d.name}: ${state(d.id).text}`);
+          else if (s === 'problem' && l.was !== 'ready') log(`${d.name}: ${state(d.id)!.text}`);
           l.was = s;
           changed();
         }
@@ -140,18 +161,18 @@ function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with'
     },
 
     /** One "are you there?" now. Resolves within 1.5 s: { ok, held, answered, ms, text, why }. */
-    ask(id) {
+    ask(id: string): Promise<AskResult> {
       const d = devices.find((x) => x.id === id);
-      const no = (why, more = {}) => Promise.resolve({ ok: false, held: false, answered: false, ms: 0, text: '', why, ...more });
+      const no = (why: string, more = {}) => Promise.resolve<AskResult>({ ok: false, held: false, answered: false, ms: 0, text: '', why, ...more });
       if (!d) return no(`no device with the id ${id}`);
       const a = d.alive || {};
-      if (a.how !== 'ask') return no(a.how === 'heartbeat' ? `${d.name} is not asked: it says it is there by itself (${state(id).text}).` : `${d.name} cannot be asked: press Try on the Rig page and look at it.`);
+      if (a.how !== 'ask') return no(a.how === 'heartbeat' ? `${d.name} is not asked: it says it is there by itself (${state(id)!.text}).` : `${d.name} cannot be asked: press Try on the Rig page and look at it.`);
       if (!addressed(d)) return no(`${d.name} has no address yet.`);
       if (held) return no(held, { held: true });
       const l = of(id), started = now();
-      return new Promise((resolve) => {
-        let timer = null;
-        const done = (msg) => {
+      return new Promise<AskResult>((resolve) => {
+        let timer: unknown = null;
+        const done = (msg: OscMessage | null) => {
           cancel(timer); l.waiters.delete(done);
           if (msg) resolve({ ok: true, held: false, answered: true, ms: Math.max(1, Math.round(now() - started)), text: textOf(msg), why: '' });
           else resolve({ ok: true, held: false, answered: false, ms: Math.round(now() - started), text: '', why: `No answer in ${ASK_WAIT_MS / 1000} s.` });
@@ -172,5 +193,7 @@ function createLiveness({ send = () => ({ ok: false, why: 'nothing to send with'
     close() { for (const l of live.values()) for (const w of [...l.waiters]) w(null); live.clear(); devices = []; },
   };
 }
+
+export type Liveness = ReturnType<typeof createLiveness>;
 
 export { createLiveness, ASK_WAIT_MS, CANNOT, ago };

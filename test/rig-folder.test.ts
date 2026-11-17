@@ -16,7 +16,7 @@ function wav(secs = 1, rate = 8000) {
   return Buffer.concat([h, data]);
 }
 /** A .docx, made here: a zip with one deflated file, word/document.xml. */
-function docx(paragraphs) {
+function docx(paragraphs: string[]) {
   const xml = Buffer.from(`<?xml version="1.0"?><w:document xmlns:w="x"><w:body>${paragraphs.map((p) => `<w:p><w:pPr><w:jc w:val="left"/></w:pPr><w:r><w:t xml:space="preserve">${p.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</w:t></w:r></w:p>`).join('')}<w:p/></w:body></w:document>`);
   const name = Buffer.from('word/document.xml'), body = zlib.deflateRawSync(xml), crc = zlib.crc32 ? zlib.crc32(xml) : 0;
   const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8); local.writeUInt32LE(crc, 14); local.writeUInt32LE(body.length, 18); local.writeUInt32LE(xml.length, 22); local.writeUInt16LE(name.length, 26);
@@ -68,7 +68,7 @@ test('what is not read, each with its sentence: outside the folder, a link out o
   fs.symlinkSync(path.dirname(dir), path.join(dir, 'up'));
   fs.writeFileSync(path.join(dir, 'score.pdf'), '%PDF-1.7');
   fs.writeFileSync(path.join(dir, 'big.txt'), Buffer.alloc(2 * 1024 * 1024 + 1, 97));
-  const why = (rel) => { const r = folder.readText(dir, rel); assert.equal(r.ok, false, rel); assert.equal(r.text, ''); return r.why; };
+  const why = (rel: string) => { const r = folder.readText(dir, rel); assert.equal(r.ok, false, rel); assert.equal(r.text, ''); return r.why; };
   assert.match(why('../secret.txt'), /outside the show folder/);
   assert.match(why(outside), /outside the show folder/);
   assert.match(why('link.txt'), /a link that points out of the show folder/);
@@ -91,9 +91,9 @@ test('a .docx is read as its paragraphs', () => {
   const r = folder.readText(dir, 'script.docx');
   assert.equal(r.ok, true, r.why);
   assert.deepEqual(r.text.split('\n'), ['ACT ONE', 'Tom & Jerry <enter>', '@cue 12 Thunder', '', '']);
-  assert.equal(folder.listing(dir).find((e) => e.path === 'script.docx').kind, 'text');
+  assert.equal(folder.listing(dir).find((e) => e.path === 'script.docx')!.kind, 'text');
   // so a script may be one
-  const marks = require('../core/rig/script').read(dir, 'script.docx').marks;
+  const marks = (require('../core/rig/script') as typeof import('../core/rig/script')).read(dir, 'script.docx').marks;
   assert.deepEqual(marks.map((m) => [m.number, m.name, m.quote, m.section]), [['12', 'Thunder', 'Tom & Jerry <enter>', 'ACT ONE']]);
   fs.writeFileSync(path.join(dir, 'broken.docx'), 'not a zip at all, only words');
   assert.match(folder.readText(dir, 'broken.docx').why, /could not be read: not a zip/);

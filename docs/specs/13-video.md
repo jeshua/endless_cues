@@ -1,6 +1,6 @@
 # 13 · Video and the stage
 
-Source: `core/video/stage.js` (the arithmetic), `core/engine/cue-engine.js` (the `video` hooks, `case 'picture'`), `app/main/stage.js` (the output window and its display), `app/stage/stage.html` (the page that draws), `app/main/smoke-video.js` (the end-to-end check).
+Source: `core/video/stage.ts` (the arithmetic), `core/engine/cue-engine.ts` (the `video` hooks, `case 'picture'`), `app/main/stage.ts` (the output window and its display), `app/stage/stage.html` (the page that draws), `app/main/smoke-video.ts` (the end-to-end check).
 
 ## The picture
 
@@ -55,7 +55,7 @@ The stage's **corner pin** (`settings.video.pin`: four corners as fractions of t
 
 ## The output window
 
-`app/main/stage.js`. Which display is this computer's (`config.json`: `stage: { open, display, label }`), like the audio output.
+`app/main/stage.ts`. Which display is this computer's (`config.json`: `stage: { open, display, label }`), like the audio output.
 
 - **On a display**: a frameless window exactly the display's bounds, above the menu bar and the Dock (`alwaysOnTop: 'screen-saver'`), not a full-screen Space. It is `focusable: false` and shown with `showInactive()`: a click on the projector's screen cannot take Space away from the cue list. The display the operator's window is on is refused.
 - **In a window**: an ordinary window, for a computer with one screen.
@@ -91,7 +91,7 @@ Long-GOP codecs (H.264, VP9) skip and loop less crisply than ProRes or Hap do in
 
 ## What is not here, and what it would take
 
-- **Several stages, regions and outputs.** One stage on one display. More stages is mostly bookkeeping: a list of stages in `settings.video`, a `stage` field on the cue, one window per stage in `stage.js`. A stage spanning two projectors needs either one window across both displays (works when they are side by side in the OS's arrangement) or regions: the same stage drawn in two windows, each showing a part. Two windows cannot share one `<video>` element, so each would decode the file again and be synced separately; a WebGL stage drawing each region from a shared texture is the real answer, and is a rewrite of `stage.html`.
+- **Several stages, regions and outputs.** One stage on one display. More stages is mostly bookkeeping: a list of stages in `settings.video`, a `stage` field on the cue, one window per stage in `stage.ts`. A stage spanning two projectors needs either one window across both displays (works when they are side by side in the OS's arrangement) or regions: the same stage drawn in two windows, each showing a part. Two windows cannot share one `<video>` element, so each would decode the file again and be synced separately; a WebGL stage drawing each region from a shared texture is the real answer, and is a rewrite of `stage.html`.
 - **Edge blending.** With regions, a blend is a gradient mask along the overlapping edge with a gamma curve (`mask-image` on the region, or a shader). The arithmetic is small; it is worthless until two projectors can be driven and measured.
 - **Masks.** A greyscale image as the stage's `mask-image` is a few lines in `stage.html` and a file field in settings. Not done: no one has asked, and it wants a real surface to check against.
 - **Mesh and Bézier warps.** CSS can only do the one projective transform the corner pin uses. A mesh needs the stage drawn into WebGL and re-drawn through a grid.

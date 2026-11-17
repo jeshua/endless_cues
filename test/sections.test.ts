@@ -9,9 +9,10 @@ import * as sections from '../core/show/sections';
 import { applyOps } from '../core/show/ops';
 import { TYPES, fieldsOf } from '../core/show/cue-types';
 import { rig, build } from './helpers';
+import type { CueSpec, Op } from '../core/show/ops';
 
-const sec = (ref, name, more = {}) => ({ op: 'cue.add', ref, cue: { type: 'section', name, ...more } });
-const memo = (ref, number, more = {}) => ({ op: 'cue.add', ref, cue: { type: 'memo', number, ...more } });
+const sec = (ref: string, name: string, more: Partial<CueSpec> = {}): Op => ({ op: 'cue.add', ref, cue: { type: 'section', name, ...more } });
+const memo = (ref: string, number: string, more: Partial<CueSpec> = {}): Op => ({ op: 'cue.add', ref, cue: { type: 'memo', number, ...more } });
 
 test('a section is a heading: a name, a colour and notes, and nothing that plays', () => {
   assert.ok(TYPES.section.heading);
@@ -59,8 +60,8 @@ test('a section named as somewhere to go lands on its first cue, past empty sect
   assert.equal(sections.landing(cues, s.id('a')), s.id('a'), 'a cue lands on itself');
   assert.equal(sections.landingIn(s.doc, s.id('s1')), s.id('c'));
   // Jump to "scene 2" finds the section by its name; Load to Time on it loads its first cue
-  assert.equal(sections.byName(s.doc, 'scene 2').id, s.id('s1'));
-  assert.equal(sections.byName(s.doc, 'bo').id, s.id('end'), 'or the start of its name');
+  assert.equal(sections.byName(s.doc, 'scene 2')!.id, s.id('s1'));
+  assert.equal(sections.byName(s.doc, 'bo')!.id, s.id('end'), 'or the start of its name');
   assert.equal(sections.byName(s.doc, 'nothing'), null);
   const r = rig(s.doc);
   r.engine.setPlayhead(sections.landingIn(s.doc, s.id('s1')));
@@ -85,7 +86,7 @@ test('sections are flat: never inside a group, never in a cart; a cue cannot tar
   assert.throws(() => applyOps(s.doc, [{ op: 'list.cart', id: s.doc.lists[0].id, rows: 2, columns: 2 }]), /has buttons, not sections/);
   const aimed = applyOps(s.doc, [{ op: 'cue.add', ref: 'st', cue: { type: 'start', number: '9', target: s.id('s') } }]);
   assert.ok(show.problems(aimed.doc).some((p) => p.id === aimed.refs.st && /section heading/.test(p.why)));
-  assert.equal(show.toEngineDoc(aimed.doc).lists[0].cues.find((c) => c.id === aimed.refs.st).target, null, 'and plays as a cue with no target, not a crash');
+  assert.equal(show.toEngineDoc(aimed.doc).lists[0].cues.find((c) => c.id === aimed.refs.st)!.target, null, 'and plays as a cue with no target, not a crash');
   const n = applyOps(s.doc, [{ op: 'cue.renumber', ids: [s.id('a'), s.id('s'), s.id('b')], start: 10 }]).doc;
   assert.deepEqual(n.lists[0].cues.map((c) => c.number), ['10', undefined, '2', '11']);
 });
@@ -112,7 +113,7 @@ test('fold state: kept per show folder, nothing kept for a show with nothing fol
   assert.deepEqual(Object.keys(f), ['/shows/b.ecshow']);
   f = sections.keepFolds(f, null, ['x']);
   assert.deepEqual(Object.keys(f), ['/shows/b.ecshow'], 'an untitled show is not kept');
-  let many = {};
+  let many: Record<string, unknown[]> = {};
   for (let i = 0; i < 45; i++) many = sections.keepFolds(many, `/s${i}`, ['x'], 40);
   assert.equal(Object.keys(many).length, 40);
   assert.ok(!many['/s0'] && many['/s44']);

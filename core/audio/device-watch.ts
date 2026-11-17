@@ -14,16 +14,24 @@
  *
  * Pure: no Electron, no audio.
  */
-const isDefault = (id) => !id || id === 'default';
+/** An output device as the audio window lists it. */
+export interface OutputDevice { id: string; label?: string }
+/** What is watched: the device chosen (null: the system default), and whether the show is on the default meanwhile. */
+export interface WatchState { wanted: { id: string; label: string } | null; fallback: null | { sawGone: boolean } }
+export type WatchEvent = { type: 'devices'; list?: OutputDevice[] } | { type: 'failed' } | { type: 'chosen'; id: string; label?: string } | { type: 'refused' };
+/** What the host is to do. */
+export interface WatchAction { do: 'fallback' | 'return' | 'revive'; id?: string; label?: string }
 
-function find(list, wanted) {
+const isDefault = (id: string | null | undefined) => !id || id === 'default';
+
+function find(list: OutputDevice[], wanted: WatchState['wanted']) {
   if (!wanted) return null;
   // by its id; else by its name (some systems give a device a new id each time it is plugged in)
   return list.find((d) => d.id === wanted.id) || (wanted.label ? list.find((d) => d.label === wanted.label && !isDefault(d.id)) : null) || null;
 }
 
-function step(state, event) {
-  const s = { wanted: state && state.wanted ? state.wanted : null, fallback: state && state.fallback ? state.fallback : null };
+function step(state: WatchState | null | undefined, event: WatchEvent): { state: WatchState; action: WatchAction | null } {
+  const s: WatchState = { wanted: state && state.wanted ? state.wanted : null, fallback: state && state.fallback ? state.fallback : null };
   switch (event.type) {
     case 'chosen':
       return { state: { wanted: isDefault(event.id) ? null : { id: event.id, label: event.label || '' }, fallback: null }, action: null };

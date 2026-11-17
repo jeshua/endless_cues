@@ -3,12 +3,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';
 import { createUpdates, feedFor, settingsOf, due, said, FEED, TEST_FEED, DAY } from '../core/update/updates';
+import type { UpdateConfig, UpdateToken, UpdateView } from '../core/update/updates';
+
+/** The stand-in's own counters, beside what the controller needs of an updater. */
+interface FakeUpdater extends EventEmitter {
+  feeds: { provider: string; url: string; channel?: string }[]; checks: number; downloads: number; installed: number; latest: string; fail: Error | null;
+  setFeedURL(o: { provider: string; url: string; channel?: string }): number;
+  checkForUpdates(): Promise<{ isUpdateAvailable: boolean }>;
+  downloadUpdate(token: UpdateToken | null): Promise<unknown>;
+  finish(): void;
+  quitAndInstall(): void;
+}
+type CancelToken = UpdateToken & { onCancel?: () => void };
 
 /** A stand-in for electron-updater: the feed has `latest`; a download finishes when `finish()` is called. */
-function fakeUpdater({ current = '0.3.0-alpha.2', latest = '0.3.0-alpha.3', fail = null } = {}) {
-  const u = new EventEmitter();
+function fakeUpdater({ current = '0.3.0-alpha.2', latest = '0.3.0-alpha.3', fail = null }: { current?: string; latest?: string; fail?: Error | null } = {}): FakeUpdater {
+  const u = new EventEmitter() as FakeUpdater;
   u.feeds = []; u.checks = 0; u.downloads = 0; u.installed = 0; u.latest = latest; u.fail = fail;
-  let pending = null;
+  let pending: { resolve: (v: unknown) => void; reject: (e: Error) => void } | null = null;
   u.setFeedURL = (o) => u.feeds.push(o);
   u.checkForUpdates = async () => {
     u.checks++;
@@ -17,20 +29,20 @@ function fakeUpdater({ current = '0.3.0-alpha.2', latest = '0.3.0-alpha.3', fail
     u.emit(newer ? 'update-available' : 'update-not-available', { version: u.latest });
     return { isUpdateAvailable: newer };
   };
-  u.downloadUpdate = (token) => new Promise((resolve, reject) => {
+  u.downloadUpdate = (token: CancelToken | null) => new Promise((resolve, reject) => {
     u.downloads++;
     pending = { resolve, reject };
     if (token) token.onCancel = () => reject(new Error('cancelled'));
   });
-  u.finish = () => { u.emit('download-progress', { percent: 100 }); u.emit('update-downloaded', { version: u.latest }); pending.resolve([]); };
+  u.finish = () => { u.emit('download-progress', { percent: 100 }); u.emit('update-downloaded', { version: u.latest }); pending!.resolve([]); };
   u.quitAndInstall = () => { u.installed++; };
   return u;
 }
-const token = () => ({ cancel() { if (this.onCancel) this.onCancel(); } });
+const token = (): CancelToken => ({ cancel(this: CancelToken) { if (this.onCancel) this.onCancel(); } });
 
-function rig(opts = {}) {
+function rig(opts: { config?: UpdateConfig; now?: number; env?: { EC_UPDATE_FEED?: string }; current?: string; latest?: string; fail?: Error | null } = {}) {
   const updater = fakeUpdater(opts);
-  const world = { mode: 'edit', sounding: false, config: opts.config || {}, now: opts.now || 1e12, said: [], shown: [], quitAnswer: true, quits: 0 };
+  const world = { mode: 'edit', sounding: false, config: opts.config || {}, now: opts.now || 1e12, said: [] as string[], shown: [] as UpdateView[], quitAnswer: true, quits: 0 };
   const u = createUpdates({ updater, token, version: '0.3.0-alpha.2', mode: () => world.mode, sounding: () => world.sounding,
     getConfig: () => world.config, saveConfig: (c) => Object.assign(world.config, c), now: () => world.now,
     told: (s) => world.shown.push(s), ask: (t) => world.said.push(t), quit: async () => { world.quits++; return world.quitAnswer; }, env: opts.env || {} });
@@ -48,10 +60,10 @@ test('the feed: everyone’s by default, the test versions’ when chosen, a tes
 });
 
 test('a check is due once a day, and never while switched off', () => {
-  assert.ok(due({ auto: true, lastCheck: 0 }, 1e12));
-  assert.ok(!due({ auto: true, lastCheck: 1e12 - DAY + 1000 }, 1e12));
-  assert.ok(due({ auto: true, lastCheck: 1e12 - DAY }, 1e12));
-  assert.ok(!due({ auto: false, lastCheck: 0 }, 1e12));
+  assert.ok(due({ auto: true, test: false, lastCheck: 0 }, 1e12));
+  assert.ok(!due({ auto: true, test: false, lastCheck: 1e12 - DAY + 1000 }, 1e12));
+  assert.ok(due({ auto: true, test: false, lastCheck: 1e12 - DAY }, 1e12));
+  assert.ok(!due({ auto: false, test: false, lastCheck: 0 }, 1e12));
 });
 
 test('the daily check waits for Edit mode with nothing playing, and its line hides in Show mode', async () => {
@@ -65,7 +77,7 @@ test('the daily check waits for Edit mode with nothing playing, and its line hid
   assert.equal(updater.feeds[0].url, FEED);
   assert.equal(updater.feeds[0].provider, 'generic');
   assert.deepEqual([u.state().step, u.state().version, u.state().visible], ['available', '0.3.0-alpha.3', true]);
-  assert.ok(world.config.updates.lastCheck, 'the check is remembered');
+  assert.ok(world.config.updates!.lastCheck, 'the check is remembered');
   world.mode = 'show'; u.tick();
   assert.equal(u.state().visible, false, 'hidden in Show mode');
   world.mode = 'edit'; u.tick();
@@ -114,7 +126,7 @@ test('nothing downloads until Download, and Show mode stops a download under way
   await u.check({ manual: true });
   assert.equal(updater.downloads, 0, 'found, not fetched');
   world.mode = 'show';
-  assert.match((await u.download()).error, /Edit mode/);
+  assert.match((await u.download()).error!, /Edit mode/);
   world.mode = 'edit';
   const going = u.download();
   assert.equal(u.state().step, 'downloading');
@@ -130,12 +142,12 @@ test('nothing downloads until Download, and Show mode stops a download under way
 
 test('Restart now: only in Edit mode with nothing playing, and only after quitting’s questions say yes', async () => {
   const { u, updater, world } = rig();
-  assert.match((await u.restart()).error, /nothing to install/);
+  assert.match((await u.restart()).error!, /nothing to install/);
   await u.check(); const d = u.download(); updater.finish(); await d;
   world.sounding = true;
-  assert.match((await u.restart()).error, /nothing playing/);
+  assert.match((await u.restart()).error!, /nothing playing/);
   world.sounding = false; world.mode = 'show';
-  assert.match((await u.restart()).error, /Edit mode/);
+  assert.match((await u.restart()).error!, /Edit mode/);
   world.mode = 'edit'; world.quitAnswer = false;
   assert.deepEqual(await u.restart(), { canceled: true }, 'Cancel at the unsaved-changes question');
   assert.equal(updater.installed, 0);
@@ -158,7 +170,7 @@ test('Test versions reads the test feed, forgets what everyone’s offered, and 
   await u.check();
   assert.equal(u.state().step, 'available');
   u.configure({ test: true });
-  assert.equal(world.config.updates.test, true);
+  assert.equal(world.config.updates!.test, true);
   assert.equal(u.state().step, 'idle');
   u.tick(); await flush();
   assert.equal(updater.checks, 2, 'due again at once');
@@ -168,7 +180,7 @@ test('Test versions reads the test feed, forgets what everyone’s offered, and 
 });
 
 test('a copy run from source never checks, and says so when asked', async () => {
-  const said = [];
+  const said: string[] = [];
   const u = createUpdates({ updater: fakeUpdater(), enabled: false, ask: (t) => said.push(t) });
   u.tick();
   await u.check({ manual: true });

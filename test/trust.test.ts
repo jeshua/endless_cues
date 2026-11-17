@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as trust from '../core/show/trust';
 import { ShowDocument } from '../core/show/document';
 import { createHub } from '../core/net/hub';
+import type { HubPatch, MonitorEntry } from '../core/net/hub';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ec-trust-'));
 
@@ -71,11 +72,11 @@ test('trust: a show from another computer opens nothing on another computer’s 
 test('trust: the hub, told not to connect, makes no TCP connection and opens no reply port', async () => {
   const net = require('net');
   let connections = 0;
-  const server = net.createServer((c) => { connections++; c.destroy(); });
+  const server = net.createServer((c: import('net').Socket) => { connections++; c.destroy(); });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   const hub = createHub();
-  const patches = [{ id: 'p', name: 'Desk', host: '127.0.0.1', port, protocol: 'tcp' }];
+  const patches: HubPatch[] = [{ id: 'p', name: 'Desk', host: '127.0.0.1', port, protocol: 'tcp' }];
   hub.configure({ patches, connect: false });
   hub.hold('held back: from another computer');
   const e = hub.send('p', '/go');
@@ -98,12 +99,12 @@ test('trust: the rig of a show from another computer asks no device and looks fo
   let doc = show.newShow('x');
   doc = applyOps(doc, [{ op: 'device.add', device: { name: 'Lantern', model: 'ec-prop-light', host: '127.0.0.1', port: 9, alive: { how: 'ask', send: '/ec/hello', reply: '/ec/here', every: 1 } } }]).doc;
   const hub = createHub({ dryRun: true });
-  const sent = [];
+  const sent: MonitorEntry[] = [];
   const send = hub.send.bind(hub);
   hub.send = (...a) => { const e = send(...a); sent.push(e); return e; };
   const AWAY = 'held back: this show came from another computer';
   let away = true;
-  const rig = createRig({ hub, state: { mode: 'edit', midi: { outputs: [] } }, engine: { active: () => [], durations: new Map() }, overrides: {}, HELD: (w) => w,
+  const rig = createRig({ hub, state: { mode: 'edit', midi: { outputs: [] } }, engine: { active: () => [], durations: new Map() }, overrides: {}, HELD: (w: string) => w,
     held: () => (away ? AWAY : ''), away: () => (away ? AWAY : ''), smoke: true, document: () => ({ doc, showDir: null }), facts: () => ({ saved: { untitled: true }, network: hub.status() }) });
   hub.configure({ devices: rigDevices.patchesOf(doc), connect: false });
   hub.hold(AWAY);

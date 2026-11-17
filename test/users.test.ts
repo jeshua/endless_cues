@@ -36,7 +36,7 @@ test('a report is checked against the person it is for', () => {
 
 test('the counts come from the journal', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-users-')), 'journal.jsonl');
-  const at = (s) => new Date(Date.UTC(2026, 0, 1, 12, 0, s)).toISOString();
+  const at = (s: number) => new Date(Date.UTC(2026, 0, 1, 12, 0, s)).toISOString();
   fs.writeFileSync(file, [
     { at: at(0), op: 'start' }, { at: at(1), op: 'task', task: 'bring' }, { at: at(2), op: 'look' }, { at: at(3), op: 'click', did: 'clicked' },
     { at: at(4), op: 'key', error: 'A dialog is open' }, { at: at(5), op: 'note', text: 'where is import?' }, { at: at(62), op: 'menu', did: 'chose' },

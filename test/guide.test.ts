@@ -7,11 +7,12 @@ import * as path from 'path';
 import { agentGuide } from '../core/assistant/guide';
 import * as showFiles from '../core/show/files';
 import { build } from './helpers';
+import type { Device } from '../core/show/types';
 
 const doc = () => build([
   { op: 'cue.add', cue: { type: 'memo', number: '1', name: 'Places' } },
   { op: 'device.add', device: { name: 'Lantern A', model: 'ec-prop-light', host: '10.0.0.42' } },
-  { op: 'device.add', device: { name: 'Sampler', kind: 'instrument', via: 'midi', commands: [{ id: 'scene', label: 'Scene', template: 'pc {n} ch 10', params: [{ key: 'n', kind: 'number', default: 1 }] }] } },
+  { op: 'device.add', device: { name: 'Sampler', kind: 'instrument', via: 'midi', commands: [{ id: 'scene', label: 'Scene', template: 'pc {n} ch 10', params: [{ key: 'n', kind: 'number', default: 1 }] }] } as Partial<Device> },
   { op: 'show.set', path: 'settings.rig.script', value: 'script.md' },
 ]).doc;
 

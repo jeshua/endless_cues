@@ -9,7 +9,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createAssistant, demoProvider } from '../core/assistant/assistant';
+import type { Reply, ToolUseBlock } from '../core/assistant/assistant';
 import { TOOLS, SYSTEM, reference, lookup, outline, execute, describeCall, privateAddress, MAX_ASKS, LONG_SHOW } from '../core/assistant/tools';
+import type { AskTarget, AtOnce, EngineView, RigService, ToolContext, ToolInput, ToolResult } from '../core/assistant/tools';
+import type { Op } from '../core/show/ops';
+import type { Change } from '../core/show/diff';
+import type { Device } from '../core/show/types';
 import * as mcp from '../core/assistant/mcp';
 import * as rigDevices from '../core/rig/devices';
 import * as show from '../core/show/show';
@@ -25,17 +30,19 @@ function folderShow(files = ['01 walk-in', '02 Overture FINAL', 'Sc2_door', 'Sc2
   fs.writeFileSync(path.join(dir, '.DS_Store'), 'x');
   return ShowDocument.open(dir);
 }
+/** The fake rig service: the service, what was asked of it, and the mode the app is in. */
+type FakeRig = RigService & { asked: AskTarget[]; mode: string };
 /** The host's rig service, faked: what it would say, and a record of what was asked of it. */
-function fakeRig(over = {}) {
-  const asked = [];
+function fakeRig(over: Partial<RigService> = {}): FakeRig {
+  const asked: AskTarget[] = [];
   const rig = {
     asked, mode: 'edit',
     status: () => ({
       summary: { ready: 1, total: 3, look: 1, problems: 1, unknown: 0, at: Date.now(), text: '1 of 3 ready · 1 to look at · 1 problem' },
       items: [
-        { id: 'show.saved', group: 'show', label: 'The show is saved', state: 'look', text: '3 unsaved changes', fix: 'Save (⌘S).', needed: true, actions: [] },
-        { id: 'show.backups', group: 'show', label: 'Backups are on', state: 'ready', text: 'every 5 minutes', fix: '', needed: true, actions: [] },
-        { id: 'device.lantern', group: 'equipment', label: 'Lantern', state: 'problem', text: 'not answering (last heard 2 min ago)', fix: 'Check its power, and that it is on the show’s Wi-Fi.', needed: true, actions: [] },
+        { id: 'show.saved', group: 'show', groupLabel: 'The show', label: 'The show is saved', state: 'look', text: '3 unsaved changes', fix: 'Save (⌘S).', needed: true, actions: [] },
+        { id: 'show.backups', group: 'show', groupLabel: 'The show', label: 'Backups are on', state: 'ready', text: 'every 5 minutes', fix: '', needed: true, actions: [] },
+        { id: 'device.lantern', group: 'equipment', groupLabel: 'Equipment', label: 'Lantern', state: 'problem', text: 'not answering (last heard 2 min ago)', fix: 'Check its power, and that it is on the show’s Wi-Fi.', needed: true, actions: [] },
       ],
       devices: { lantern: { state: 'problem', text: 'not answering', heardAt: Date.now() - 120000, ageMs: 120000, reports: [{ key: 'battery', label: 'Battery', value: 18, unit: '%', warn: true }], lastIn: '/ec/here lantern light 1.0 own 60 -52 18' } },
       found: null,
@@ -45,18 +52,20 @@ function fakeRig(over = {}) {
       { n: 1, at: Date.now() - 5000, dir: 'out', who: 'Lantern 10.0.0.42:53100', patch: 'lantern', text: '/ec/identify', ok: true, label: 'cue 12' },
       { n: 2, at: Date.now() - 4000, dir: 'out', who: 'Desk 10.0.0.20:8000', patch: 'desk', text: '/eos/cue/1/12/fire', ok: false, why: 'held back for rehearsal', held: true, label: '' },
       { n: 3, at: Date.now() - 3000, dir: 'in', who: '10.0.0.57:53100', patch: null, text: '/fog/ready 1', via: 'input', unused: true },
-    ],
+    ] as NonNullable<ReturnType<RigService['monitor']>>,
     senders: () => [{ address: '10.0.0.57', port: 53100, count: 14, messages: [{ address: '/fog/ready', count: 14, every: 2.04 }], lastAt: Date.now() }],
-    ask: async (target) => { asked.push(target); return { ok: true, held: false, answered: true, ms: 4, text: '/ec/here lantern light 1.0 steady 532 -52 87', why: '' }; },
+    ask: async (target: AskTarget) => { asked.push(target); return { ok: true, held: false, answered: true, ms: 4, text: '/ec/here lantern light 1.0 steady 532 -52 87', why: '' }; },
     scan: async () => { asked.push('scan'); return [{ name: 'lantern', kind: 'light', fw: '1.0', host: '10.0.0.42', port: 53100, known: null, moved: false }]; },
-    locked: () => rig.mode === 'show',
+    locked: (): boolean => rig.mode === 'show',
     ...over,
   };
   return rig;
 }
-const LANTERN = { op: 'device.add', device: { name: 'Lantern', model: 'ec-prop-light', host: '10.0.0.42' } };
-const session = (d, rig = null) => { const ctx = { document: d, draft: null, rig, files: new Map() }; return { ctx, run: (name, input) => execute(name, input, ctx) }; };
-const helper = (d, rig = null) => { const a = createAssistant({ provider: demoProvider() }); return { a, ask: async (text, engine) => { const r = await a.ask(text, { document: d, rig, engine }); return { r, said: a.status().transcript.at(-1).text, steps: a.status().transcript.at(-1).steps }; } }; };
+const LANTERN: Op = { op: 'device.add', device: { name: 'Lantern', model: 'ec-prop-light', host: '10.0.0.42' } };
+/** execute() as a session calls it: the tools that answer at once answer at once. */
+type RunTool = { (name: AtOnce, input: ToolInput): ToolResult; (name: string, input: ToolInput): ToolResult | Promise<ToolResult> };
+const session = (d: ShowDocument, rig: RigService | null = null) => { const ctx: Omit<ToolContext, 'files'> & { files: Map<string, string> } = { document: d, draft: null, rig, files: new Map() }; return { ctx, run: ((name: string, input: ToolInput) => execute(name, input, ctx)) as RunTool }; };
+const helper = (d: ShowDocument, rig: RigService | null = null) => { const a = createAssistant({ provider: demoProvider() }); return { a, ask: async (text: string, engine?: EngineView) => { const r = await a.ask(text, { document: d, rig, engine }); return { r, said: a.status().transcript.at(-1)!.text, steps: a.status().transcript.at(-1)!.steps }; } }; };
 
 test('the tool table: the eight new tools, each with a closed schema, a line for the person watching, and no way to play, save or command', () => {
   for (const name of ['list_folder', 'read_file', 'rig_status', 'read_monitor', 'ask_device', 'find_devices', 'make_prop_files', 'hand_off']) {
@@ -69,8 +78,8 @@ test('the tool table: the eight new tools, each with a closed schema, a line for
   assert.equal(describeCall('read_file', { path: 'script.md' }), 'reading script.md');
   for (const t of TOOLS) assert.doesNotMatch(t.name, /try|send|command|flash|write_file|run/);
   // no schema takes a password, and the firmware tool's settings are the kit's own
-  assert.doesNotMatch(JSON.stringify(TOOLS.map((t) => Object.keys(t.input_schema.properties))), /pass/i);
-  assert.deepEqual(TOOLS.find((t) => t.name === 'make_prop_files').input_schema.required, ['device', 'sketch']);
+  assert.doesNotMatch(JSON.stringify(TOOLS.map((t) => Object.keys(t.input_schema.properties!))), /pass/i);
+  assert.deepEqual(TOOLS.find((t) => t.name === 'make_prop_files')!.input_schema.required, ['device', 'sketch']);
   // the instructions say what it may send and what it never does
   for (const words of ['You can never send a device a command', 'Never invent an address, a port or a message', 'never ask for a Wi-Fi password', 'offer hand_off', 'say in your reply exactly what you guessed']) assert.ok(SYSTEM.includes(words), words);
 });
@@ -105,14 +114,14 @@ test('the outline: one line a device and three lines more; a long show stays sho
   assert.match(plain, /^Rig: not saved to a folder yet$/m);
   assert.doesNotMatch(plain, /Rig now/);
   // 300 cues and 3 devices: the short outline, plus three device lines
-  const ops = Array.from({ length: LONG_SHOW + 50 }, (_x, i) => ({ op: 'cue.add', cue: { type: 'memo', number: String(i + 1) } }));
+  const ops = Array.from({ length: LONG_SHOW + 50 }, (_x, i): Op => ({ op: 'cue.add', cue: { type: 'memo', number: String(i + 1) } }));
   const long = build([...ops, LANTERN, { op: 'device.add', device: { name: 'B', model: 'ec-prop-light' } }, { op: 'device.add', device: { name: 'C', model: 'x32', host: '10.0.0.9' } }]).doc;
   const lines = outline(long).split('\n');
   assert.equal(lines.filter((l) => /^(Devices: | {9})\w+ = /.test(l)).length, 3);
   assert.ok(lines.some((l) => l.startsWith('This is a long show')));
   assert.ok(lines.length < LONG_SHOW + 50 + 14);
   // many devices: names only
-  const many = build(Array.from({ length: 13 }, (_x, i) => ({ op: 'device.add', device: { name: `Lamp ${i + 1}`, model: 'ec-prop-light' } }))).doc;
+  const many = build(Array.from({ length: 13 }, (_x, i): Op => ({ op: 'device.add', device: { name: `Lamp ${i + 1}`, model: 'ec-prop-light' } }))).doc;
   assert.match(outline(many), /^Devices \(13; read_show \{"device": "<id>"\} for one in full\): lamp_1 = Lamp 1; /m);
   assert.doesNotMatch(outline(many), /commands:/);
 });
@@ -139,7 +148,7 @@ test('list_folder and read_file: the folder as a person reads it, a script with 
   assert.equal(part.split('\n').length, 3);
   // check_show says which marks have no cue
   assert.match(s.run('check_show', {}).content, /warning: the script’s mark @cue 1 Walk-in out \(script\.md line 4\) has no cue numbered 1/);
-  for (const [p, why] of [['../secret.txt', /outside the show folder/], ['show.json', /the show itself/], ['01 walk-in.wav', /not a text file/], ['nope.md', /no file nope\.md/]]) {
+  for (const [p, why] of [['../secret.txt', /outside the show folder/], ['show.json', /the show itself/], ['01 walk-in.wav', /not a text file/], ['nope.md', /no file nope\.md/]] as [string, RegExp][]) {
     const r = s.run('read_file', { path: p });
     assert.equal(r.is_error, true, p);
     assert.match(r.content, why);
@@ -183,7 +192,7 @@ test('ask_device: a device in the show is asked; every other way is refused befo
   assert.deepEqual(rig.asked[1], { host: '10.0.0.20', port: 8000, probe: 'etc-eos' });
   assert.deepEqual((await s.run('ask_device', { host: 'localhost', probe: 'ec-prop-light' }), rig.asked[2]), { host: '127.0.0.1', port: 53100, probe: 'ec-prop-light' }, 'the model’s usual port');
   const sent = rig.asked.length;
-  const refused = async (input, why) => { const r = await s.run('ask_device', input); assert.equal(r.is_error, true, JSON.stringify(input)); assert.match(r.content, why); };
+  const refused = async (input: ToolInput, why: RegExp) => { const r = await s.run('ask_device', input); assert.equal(r.is_error, true, JSON.stringify(input)); assert.match(r.content, why); };
   await refused({ host: '8.8.8.8', port: 8000, probe: 'etc-eos' }, /not an address on this computer or a private network/);
   await refused({ host: 'desk.example.com', port: 8000, probe: 'etc-eos' }, /written as numbers/);
   await refused({ host: '172.32.0.1', port: 8000, probe: 'etc-eos' }, /private network/);
@@ -238,13 +247,13 @@ test('a device made through edit_show and proposed: the answer names it, the rev
   assert.match(s.run('simulate', { from: '#12' }).content, /\/eos\/cue\/1\/12\/fire/);
   const r = s.run('propose_changes', { summary: 'The desk, and cue 12 fires its cue 12' });
   assert.match(r.content, /1 added[\s\S]*1 device \(added Lighting desk\)/);
-  const dev = d.proposal.changes.find((c) => c.kind === 'device-added');
-  assert.equal(dev.text, 'desk · 127.0.0.1:8000 · 7 commands · asked every 2 s');
+  const dev = d.proposal!.changes.find((c): c is Extract<Change, { kind: 'device-added' | 'device-removed' }> => c.kind === 'device-added');
+  assert.equal(dev!.text, 'desk · 127.0.0.1:8000 · 7 commands · asked every 2 s');
   // a command the device does not have is refused or reported, never staged silently
   const bad = s.run('edit_show', { ops: [{ op: 'cue.add', cue: { type: 'device', device: 'lighting_desk', command: 'blink' } }] }).content;
   assert.match(bad, /no command “blink”/);
   // a model's check: a device whose message does not fit is refused whole
-  const wrong = s.run('edit_show', { ops: [{ op: 'device.add', device: { name: 'Fog', host: '10.0.0.60', port: 9000, commands: [{ id: 'burst', label: 'Burst', template: '/fog/burst {secs}' }] } }] });
+  const wrong = s.run('edit_show', { ops: [{ op: 'device.add', device: { name: 'Fog', host: '10.0.0.60', port: 9000, commands: [{ id: 'burst', label: 'Burst', template: '/fog/burst {secs}' }] } as Partial<Device> }] });
   assert.equal(wrong.is_error, true);
   assert.match(wrong.content, /\{secs\}/);
 });
@@ -265,13 +274,13 @@ test('firmware and the hand-over: files staged by the app’s generators, carrie
   assert.equal(d.proposal, null, 'staging is not proposing');
   const p = s.run('propose_changes', { summary: 'Lantern and its firmware' });
   assert.match(p.content, /1 device \(added Lantern\), 6 files for the show folder \(props\/lantern\/lantern\.ino, [^)]*\), written when they accept/);
-  assert.equal(d.proposal.counts.files, 6);
-  assert.ok(!fs.existsSync(path.join(d.showDir, 'props')), 'nothing is written until a person accepts');
-  d.accept(d.proposal.id);
-  assert.match(fs.readFileSync(path.join(d.showDir, 'props/lantern/config.h'), 'utf8'), /#define LED_COUNT 12/);
-  assert.equal(rigDevices.find(d.doc, 'lantern').host, '10.0.0.42');
+  assert.equal(d.proposal!.counts.files, 6);
+  assert.ok(!fs.existsSync(path.join(d.showDir!, 'props')), 'nothing is written until a person accepts');
+  d.accept(d.proposal!.id);
+  assert.match(fs.readFileSync(path.join(d.showDir!, 'props/lantern/config.h'), 'utf8'), /#define LED_COUNT 12/);
+  assert.equal(rigDevices.find(d.doc, 'lantern')!.host, '10.0.0.42');
   // the person types their password; asking for the firmware again never touches it
-  const secrets = path.join(d.showDir, 'props/lantern/secrets.h');
+  const secrets = path.join(d.showDir!, 'props/lantern/secrets.h');
   fs.writeFileSync(secrets, '#define WIFI_SSID "Stage"\n#define WIFI_PASS "their password"\n');
   const again = session(d);
   const second = again.run('make_prop_files', { device: 'lantern', sketch: 'light', count: 60 }).content;
@@ -281,12 +290,12 @@ test('firmware and the hand-over: files staged by the app’s generators, carrie
   assert.match(again.run('hand_off', { why: 'It must speak HTTP to a projector.' }).content, /^Staged the guide for a coding agent: AGENTS\.md[\s\S]*cd "[^"]+"\n {2}claude/);
   const alone = again.run('propose_changes', { summary: 'More LEDs, and the hand-over' });
   assert.match(alone.content, /0 added, 0 changed[\s\S]*7 files for the show folder/);
-  assert.deepEqual(d.proposal.changes, []);
-  assert.equal(d.proposal.files.find((f) => f.path === 'props/lantern/config.h').replaces, true);
-  d.accept(d.proposal.id);
+  assert.deepEqual(d.proposal!.changes, []);
+  assert.equal(d.proposal!.files.find((f) => f.path === 'props/lantern/config.h')!.replaces, true);
+  d.accept(d.proposal!.id);
   assert.match(fs.readFileSync(secrets, 'utf8'), /their password/);
-  assert.match(fs.readFileSync(path.join(d.showDir, 'AGENTS.md'), 'utf8'), /\*\*Lantern\*\* \(`lantern`\)/);
-  assert.equal(fs.readFileSync(path.join(d.showDir, 'CLAUDE.md'), 'utf8'), '@AGENTS.md\n');
+  assert.match(fs.readFileSync(path.join(d.showDir!, 'AGENTS.md'), 'utf8'), /\*\*Lantern\*\* \(`lantern`\)/);
+  assert.equal(fs.readFileSync(path.join(d.showDir!, 'CLAUDE.md'), 'utf8'), '@AGENTS.md\n');
   assert.match(session(d).run('propose_changes', { summary: 'x' }).content, /nothing to propose/);
 });
 
@@ -297,8 +306,8 @@ test('the built-in helper: cues from the folder, through the real tools, saying 
   assert.deepEqual(steps, ['looking at the folder', 'handing over the change']);
   assert.match(said, /^5 cues in file-name order, numbered 1 to 5, named after their files/);
   assert.match(said, /Scene 2[\s\S]*“Rain loop” is called a loop\. I did not make it loop[\s\S]*I did not read script\.md\.[\s\S]*Nothing else is set/);
-  assert.equal(d.proposal.counts.added, 6);
-  d.accept(d.proposal.id);
+  assert.equal(d.proposal!.counts.added, 6);
+  d.accept(d.proposal!.id);
   assert.deepEqual(d.doc.lists[0].cues.map((c) => [c.number || '', c.name]), [['1', 'Walk-in'], ['2', 'Overture'], ['3', 'Rain loop'], ['', 'Scene 2'], ['4', 'Door'], ['5', 'Thunder']]);
   assert.equal(d.doc.lists[0].cues[2].loop, undefined, 'a loop is said, never switched on');
   assert.deepEqual(show.problems(d.doc), []);
@@ -312,18 +321,18 @@ test('the built-in helper: a device from a model named in words, a cue for its c
   const d = folderShow();
   const h = helper(d);
   assert.match((await h.ask('add a lantern at 10.0.0.42')).said, /^Lantern, from the app’s model “Prop light \(the Endless Cues kit\)”: I took that from your words[\s\S]*7 commands[\s\S]*every 2 seconds/);
-  assert.equal(d.proposal.changes[0].kind, 'device-added');
-  d.accept(d.proposal.id);
-  assert.deepEqual([rigDevices.find(d.doc, 'lantern').model, rigDevices.find(d.doc, 'lantern').host, rigDevices.find(d.doc, 'lantern').port], ['ec-prop-light', '10.0.0.42', 53100]);
-  await h.ask('my lighting desk is an ETC Ion at 10.0.0.20'); d.accept(d.proposal.id);
-  assert.deepEqual([rigDevices.find(d.doc, 'lighting_desk').model, rigDevices.find(d.doc, 'lighting_desk').name], ['etc-eos', 'Lighting desk']);
+  assert.equal(d.proposal!.changes[0].kind, 'device-added');
+  d.accept(d.proposal!.id);
+  assert.deepEqual([rigDevices.find(d.doc, 'lantern')!.model, rigDevices.find(d.doc, 'lantern')!.host, rigDevices.find(d.doc, 'lantern')!.port], ['ec-prop-light', '10.0.0.42', 53100]);
+  await h.ask('my lighting desk is an ETC Ion at 10.0.0.20'); d.accept(d.proposal!.id);
+  assert.deepEqual([rigDevices.find(d.doc, 'lighting_desk')!.model, rigDevices.find(d.doc, 'lighting_desk')!.name], ['etc-eos', 'Lighting desk']);
   // a thing it does not know: a plain device, no commands invented, and it says so
   assert.match((await h.ask('add a device called Fog at 10.0.0.60:9000')).said, /plain device at 10\.0\.0\.60:9000\. I do not know what it is, so it has no commands yet/);
-  d.accept(d.proposal.id);
-  assert.deepEqual(rigDevices.find(d.doc, 'fog').commands, []);
+  d.accept(d.proposal!.id);
+  assert.deepEqual(rigDevices.find(d.doc, 'fog')!.commands, []);
   // "the lighting desk" with no maker named is not guessed to be anybody's desk
   await h.ask('add the lighting desk at 10.0.0.21');
-  assert.match(h.a.status().transcript.at(-1).text, /already has a device called Lighting desk/);
+  assert.match(h.a.status().transcript.at(-1)!.text, /already has a device called Lighting desk/);
   assert.match((await h.ask('add a lantern at 10.0.0.43')).said, /already has a device called Lantern \(at 10\.0\.0\.42\)/);
   assert.match((await h.ask('add a device')).said, /What is it called\?/);
   // a cue for a command, after the cue the playhead is on
@@ -332,13 +341,13 @@ test('the built-in helper: a device from a model named in words, a cue for its c
   const cue = await h.ask('Add a cue that sends Identify to Lantern.', { playhead: one.id, running: new Map(), durations: new Map() });
   assert.deepEqual(cue.steps, ['reading the device lantern', 'handing over the change']);
   assert.match(cue.said, /“Lantern ▸ Identify”, after cue 1\. GO on it sends \/ec\/identify\. I cannot send it myself/);
-  d.accept(d.proposal.id);
+  d.accept(d.proposal!.id);
   assert.deepEqual([d.doc.lists[0].cues[1].type, d.doc.lists[0].cues[1].device, d.doc.lists[0].cues[1].command], ['device', 'lantern', 'identify']);
   // (numbered as a cue added from the toolbar is: between 1 and 2 it is 1.5; at the end, one more than the highest)
   assert.equal(d.doc.lists[0].cues[1].number, '1.5');
-  await h.ask('add a cue that sends effect pulse to lantern'); d.accept(d.proposal.id);
-  assert.deepEqual(d.doc.lists[0].cues.at(-1).args, { name: 'pulse' });
-  assert.equal(d.doc.lists[0].cues.at(-1).number, '3');
+  await h.ask('add a cue that sends effect pulse to lantern'); d.accept(d.proposal!.id);
+  assert.deepEqual(d.doc.lists[0].cues.at(-1)!.args, { name: 'pulse' });
+  assert.equal(d.doc.lists[0].cues.at(-1)!.number, '3');
   assert.match((await h.ask('add a cue that sends strobe to Lantern')).said, /Lantern has no command “strobe”\. It has: Look, Colour, Level/);
   assert.match((await h.ask('add a cue that sends identify to the fridge')).said, /no device called “the fridge”\. It has: Lantern, Lighting desk, Fog/);
   assert.match((await h.ask('add a cue that sends effect strobe to lantern')).said, /That would not send/);
@@ -351,13 +360,13 @@ test('the built-in helper: props found, readiness, why a device is quiet, firmwa
   const found = await h.ask('look for props');
   assert.deepEqual(found.steps, ['looking for props', 'handing over the change']);
   assert.match(found.said, /^One prop answered that the show does not have yet: lantern at 10\.0\.0\.42 \(a light, firmware 1\.0\)/);
-  d.accept(d.proposal.id);
-  assert.deepEqual([rigDevices.find(d.doc, 'lantern').name, rigDevices.find(d.doc, 'lantern').model], ['Lantern', 'ec-prop-light']);
+  d.accept(d.proposal!.id);
+  assert.deepEqual([rigDevices.find(d.doc, 'lantern')!.name, rigDevices.find(d.doc, 'lantern')!.model], ['Lantern', 'ec-prop-light']);
   // found again, now known; and one that has moved is offered its new address
   rig.scan = async () => [{ name: 'lantern', kind: 'light', fw: '1.0', host: '10.0.0.57', port: 53100, known: 'lantern', moved: true }];
   assert.match((await h.ask('look for props')).said, /answered from a new address/);
-  d.accept(d.proposal.id);
-  assert.equal(rigDevices.find(d.doc, 'lantern').host, '10.0.0.57');
+  d.accept(d.proposal!.id);
+  assert.equal(rigDevices.find(d.doc, 'lantern')!.host, '10.0.0.57');
   rig.scan = async () => [];
   assert.match((await h.ask('look for props')).said, /^Nothing answered\. Props must be powered, on this network, and running the kit’s firmware\./);
   assert.equal(d.proposal, null);
@@ -376,20 +385,20 @@ test('the built-in helper: props found, readiness, why a device is quiet, firmwa
   const fw = await h.ask('Write firmware for Lantern.');
   assert.deepEqual(fw.steps, ['writing firmware for lantern', 'handing over the change']);
   assert.match(fw.said, /^Firmware for Lantern \(a light: 30 LEDs, GRB, data on GPIO 5[\s\S]*secrets\.h[\s\S]*has not yet been run on a board/);
-  assert.equal(d.proposal.counts.files, 6);
-  d.accept(d.proposal.id);
+  assert.equal(d.proposal!.counts.files, 6);
+  d.accept(d.proposal!.id);
   const over = await h.ask('hand the show over');
   assert.match(over.said, /AGENTS\.md and CLAUDE\.md[\s\S]*cd "[^"]+"\n {2}claude/);
-  assert.deepEqual(d.proposal.files.map((f) => f.path), ['AGENTS.md', 'CLAUDE.md']);
+  assert.deepEqual(d.proposal!.files.map((f) => f.path), ['AGENTS.md', 'CLAUDE.md']);
   d.reject();
 
   // a patch made a device: the same id, so cues still aim at it
   d.edit([{ op: 'show.set', path: 'settings.network.patches', value: [{ id: 'eos', name: 'Eos', host: '10.0.0.20', port: 8000, protocol: 'udp', device: 'etc-eos' }] }, { op: 'cue.add', cue: { type: 'network', number: '5', patch: 'eos', message: '/eos/key/go_0' } }]);
-  await h.ask('Turn the patch “Eos” into a device.'); d.accept(d.proposal.id);
-  assert.deepEqual([d.doc.settings.network.patches.length, rigDevices.find(d.doc, 'eos').model, show.findByNumber(d.doc, '5').patch], [0, 'etc-eos', 'eos']);
+  await h.ask('Turn the patch “Eos” into a device.'); d.accept(d.proposal!.id);
+  assert.deepEqual([d.doc.settings.network.patches.length, rigDevices.find(d.doc, 'eos')!.model, show.findByNumber(d.doc, '5')!.patch], [0, 'etc-eos', 'eos']);
   assert.deepEqual(show.problems(d.doc).filter((p) => p.level === 'error'), []);
   d.edit([{ op: 'cue.add', cue: { type: 'memo', number: '5' } }, { op: 'cue.add', cue: { type: 'memo' } }]);
-  await h.ask('Renumber Main in tens.'); d.accept(d.proposal.id);
+  await h.ask('Renumber Main in tens.'); d.accept(d.proposal!.id);
   assert.deepEqual(d.doc.lists[0].cues.map((c) => c.number), ['10', '20', '30']);
   assert.match((await h.ask('Check the show for problems.')).said, /Nothing wrong|warning|error/);
   // anything else: what it is, what it does, where a model is
@@ -402,7 +411,7 @@ test('every ask the first screen offers to the helper is one the helper really d
   const d = folderShow();
   const rig = fakeRig();
   const h = helper(d, rig);
-  const first = () => h.a.status({ document: d, rig }).first;
+  const first = () => h.a.status({ document: d, rig }).first!;
   assert.equal(first().asks[0].text, 'Make cues from the 5 sounds in this folder.');
   for (let round = 0; round < 6; round++) {
     for (const ask of first().asks) {
@@ -410,21 +419,21 @@ test('every ask the first screen offers to the helper is one the helper really d
       const { said } = await h.ask(ask.text);
       assert.doesNotMatch(said, /^The built-in helper has no model/, `“${ask.text}” fell through to the list`);
       assert.doesNotMatch(said, /^I could not/, `“${ask.text}”: ${said}`);
-      if (d.proposal) d.accept(d.proposal.id);
+      if (d.proposal) d.accept(d.proposal!.id);
     }
-    if (round === 0) { await h.ask('add a lantern at 10.0.0.42'); d.accept(d.proposal.id); }
+    if (round === 0) { await h.ask('add a lantern at 10.0.0.42'); d.accept(d.proposal!.id); }
   }
   assert.equal(first().state, 'devices');
-  assert.ok(fs.existsSync(path.join(d.showDir, 'props/lantern/lantern.ino')));
+  assert.ok(fs.existsSync(path.join(d.showDir!, 'props/lantern/lantern.ino')));
 });
 
 test('status: the first screen, which agents are installed, and the helper’s name', () => {
   const d = folderShow();
   const off = createAssistant({ config: { provider: 'off' } }).status({ document: d });
-  assert.equal(off.first.state, 'no-model');
-  assert.equal(off.first.line, '5 sounds and 1 text file not in a cue yet.');
-  assert.equal(typeof off.installed['claude-code'], 'boolean');
-  assert.equal(off.first.setup.rows.at(-1).set, 'demo');
+  assert.equal(off.first!.state, 'no-model');
+  assert.equal(off.first!.line, '5 sounds and 1 text file not in a cue yet.');
+  assert.equal(typeof off.installed!['claude-code'], 'boolean');
+  assert.equal(off.first!.setup!.rows.at(-1)!.set, 'demo');
   assert.equal(createAssistant({ provider: demoProvider() }).status({ document: d }).label, 'Built-in helper');
   assert.equal(createAssistant({ config: { provider: 'off' } }).status().first, undefined, 'asked without a show, it says nothing of one');
 });
@@ -432,35 +441,35 @@ test('status: the first screen, which agents are installed, and the helper’s n
 test('a turn with a scripted model: the tools are awaited, a waiting proposal’s files carry into the next turn', async () => {
   const d = folderShow(); d.edit([LANTERN]);
   const rig = fakeRig();
-  const use = (id, name, input) => ({ type: 'tool_use', id, name, input });
-  const replies = [
+  const use = (id: string, name: string, input: unknown): ToolUseBlock => ({ type: 'tool_use', id, name, input });
+  const replies: Omit<Reply, 'role'>[] = [
     { stop_reason: 'tool_use', content: [use('t1', 'ask_device', { device: 'lantern' }), use('t2', 'make_prop_files', { device: 'lantern', sketch: 'light' })] },
     { stop_reason: 'tool_use', content: [use('t3', 'propose_changes', { summary: 'Firmware for the lantern' })] },
     { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Firmware is staged.' }] },
     { stop_reason: 'tool_use', content: [use('t4', 'propose_changes', { summary: 'And a memo', ops: [{ op: 'cue.add', cue: { type: 'memo', name: 'Check the lantern' } }] })] },
     { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Added.' }] },
   ];
-  const seen = [];
-  const a = createAssistant({ provider: { name: 'scripted', async create(req) { seen.push(JSON.parse(JSON.stringify(req.messages))); return replies.shift(); } } });
+  const seen: any[] = [];   // the messages as sent, through JSON
+  const a = createAssistant({ provider: { name: 'scripted', async create(req) { seen.push(JSON.parse(JSON.stringify(req.messages))); return replies.shift() as Reply; } } });
   await a.ask('is the lantern there? then write its firmware', { document: d, rig });
   const results = seen[1].at(-1).content;
   assert.match(results[0].content, /^Lantern answered in 4 ms/, 'the answer was waited for, not a promise');
-  assert.equal(d.proposal.counts.files, 6);
+  assert.equal(d.proposal!.counts.files, 6);
   assert.match(seen[0][0].content[0].text, /Rig now: 1 of 3 ready/, 'the outline sent with the question has the Rig as it is');
   await a.ask('and add a memo', { document: d, rig });
-  assert.equal(d.proposal.counts.files, 6, 'the firmware is still on the proposal that replaced the first');
-  assert.equal(d.proposal.counts.added, 1);
+  assert.equal(d.proposal!.counts.files, 6, 'the firmware is still on the proposal that replaced the first');
+  assert.equal(d.proposal!.counts.added, 1);
 });
 
 test('MCP on a show folder: every tool listed, files written at once, and the rig said to need the app', async () => {
   const d = folderShow(); d.edit([LANTERN]); d.save({ note: 'a lantern' });
-  const backend = mcp.fileBackend(d.showDir);
+  const backend = mcp.fileBackend(d.showDir!);
   assert.match((await backend.call('list_folder', {})).content, /01 walk-in\.wav/);
   assert.match((await backend.call('ask_device', { device: 'lantern' })).content, /needs the Endless Cues app running/);
   await backend.call('hand_off', { why: 'x' });
   const done = await backend.call('propose_changes', { summary: 'The guide' });
   assert.match(done.content, /^Done: “The guide”\. Written into the show folder: AGENTS\.md, CLAUDE\.md\.$/);
-  assert.ok(fs.existsSync(path.join(d.showDir, 'AGENTS.md')));
-  assert.ok(!fs.existsSync(path.join(d.showDir, 'show.unsaved.json')), 'files alone leave no unsaved change behind');
+  assert.ok(fs.existsSync(path.join(d.showDir!, 'AGENTS.md')));
+  assert.ok(!fs.existsSync(path.join(d.showDir!, 'show.unsaved.json')), 'files alone leave no unsaved change behind');
   assert.match(mcp.INSTRUCTIONS, /^MODELS \(.*etc-eos — ETC Eos family/m);
 });

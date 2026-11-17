@@ -9,25 +9,28 @@
  *   tracksOf(cue)                       the buses the sounds at or under an engine cue play on
  *   replacedBy(cue, running, byId)      the ids of the running sounds a launch of `cue` takes over
  */
+/** An engine cue, as much of it as a launch reads. */
+export interface LaunchCue { id: string; type: string; bus?: string; children?: LaunchCue[] }
+
 const TAKEOVER_FADE = 0.08;       // s: the clip leaving is faded out under the one arriving, so the cut does not click
 
 /** The audio cues at or under an engine cue (one that plays a file: a Mic cue is an input, not a clip). */
-function soundsOf(cue, out = []) {
+function soundsOf(cue: LaunchCue | null | undefined, out: LaunchCue[] = []) {
   if (!cue) return out;
   if (cue.type === 'audio') out.push(cue);
   for (const k of cue.children || []) soundsOf(k, out);
   return out;
 }
 
-function tracksOf(cue) {
+function tracksOf(cue: LaunchCue | null | undefined) {
   return [...new Set(soundsOf(cue).map((c) => c.bus).filter(Boolean))];
 }
 
 /** `running`: the ids of what is sounding; `byId`: id → engine cue (its `bus` already decided). */
-function replacedBy(cue, running, byId) {
+function replacedBy(cue: LaunchCue | null | undefined, running: Iterable<string>, byId: Map<string, LaunchCue>) {
   const mine = new Set(soundsOf(cue).map((c) => c.id));
   const tracks = new Set(tracksOf(cue));
-  const out = [];
+  const out: string[] = [];
   for (const id of running) {
     const c = byId.get(id);
     if (c && c.type === 'audio' && !mine.has(id) && tracks.has(c.bus)) out.push(id);

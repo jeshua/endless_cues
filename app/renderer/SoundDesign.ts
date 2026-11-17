@@ -5,36 +5,52 @@
 // The tab is a rack, as a sound engineer knows it from a channel strip or a DAW: one device per tool in use, left to
 // right in the order they run, each with a power button and its main settings as knobs (Knob.js).
 import { html, useState, useEffect, useRef, ec, edit, setCue, cx } from './lib.js';
+import type { Cue, State, Info } from './lib.js';
+import type { LanePoint } from '../../core/show/types';
+import type { Pending } from './app.js';
+import type { ComponentChildren, VNode } from 'preact';
 import * as Lanes from '../../core/audio/lanes.js';
 import { ParamKnob } from './Knob.js';
 import { curvePath, filterDb, eqDb, quantize } from './dial.js';
+import type { KnobParam } from './Knob.js';
+import type { Tool, Param, NumberParam, EqBandSpec, EqBandValue, Sweepable, ChainValue, EqValue } from '../../core/audio/chain';
+
+/** A tool's settings as this tab handles them, whatever the tool: { hz: 300, slope: 24 }, `on: false` while it is off. */
+type Settings = Record<string, number | string | boolean | undefined>;
+/** A chain as this tab handles it: { tool: settings }, and `tail` and `bypass`. */
+type Rack = Record<string, Settings | true | undefined>;
+/** An eq as this tab handles it: { band: dB } at its usual place, or { band: { db, hz, q } } once moved. */
+type Bands = Record<string, EqBandValue | undefined>;
+/** A preset: a chain and an eq. */
+interface Preset { chain?: ChainValue; eq?: EqValue }
 
 
 /** One small box that commits on Enter or when it loses the keyboard, and goes back on Esc. */
-function Box({ value, onCommit, title, placeholder = '', width = 52, ...rest }) {
-  const [draft, setDraft] = useState(null);
-  const typed = useRef(null);            // what has been typed, whether or not the box has been drawn again since
-  const type = (v) => { typed.current = v; setDraft(v); };
+interface BoxProps { value: string | number | null | undefined; onCommit: (text: string) => void; title?: string; placeholder?: string; width?: number; [attr: string]: unknown }
+function Box({ value, onCommit, title, placeholder = '', width = 52, ...rest }: BoxProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const typed = useRef<string | null>(null);            // what has been typed, whether or not the box has been drawn again since
+  const type = (v: string | null) => { typed.current = v; setDraft(v); };
   const drawn = useRef(false);
   useEffect(() => { if (drawn.current) type(null); drawn.current = true; }, [value]);
   const done = () => { const d = typed.current; type(null); if (d !== null && d !== String(value ?? '')) onCommit(d); };
   return html`<input type="text" class="mono" ...${rest} style=${`width:${width}px`} title=${title} placeholder=${placeholder} value=${draft !== null ? draft : (value ?? '')}
-    onInput=${(e) => type(e.target.value)} onBlur=${done}
-    onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); done(); e.target.blur(); } if (e.key === 'Escape') { type(null); e.target.blur(); e.stopPropagation(); } }} />`;
+    onInput=${(e: InputEvent & { target: HTMLInputElement }) => type(e.target.value)} onBlur=${done}
+    onKeyDown=${(e: KeyboardEvent & { target: HTMLInputElement }) => { if (e.key === 'Enter') { e.preventDefault(); done(); e.target.blur(); } if (e.key === 'Escape') { type(null); e.target.blur(); e.stopPropagation(); } }} />`;
 }
-const numberOf = (text) => { const t = String(text).trim().replace('−', '-').replace(/\s*(hz|db|ms|s|st|ct)$/i, ''); const k = /k$/i.test(t) ? 1000 : 1; const n = Number(t.replace(/k$/i, '')) * k; return t !== '' && Number.isFinite(n) ? n : null; };
-const shown = (v) => (v === undefined || v === null ? '' : String(v));
-const defaultsOf = (t) => Object.fromEntries(t.params.filter((p) => p.def !== undefined).map((p) => [p.key, p.def]));
+const numberOf = (text: string) => { const t = String(text).trim().replace('−', '-').replace(/\s*(hz|db|ms|s|st|ct)$/i, ''); const k = /k$/i.test(t) ? 1000 : 1; const n = Number(t.replace(/k$/i, '')) * k; return t !== '' && Number.isFinite(n) ? n : null; };
+const shown = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+const defaultsOf = (t: Tool): Settings => Object.fromEntries(t.params.filter((p) => p.def !== undefined).map((p) => [p.key, p.def]));
 
 /** What a chain has switched on, in a few words: for the tab's name and the cue's summary. */
-export function chainCount(cue) {
-  const c = cue.chain || {};
-  return Object.keys(c).filter((k) => c[k] && typeof c[k] === 'object' && c[k].on !== false).length + (cue.eq ? 1 : 0);
+export function chainCount(cue: Cue) {
+  const c: Rack = cue.chain || {};
+  return Object.keys(c).filter((k) => { const t = c[k]; return t && typeof t === 'object' && t.on !== false; }).length + (cue.eq ? 1 : 0);
 }
 
 // What each device shows on its face: at most four knobs, in this order; the rest of its settings are behind its
 // ‹ › (a choice or a switch is a small row of its own under the knobs, a file is behind the ‹ ›).
-const FRONT = {
+const FRONT: Record<string, string[]> = {
   highpass: ['hz'], lowpass: ['hz'],
   gate: ['threshold', 'range', 'attack', 'release'],
   comp: ['threshold', 'ratio', 'release', 'makeup'],
@@ -48,15 +64,16 @@ const FRONT = {
   reverb: ['size', 'decay', 'predelay', 'mix'],
 };
 // (a knob's name is short: the device's title says what it belongs to)
-const SHORT = { 'gate.threshold': 'Thresh', 'comp.threshold': 'Thresh', 'gate.range': 'Range', 'crush.hz': 'Rate', 'pitch.semitones': 'Semi', 'comp.makeup': 'Make-up', 'reverb.predelay': 'Pre-dly', 'highpass.hz': 'Freq', 'lowpass.hz': 'Freq', 'drive.out': 'Out', 'chorus.feedback': 'Fdbk', 'delay.feedback': 'Fdbk' };
-const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const SHORT: Record<string, string> = { 'gate.threshold': 'Thresh', 'comp.threshold': 'Thresh', 'gate.range': 'Range', 'crush.hz': 'Rate', 'pitch.semitones': 'Semi', 'comp.makeup': 'Make-up', 'reverb.predelay': 'Pre-dly', 'highpass.hz': 'Freq', 'lowpass.hz': 'Freq', 'drive.out': 'Out', 'chorus.feedback': 'Fdbk', 'delay.feedback': 'Fdbk' };
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /** A small popover under the button that opened it; it goes away on a click outside it, or on that button again.
  *  (Not on Esc: Esc is the show's panic key everywhere but a text field, and a menu does not take it over.) */
-export function Pop({ anchor, onClose, width = 240, children, ...rest }) {
-  const el = useRef(null);
+export interface PopProps { anchor: HTMLElement | null; onClose: () => void; width?: number; children?: ComponentChildren; [attr: string]: unknown }
+export function Pop({ anchor, onClose, width = 240, children, ...rest }: PopProps) {
+  const el = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const away = (e) => { if (el.current && !el.current.contains(e.target) && !(anchor && anchor.contains(e.target))) onClose(); };
+    const away = (e: MouseEvent) => { if (el.current && !el.current.contains(e.target as Node) && !(anchor && anchor.contains(e.target as Node))) onClose(); };
     document.addEventListener('mousedown', away, true);
     return () => document.removeEventListener('mousedown', away, true);
   }, [anchor]);
@@ -70,7 +87,12 @@ export function Pop({ anchor, onClose, width = 240, children, ...rest }) {
 const POWER = html`<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5.2 3.6a5.5 5.5 0 1 0 5.6 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 1.6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 
 /** One device of the rack: a title bar (power, name, ‹ ›, ×), maybe a response curve, its knobs, and its small choices. */
-function Device({ id, label, help, on, power = true, pending, curve, zero = 12 / 42, knobs, extra = [], options, open, onOpen, onPower, onRemove, children }) {
+interface DeviceProps {
+  id: string; label: string; help: string; on: boolean; power?: boolean; pending: boolean; curve: string | null; zero?: number;
+  knobs: ComponentChildren; extra?: VNode[]; options?: VNode[] | null; open?: boolean;
+  onOpen?: () => void; onPower?: () => void; onRemove: () => void; children?: ComponentChildren;
+}
+function Device({ id, label, help, on, power = true, pending, curve, zero = 12 / 42, knobs, extra = [], options, open, onOpen, onPower, onRemove, children }: DeviceProps) {
   return html`<div class=${cx('dev', on ? 'on' : 'off', pending && 'pending', open && 'open')} data-device=${id}>
     <div class="dev-head" title=${help}>
       ${power ? html`<button class=${cx('dev-power', on && 'on')} data-power=${id} aria-pressed=${on} aria-label=${`${label} on`} title=${on ? 'On: click to switch it off (its settings are kept)' : 'Off: click to switch it on'} onClick=${onPower}>${POWER}</button>` : html`<span class="dev-power fixed" title="In while a band is moved">${POWER}</span>`}
@@ -93,53 +115,54 @@ function Device({ id, label, help, on, power = true, pending, curve, zero = 12 /
  */
 /** A field of the cue as last sent from here, until the host's copy says it back (or 2 s go by): two changes made
  *  faster than that round trip each build on the one before, instead of the second undoing the first. */
-function useSent(cue, field) {
-  const ref = useRef(null);
-  const now = cue[field] ?? null;
+function useSent<T>(cue: Cue, field: 'chain' | 'eq'): [T | null, (value: T | null) => void] {
+  const ref = useRef<{ id: string; value: T | null; json: string; at: number } | null>(null);
+  const now = (cue[field] as T | undefined) ?? null;
   if (ref.current && (ref.current.id !== cue.id || JSON.stringify(now) === ref.current.json || Date.now() - ref.current.at > 2000)) ref.current = null;
-  return [ref.current ? ref.current.value : now, (value) => { ref.current = { id: cue.id, value, json: JSON.stringify(value), at: Date.now() }; }];
+  return [ref.current ? ref.current.value : now, (value: T | null) => { ref.current = { id: cue.id, value, json: JSON.stringify(value), at: Date.now() }; }];
 }
 
-export function SoundDesign({ cue, s, info, pending }) {
-  const [chainNow, sentChain] = useSent(cue, 'chain'), [eqNow, sentEq] = useSent(cue, 'eq');
-  const S = info.sound, chain = chainNow || {}, eq = eqNow || {};
+export interface SoundDesignProps { cue: Cue; s: State; info: Info; pending: Pending | null }
+export function SoundDesign({ cue, s, info, pending }: SoundDesignProps) {
+  const [chainNow, sentChain] = useSent<Rack>(cue, 'chain'), [eqNow, sentEq] = useSent<Bands>(cue, 'eq');
+  const S = info.sound, chain: Rack = chainNow || {}, eq: Bands = eqNow || {};
   const [name, setName] = useState('');
   const [eqShown, setEqShown] = useState(false);          // an eq added and not yet moved (an eq of nothing is not kept)
   const [band, setBand] = useState('low');
-  const [opened, setOpened] = useState(() => new Set());
-  const [pop, setPop] = useState(null);                   // { kind: 'add' | 'presets', anchor }
+  const [opened, setOpened] = useState(() => new Set<string>());
+  const [pop, setPop] = useState<{ kind: 'add' | 'presets'; anchor: HTMLElement } | null>(null);                   // { kind: 'add' | 'presets', anchor }
   useEffect(() => { setName(''); setEqShown(false); setPop(null); setOpened(new Set()); }, [cue.id]);
   // (a device removed takes its lines with it, in the same edit: core/audio/lanes.js pruneFor)
-  const withLanes = (props) => { const kept = Lanes.pruneFor(cue.automation, props.chain); return kept === cue.automation ? props : { ...props, automation: kept }; };
-  const put = (next, label) => {
+  const withLanes = (props: { chain: Rack | null; eq?: Bands | null }) => { const kept = Lanes.pruneFor(cue.automation, props.chain); return kept === cue.automation ? props : { ...props, automation: kept }; };
+  const put = (next: Rack, label: string) => {
     const tools = Object.keys(next).filter((k) => next[k] && typeof next[k] === 'object');
     const value = tools.length ? next : null;
     sentChain(value);
     setCue(cue.id, withLanes({ chain: value }), label);
   };
-  const have = (t) => chain[t.key] || null;
-  const valuesOf = (t) => ({ ...defaultsOf(t), ...(have(t) || {}) });
-  const isOn = (t) => !!have(t) && have(t).on !== false;
-  const add = (t) => { setPop(null); if (t === 'eq') { setEqShown(true); return; } put({ ...chain, [t.key]: defaultsOf(t) }, `${t.label} added`); };
-  const remove = (t) => { const { [t.key]: _gone, ...rest } = chain; put(rest, `${t.label} removed`); };
-  const power = (t) => { const cur = have(t); put({ ...chain, [t.key]: cur.on === false ? (({ on, ...rest }) => rest)(cur) : { ...cur, on: false } }, `${t.label} ${isOn(t) ? 'off' : 'on'}`); };
+  const have = (t: { key: string }) => (chain[t.key] || null) as Settings | null;
+  const valuesOf = (t: Tool): Settings => ({ ...defaultsOf(t), ...(have(t) || {}) });
+  const isOn = (t: { key: string }) => !!have(t) && have(t)!.on !== false;
+  const add = (t: Tool | 'eq') => { setPop(null); if (t === 'eq') { setEqShown(true); return; } put({ ...chain, [t.key]: defaultsOf(t) }, `${t.label} added`); };
+  const remove = (t: Tool) => { const { [t.key]: _gone, ...rest } = chain; put(rest, `${t.label} removed`); };
+  const power = (t: Tool) => { const cur = have(t)!; put({ ...chain, [t.key]: cur.on === false ? (({ on, ...rest }) => rest)(cur) : { ...cur, on: false } }, `${t.label} ${isOn(t) ? 'off' : 'on'}`); };
   // (a setting changed on a device that is off leaves it off, as its power button says)
-  const setParam = (t, p, v) => put({ ...chain, [t.key]: { ...valuesOf(t), [p.key]: v } }, `${t.label} ${p.label.toLowerCase()}`);
-  const flag = (k) => put({ ...chain, [k]: chain[k] ? undefined : true }, k === 'tail' ? 'let the tail ring' : 'bypass');
-  const toggleOpen = (k) => setOpened((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const setParam = (t: Tool, p: Param, v: number | string | boolean | undefined) => put({ ...chain, [t.key]: { ...valuesOf(t), [p.key]: v } }, `${t.label} ${p.label.toLowerCase()}`);
+  const flag = (k: 'tail' | 'bypass') => put({ ...chain, [k]: chain[k] ? undefined : true }, k === 'tail' ? 'let the tail ring' : 'bypass');
+  const toggleOpen = (k: string) => setOpened((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
   // what the saved show has, to mark what has changed since (nothing is marked when the field is not pending)
   const was = (pending && pending.cues.get(cue.id)) || null;
   // (a cue added since the save has nothing saved: every device on it is new)
   const added = !!(was && was.kinds.has('added'));
-  const savedChain = added ? {} : was && was.fields.get('chain') ? (was.fields.get('chain').rawFrom || {}) : chain;
-  const savedEq = added ? {} : was && was.fields.get('eq') ? (was.fields.get('eq').rawFrom || {}) : eq;
+  const savedChain: Rack = added ? {} : was && was.fields.get('chain') ? (was.fields.get('chain')!.rawFrom || {}) as Rack : chain;
+  const savedEq: Bands = added ? {} : was && was.fields.get('eq') ? (was.fields.get('eq')!.rawFrom || {}) as Bands : eq;
 
   // the eq's bands: a level alone while a band sits at its usual place, { db, hz, q } once it is moved
-  const bandOf = (b, from = eq) => { const v = from[b.key]; const o = v && typeof v === 'object' ? v : { db: v }; return { db: Number(o.db) || 0, hz: o.hz ?? b.hz, q: o.q ?? b.q }; };
-  const setEq = (b, k, n) => {
+  const bandOf = (b: EqBandSpec, from: Bands = eq): { db: number; hz: number; q: number | undefined; [k: string]: number | undefined } => { const v = from[b.key]; const o: { db?: number; hz?: number; q?: number } = v && typeof v === 'object' ? v : { db: v }; return { db: Number(o.db) || 0, hz: o.hz ?? b.hz, q: o.q ?? b.q }; };
+  const setEq = (b: EqBandSpec, k: string, n: number) => {
     const cur = { ...bandOf(b), [k]: n };
-    const next = { ...eq };
+    const next: Bands = { ...eq };
     if (!cur.db) delete next[b.key]; else next[b.key] = cur.hz !== b.hz || (b.q && cur.q !== b.q) ? { db: cur.db, hz: cur.hz, ...(b.q ? { q: cur.q } : {}) } : cur.db;
     // (an eq brought back to flat stays on the rack until another cue is chosen)
     if (!Object.keys(next).length) setEqShown(true);
@@ -149,8 +172,8 @@ export function SoundDesign({ cue, s, info, pending }) {
   };
 
   // presets: the built-in ones and the show's own (settings.audio.chains)
-  const mine = s.doc.settings.audio.chains || {};
-  const apply = (id) => {
+  const mine: Record<string, Preset> = s.doc.settings.audio.chains || {};
+  const apply = (id: string) => {
     const p = id.startsWith('b:') ? S.presets[id.slice(2)] : mine[id.slice(2)];
     if (p) { sentChain(p.chain || null); sentEq(p.eq || null); setCue(cue.id, withLanes({ chain: p.chain || null, eq: p.eq || null }), `preset ${id.slice(2)}`); }
     setPop(null);
@@ -162,35 +185,35 @@ export function SoundDesign({ cue, s, info, pending }) {
     edit([{ op: 'show.set', path: 'settings.audio.chains', value: { ...mine, [n]: { ...(Object.keys(kept).length ? { chain: kept } : {}), ...(cue.eq ? { eq: cue.eq } : {}) } } }], `save preset ${n}`);
     setName('');
   };
-  const forget = (n) => { const next = { ...mine }; delete next[n]; edit([{ op: 'show.set', path: 'settings.audio.chains', value: Object.keys(next).length ? next : undefined }], `remove preset ${n}`); };
+  const forget = (n: string) => { const next = { ...mine }; delete next[n]; edit([{ op: 'show.set', path: 'settings.audio.chains', value: Object.keys(next).length ? next : undefined }], `remove preset ${n}`); };
 
   const kind = ((s.mixer.kinds || {})[cue.bus || (cue.type === 'mic' ? 'vocals' : 'effects')]) || '';
   const offer = S.offer[kind] && !cue.chain && !cue.eq ? S.offer[kind] : null;
   const rings = isOn({ key: 'reverb' }) || isOn({ key: 'delay' });
-  const playing = s.engine.active.some((a) => a.id === cue.id && a.kind === 'audio');
+  const playing = s.engine.active.some((a: { id: string; kind: string }) => a.id === cue.id && a.kind === 'audio');
   const showEq = !!cue.eq || eqShown;
 
   // ── the devices, in the order they run (the eq after the filters) ──
   // A knob with a line over it (Time & Loops) shows where the line is (where the sound is playing, else at its
   // Start), and turning it moves the whole line by as much, along the knob's own scale.
-  const here = (s.engine.active.find((a) => a.id === cue.id && a.kind === 'audio') || {}).elapsed ?? (Number(cue.from) || 0);
+  const here = (s.engine.active.find((a: { id: string; kind: string }) => a.id === cue.id && a.kind === 'audio') || {}).elapsed ?? (Number(cue.from) || 0);
   // (a setting's line, where it is now; none: the knob's own)
-  const lineOr = (t, key, own) => { const id = `chain.${t.key}.${key}`, line = (cue.automation || {})[id], sp = line && Lanes.specOf(id, S.tools); return sp ? Lanes.valueAt(line, here, sp) : own; };
-  const knobOf = (t, p, v) => {
+  const lineOr = (t: Tool, key: string, own: number) => { const id = `chain.${t.key}.${key}`, line = (cue.automation || {})[id], sp = line && Lanes.specOf(id, S.tools); return sp ? Lanes.valueAt(line, here, sp)! : own; };
+  const knobOf = (t: Tool, p: NumberParam, v: Settings) => {
     const id = `chain.${t.key}.${p.key}`, line = ((cue.automation || {})[id]) || null, spec = line && Lanes.specOf(id, S.tools);
-    const value = spec ? quantize(p, Lanes.valueAt(line, here, spec)) : v[p.key];
-    const shift = (x) => {
+    const value = spec ? quantize(p, Lanes.valueAt(line, here, spec)!) : v[p.key];
+    const shift = (x: number) => {
       const by = Lanes.posOf(p, x) - Lanes.posOf(p, value);
-      const moved = line.map((q) => [q[0], quantize(p, Lanes.valueAtPos(p, Lanes.posOf(p, q[1]) + by), true), ...(q[2] ? [q[2]] : [])]);
+      const moved = line!.map((q) => [q[0], quantize(p, Lanes.valueAtPos(p, Lanes.posOf(p, q[1]) + by), true), ...(q[2] ? [q[2]] : [])] as LanePoint);
       setCue(cue.id, Lanes.propsFor(cue, id, moved), `${t.label} ${p.label.toLowerCase()} line`);
     };
     return html`<${ParamKnob} key=${p.key} id=${`${t.key}.${p.key}`} p=${p} label=${SHORT[`${t.key}.${p.key}`]} value=${value} automated=${!!spec}
-      pending=${!!savedChain[t.key] && !same(savedChain[t.key][p.key], (chain[t.key] || {})[p.key])} onCommit=${(x) => (spec ? shift(x) : setParam(t, p, x))} />`;
+      pending=${!!savedChain[t.key] && !same((savedChain[t.key] as Settings)[p.key], ((chain[t.key] || {}) as Settings)[p.key])} onCommit=${(x: number) => (spec ? shift(x) : setParam(t, p, x))} />`;
   };
-  const deviceOf = (t) => {
+  const deviceOf = (t: Tool) => {
     const v = valuesOf(t), front = FRONT[t.key] || [];
-    const nums = t.params.filter((p) => !p.bool && !p.file && !p.options);
-    const shown = front.map((k) => nums.find((p) => p.key === k)).filter(Boolean);
+    const nums = t.params.filter((p): p is NumberParam => !p.bool && !p.file && !p.options);
+    const shown = front.map((k) => nums.find((p) => p.key === k)).filter((p) => !!p);
     const extra = nums.filter((p) => !front.includes(p.key)).map((p) => knobOf(t, p, v));
     const file = t.params.find((p) => p.file);
     if (file) {
@@ -201,9 +224,9 @@ export function SoundDesign({ cue, s, info, pending }) {
     }
     const choices = t.params.filter((p) => p.options || p.bool);
     const options = choices.length ? choices.map((p) => (p.options
-      ? html`<span class="seg" key=${p.key} title=${`${p.label} (${p.unit})`}>${p.options.map((o) => html`<button key=${String(o)} class=${cx(v[p.key] === o && 'on')} data-option=${`${t.key}.${p.key}`} data-value=${o} onClick=${() => setParam(t, p, o)}>${o}</button>`)}<span class="pk-unit">${p.unit}</span></span>`
+      ? html`<span class="seg" key=${p.key} title=${`${p.label} (${p.unit})`}>${p.options.map((o: number) => html`<button key=${String(o)} class=${cx(v[p.key] === o && 'on')} data-option=${`${t.key}.${p.key}`} data-value=${o} onClick=${() => setParam(t, p, o)}>${o}</button>`)}<span class="pk-unit">${p.unit}</span></span>`
       : html`<button key=${p.key} class=${cx('dev-opt', v[p.key] && 'on')} data-option=${`${t.key}.${p.key}`} aria-pressed=${!!v[p.key]} onClick=${() => setParam(t, p, !v[p.key])}>${p.label}</button>`)) : null;
-    const curve = t.key === 'highpass' || t.key === 'lowpass' ? curvePath((hz) => filterDb(t.key, lineOr(t, 'hz', v.hz), v.slope, hz), 120, 34, 12, -30) : null;
+    const curve = t.key === 'highpass' || t.key === 'lowpass' ? curvePath((hz) => filterDb(t.key, lineOr(t, 'hz', v.hz as number), v.slope as number, hz), 120, 34, 12, -30) : null;
     return html`<${Device} key=${t.key} id=${t.key} label=${t.label} help=${t.help} on=${isOn(t)} pending=${!same(savedChain[t.key], chain[t.key])}
       curve=${curve} knobs=${shown.map((p) => knobOf(t, p, v))} extra=${extra} options=${options} open=${opened.has(t.key)}
       onOpen=${() => toggleOpen(t.key)} onPower=${() => power(t)} onRemove=${() => remove(t)} />`;
@@ -211,15 +234,15 @@ export function SoundDesign({ cue, s, info, pending }) {
   const eqDevice = () => {
     const bands = S.eq.map((b) => ({ ...b, ...bandOf(b), type: b.type }));
     const b = S.eq.find((x) => x.key === band) || S.eq[0], v = bandOf(b), sv = bandOf(b, savedEq);
-    const P = { gain: { key: 'db', label: 'Gain', unit: 'dB', min: -40, max: 6, def: 0 }, hz: { key: 'hz', label: 'Freq', unit: 'Hz', min: 20, max: 20000, def: b.hz }, q: { key: 'q', label: 'Q', unit: '', min: 0.1, max: 18, def: b.q } };
-    const k = (p) => html`<${ParamKnob} key=${`${b.key}.${p.key}`} id=${`eq.${b.key}.${p.key}`} p=${p} value=${v[p.key]} pending=${v[p.key] !== sv[p.key]} onCommit=${(x) => setEq(b, p.key, x)} />`;
+    const P: Record<string, KnobParam> = { gain: { key: 'db', label: 'Gain', unit: 'dB', min: -40, max: 6, def: 0 }, hz: { key: 'hz', label: 'Freq', unit: 'Hz', min: 20, max: 20000, def: b.hz }, q: { key: 'q', label: 'Q', unit: '', min: 0.1, max: 18, def: b.q } };
+    const k = (p: KnobParam) => html`<${ParamKnob} key=${`${b.key}.${p.key}`} id=${`eq.${b.key}.${p.key}`} p=${p} value=${v[p.key]} pending=${v[p.key] !== sv[p.key]} onCommit=${(x: number) => setEq(b, p.key, x)} />`;
     return html`<${Device} key="eq" id="eq" label="EQ" help="Four bands, after the filters. A band at 0 dB is out of the path." on=${true} power=${false} pending=${!same(savedEq, eq)}
       curve=${curvePath((hz) => eqDb(bands, hz), 120, 34, 18, -18)} zero=${0.5} knobs=${[k(P.gain), k(P.hz), b.q ? k(P.q) : null]}
       onRemove=${() => { setEqShown(false); sentEq(null); setCue(cue.id, { eq: null }, 'eq removed'); }}>
       <div class="seg dev-bands">${S.eq.map((x) => html`<button key=${x.key} class=${cx(band === x.key && 'on', bandOf(x).db && 'set')} data-band=${x.key} title=${x.label} onClick=${() => setBand(x.key)}>${{ low: 'Low', mid: '1', mid2: '2', high: 'High' }[x.key] || x.label}</button>`)}</div>
     <//>`;
   };
-  const devices = [];
+  const devices: VNode[] = [];
   for (const t of S.tools) {
     if (t.key === 'gate' && showEq) devices.push(eqDevice());
     if (have(t)) devices.push(deviceOf(t));
@@ -227,9 +250,9 @@ export function SoundDesign({ cue, s, info, pending }) {
   if (showEq && !S.tools.some((t) => t.key === 'gate')) devices.push(eqDevice());
 
   // the list "+" opens: every tool, lightly grouped, the eq with the filters; one of each
-  const groups = [];
-  for (const t of S.tools) { let g = groups.find((x) => x.name === t.group); if (!g) groups.push(g = { name: t.group, tools: [] }); g.tools.push(t); if (t.key === 'lowpass') g.tools.push('eq'); }
-  const open = (kind) => (e) => { const anchor = e.currentTarget; setPop((p) => (p && p.kind === kind ? null : { kind, anchor })); };
+  const groups: { name: string; tools: (Tool | 'eq')[] }[] = [];
+  for (const t of S.tools) { let g: { name: string; tools: (Tool | 'eq')[] } | undefined = groups.find((x) => x.name === t.group); if (!g) groups.push(g = { name: t.group, tools: [] }); g.tools.push(t); if (t.key === 'lowpass') g.tools.push('eq'); }
+  const open = (kind: 'add' | 'presets') => (e: MouseEvent & { currentTarget: HTMLElement }) => { const anchor = e.currentTarget; setPop((p) => (p && p.kind === kind ? null : { kind, anchor })); };
 
   return html`<div class=${cx('sd', chain.bypass && 'bypassed')} data-sound-design>
     <div class="sd-top">
@@ -252,7 +275,7 @@ export function SoundDesign({ cue, s, info, pending }) {
     ${pop && pop.kind === 'presets' ? html`<${Pop} anchor=${pop.anchor} onClose=${() => setPop(null)} width=${260} data-preset-menu>
       <div class="sd-menu-group"><h5>Built in</h5><div class="sd-menu-items">${Object.keys(S.presets).map((n) => html`<button key=${n} class="sd-menu-item" data-preset=${`b:${n}`} title="Replaces this cue’s effects" onClick=${() => apply(`b:${n}`)}>${n}</button>`)}</div></div>
       ${Object.keys(mine).length ? html`<div class="sd-menu-group"><h5>This show’s</h5>${Object.keys(mine).map((n) => html`<div class="sd-menu-row" key=${n}><button class="sd-menu-item" data-preset=${`s:${n}`} title="Replaces this cue’s effects" onClick=${() => apply(`s:${n}`)}>${n}</button><button class="btn ghost small icon" data-preset-forget=${n} title="Remove the preset (cues keep their effects)" onClick=${() => forget(n)}>×</button></div>`)}</div>` : null}
-      <div class="sd-menu-row"><input type="text" data-preset-name placeholder="Save these as…" value=${name} onInput=${(e) => setName(e.target.value)} onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Enter') save(); }} />
+      <div class="sd-menu-row"><input type="text" data-preset-name placeholder="Save these as…" value=${name} onInput=${(e: InputEvent & { target: HTMLInputElement }) => setName(e.target.value)} onKeyDown=${(e: KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter') save(); }} />
         <button class="btn small" data-preset-save disabled=${!name.trim() || (!cue.chain && !cue.eq)} onClick=${save}>Save</button></div>
       <button class="sd-menu-item danger" data-clear disabled=${!cue.chain && !cue.eq} onClick=${() => { setEqShown(false); setPop(null); sentChain(null); sentEq(null); setCue(cue.id, withLanes({ chain: null, eq: null }), 'clear sound design'); }}>Remove every effect</button>
     <//>` : null}
@@ -260,25 +283,26 @@ export function SoundDesign({ cue, s, info, pending }) {
 }
 
 /** A Fade cue's "Sound design to": the settings of its target's chain that move over the fade (a filter sweep). */
-export function SweepField({ value, target, info, onCommit }) {
-  const S = info.sound, to = value && typeof value === 'object' ? value : {};
-  const rows = Object.entries(to).flatMap(([tool, set]) => Object.entries(set || {}).map(([key, v]) => ({ tool, key, v, p: S.sweepable.find((x) => x.tool === tool && x.key === key) }))).filter((r) => r.p);
-  const chain = (target && target.chain) || {};
-  const put = (tool, key, v) => {
+export interface SweepFieldProps { value: unknown; target: Cue | null | undefined; info: Info; onCommit: (value: Record<string, Settings> | null) => void }
+export function SweepField({ value, target, info, onCommit }: SweepFieldProps) {
+  const S = info.sound, to = (value && typeof value === 'object' ? value : {}) as Record<string, Settings>;
+  const rows = Object.entries(to).flatMap(([tool, set]) => Object.entries(set || {}).map(([key, v]) => ({ tool, key, v, p: S.sweepable.find((x) => x.tool === tool && x.key === key) }))).filter((r): r is typeof r & { p: Sweepable } => !!r.p);
+  const chain: Rack = (target && target.chain) || {};
+  const put = (tool: string, key: string, v: Settings[string]) => {
     const next = JSON.parse(JSON.stringify(to));
     if (v === undefined) { if (next[tool]) { delete next[tool][key]; if (!Object.keys(next[tool]).length) delete next[tool]; } } else (next[tool] = next[tool] || {})[key] = v;
     onCommit(Object.keys(next).length ? next : null);
   };
   // a setting added starts where the target has it now (so nothing moves until a destination is typed)
-  const add = (id) => { const p = S.sweepable.find((x) => x.id === id); if (!p) return; const tool = S.tools.find((t) => t.key === p.tool), now = (chain[p.tool] || {})[p.key]; put(p.tool, p.key, now !== undefined ? now : tool.params.find((x) => x.key === p.key).def); };
-  const off = [...new Set(rows.map((r) => r.tool))].filter((t) => !chain[t] || chain[t].on === false);
+  const add = (id: string) => { const p = S.sweepable.find((x) => x.id === id); if (!p) return; const tool = S.tools.find((t) => t.key === p.tool), now = ((chain[p.tool] || {}) as Settings)[p.key]; put(p.tool, p.key, now !== undefined ? now : tool!.params.find((x) => x.key === p.key)!.def); };
+  const off = [...new Set(rows.map((r) => r.tool))].filter((t) => !chain[t] || (chain[t] as Settings).on === false);
   return html`<div data-sweep style="display:grid;gap:5px">
     ${rows.map((r) => html`<div class="with-unit" key=${r.p.id}><span class="unit" style="width:170px">${r.p.label}</span><span class="unit">to</span>
-      <${Box} data-sweep-to=${r.p.id} width=${64} value=${shown(r.v)} title=${`${r.p.min} to ${r.p.max}${r.p.unit ? ` ${r.p.unit}` : ''}`} onCommit=${(t) => { const n = numberOf(t); if (n !== null) put(r.tool, r.key, Math.max(r.p.min, Math.min(r.p.max, n))); }} /><span class="unit">${r.p.unit}</span>
+      <${Box} data-sweep-to=${r.p.id} width=${64} value=${shown(r.v)} title=${`${r.p.min} to ${r.p.max}${r.p.unit ? ` ${r.p.unit}` : ''}`} onCommit=${(t: string) => { const n = numberOf(t); if (n !== null) put(r.tool, r.key, Math.max(r.p.min, Math.min(r.p.max, n))); }} /><span class="unit">${r.p.unit}</span>
       <button class="btn ghost small icon" title="Leave this alone" onClick=${() => put(r.tool, r.key, undefined)}>×</button></div>`)}
-    <div class="with-unit"><select data-sweep-add style="width:230px" value="" onChange=${(e) => { const v = e.target.value; e.target.value = ''; if (v) add(v); }}>
+    <div class="with-unit"><select data-sweep-add style="width:230px" value="" onChange=${(e: Event & { target: HTMLSelectElement }) => { const v = e.target.value; e.target.value = ''; if (v) add(v); }}>
       <option value="">Move a setting…</option>
-      ${S.tools.map((t) => { const list = S.sweepable.filter((p) => p.tool === t.key && !rows.some((r) => r.p.id === p.id)); return list.length ? html`<optgroup key=${t.key} label=${`${t.label}${chain[t.key] && chain[t.key].on !== false ? '' : ' (not on in its target)'}`}>${list.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}</optgroup>` : null; })}</select></div>
+      ${S.tools.map((t) => { const list = S.sweepable.filter((p) => p.tool === t.key && !rows.some((r) => r.p.id === p.id)); return list.length ? html`<optgroup key=${t.key} label=${`${t.label}${chain[t.key] && (chain[t.key] as Settings).on !== false ? '' : ' (not on in its target)'}`}>${list.map((p) => html`<option key=${p.id} value=${p.id}>${p.label}</option>`)}</optgroup>` : null; })}</select></div>
     ${off.length ? html`<div class="problem warning">Its target has no ${off.join(', ')} on: nothing to move. Switch it on in the target’s Sound design.</div>` : null}
   </div>`;
 }

@@ -10,6 +10,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { showFolderFrom, NOT_A_SHOW } from '../core/show/picked';
 
+/** The part of package.json's electron-builder settings these tests read. */
+interface FileAssociation { ext: string | string[]; isPackage?: boolean; role?: string; icon?: string; rank?: string }
+interface BuildConfig {
+  fileAssociations: FileAssociation[];
+  directories: { buildResources: string };
+  mac: { extendInfo: { UTExportedTypeDeclarations: { UTTypeIdentifier: string; UTTypeConformsTo: string[]; UTTypeTagSpecification: Record<string, string[]>; UTTypeIconFile: string }[] } };
+}
+
 test('what Open was handed: a show folder or package, the show.json in one, or not a show (said in words)', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-picked-'));
   try {
@@ -21,25 +29,25 @@ test('what Open was handed: a show folder or package, the show.json in one, or n
     assert.deepEqual(showFolderFrom(plain), { dir: plain }, 'a show folder not named .ecshow');
     assert.deepEqual(showFolderFrom(path.join(pkg, 'show.json')), { dir: pkg });
     assert.deepEqual(showFolderFrom(empty), { error: NOT_A_SHOW });
-    assert.match(showFolderFrom(path.join(pkg, 'media')).error, /no show\.json/);
-    assert.match(showFolderFrom(path.join(root, 'rain.wav')).error, /^That is not a show/);
-    assert.match(showFolderFrom(path.join(root, 'gone.ecshow')).error, /^There is nothing at/);
+    assert.match((showFolderFrom(path.join(pkg, 'media')) as { error: string }).error, /no show\.json/);
+    assert.match((showFolderFrom(path.join(root, 'rain.wav')) as { error: string }).error, /^That is not a show/);
+    assert.match((showFolderFrom(path.join(root, 'gone.ecshow')) as { error: string }).error, /^There is nothing at/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
 test('a show is a package document the app owns: an exported type that is a com.apple.package, with the icon, and the document type says so', () => {
-  const build = require('../package.json').build;
-  const doc = build.fileAssociations.find((f) => [].concat(f.ext).includes('ecshow'));
+  const build: BuildConfig = require('../package.json').build;
+  const doc = build.fileAssociations.find((f) => ([] as string[]).concat(f.ext).includes('ecshow'))!;
   assert.equal(doc.isPackage, true, 'LSTypeIsPackage on the document type');
   assert.equal(doc.role, 'Editor');
   assert.equal(doc.icon, 'document.icns');
-  const uti = build.mac.extendInfo.UTExportedTypeDeclarations.find((t) => t.UTTypeIdentifier === 'com.endlesscues.show');
+  const uti = build.mac.extendInfo.UTExportedTypeDeclarations.find((t) => t.UTTypeIdentifier === 'com.endlesscues.show')!;
   assert.ok(uti.UTTypeConformsTo.includes('com.apple.package'));
   assert.deepEqual(uti.UTTypeTagSpecification['public.filename-extension'], ['ecshow']);
   assert.equal(uti.UTTypeIconFile, doc.icon, 'the same icon, which the document type copies into the app');
   assert.ok(fs.existsSync(path.join(__dirname, '..', build.directories.buildResources, doc.icon)));
   // a QLab workspace is QLab's own type: not declared here, opened only as an alternate
-  const qlab = build.fileAssociations.find((f) => [].concat(f.ext).includes('qlab5'));
+  const qlab = build.fileAssociations.find((f) => ([] as string[]).concat(f.ext).includes('qlab5'))!;
   assert.equal(qlab.rank, 'Alternate');
   assert.ok(!qlab.isPackage);
 });

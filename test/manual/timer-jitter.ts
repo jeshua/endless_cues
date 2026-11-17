@@ -11,7 +11,7 @@
  */
 import { app, BrowserWindow } from 'electron';
 
-const stats = (a) => { const s = [...a].sort((x, y) => x - y), q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))]; return { n: s.length, mean: +(s.reduce((x, y) => x + y, 0) / s.length).toFixed(2), p50: +q(0.5).toFixed(2), p99: +q(0.99).toFixed(2), max: +s[s.length - 1].toFixed(2) }; };
+const stats = (a: number[]) => { const s = [...a].sort((x, y) => x - y), q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))]; return { n: s.length, mean: +(s.reduce((x, y) => x + y, 0) / s.length).toFixed(2), p50: +q(0.5).toFixed(2), p99: +q(0.99).toFixed(2), max: +s[s.length - 1].toFixed(2) }; };
 // the same loop in both: aim at t0 + k × every, note how late each wake is
 const LOOP = `(secs, every) => new Promise((resolve) => { const late = []; let next = performance.now() + every; const end = next + secs * 1000;
   const tick = () => { const now = performance.now(); late.push(now - next); while (next <= now) next += every; if (now >= end) resolve(late); else setTimeout(tick, Math.max(0, next - performance.now())); };

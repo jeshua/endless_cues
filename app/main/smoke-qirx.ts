@@ -5,13 +5,18 @@
  * drawer, gone in Show mode, saying a waiting change with the app's own dot and words, hidden when
  * asked and still hidden after the page starts again, and never lying over anything at 1024 by 700.
  */
-async function run({ host, win, check, until, page, sleep, shot: take }) {
+import type { Smoke, Snap } from './smoke';
+
+/** The assistant's eye in the side panel, as the page draws it. */
+interface Resident { state: string; why: string; words: string; dot: boolean; label: string; fill: string | null; lamp: string | null; size: number; moving: boolean | null }
+
+async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
   // (a picture is for looking at afterwards: one that cannot be taken never fails the run)
-  const shot = async (name) => { try { if (take) await take(name); } catch { /* no picture */ } };
-  const snap = () => host.snapshot();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
-  const text = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? el.innerText : null; })()`);
+  const shot = async (name: string) => { try { if (take) await take(name); } catch { /* no picture */ } };
+  const snap = () => host.snapshot() as Snap;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+  const text = (sel: string) => page<string | null>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? el.innerText : null; })()`);
   const off = async () => {
     await page(`window.ec.cmd({ op: 'assistant-reset' }).then(() => window.ec.app({ op: 'assistant-config', config: { provider: 'off' } })).then(() => window.ec.cmd({ op: 'state' }))`);
     await until(() => snap().assistant.available === false && snap().assistant.chosen === 'off', 3000);
@@ -24,7 +29,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   // ── who should answer: every row, pressed, ends in a place to type or in a line saying why not ──
   await off();
   await until(() => has('[data-who] [data-provider]'), 3000);
-  const rows = await page(`[...document.querySelectorAll('[data-who] [data-provider]')].map((b) => ({ id: b.dataset.provider, words: b.querySelector('span').innerText.trim() }))`);
+  const rows = await page<{ id: string; words: string }[]>(`[...document.querySelectorAll('[data-who] [data-provider]')].map((b) => ({ id: b.dataset.provider, words: b.querySelector('span').innerText.trim() }))`);
   check('each row of “Who should answer?” is a name and at most five words, with no brackets', rows.length >= 3 && rows.every((r) => r.words.split(/\s+/).length <= 5 && !/[()]/.test(r.words)), rows);
   check('…and there is no line under the rows', !(await has('[data-who] .wf')));
   for (const r of rows) {
@@ -60,15 +65,15 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   }
   if (!(await has('[data-assistant]'))) win.webContents.send('ec-menu', 'assistant-open');
   await until(() => has('[data-first]'), 3000);
-  const firstScreen = await page(`(() => { const f = document.querySelector('[data-first]'); return f ? { line: f.querySelector('.fline').innerText, asks: [...f.querySelectorAll('[data-ask]')].map((b) => b.innerText), rest: [...f.querySelectorAll('.fnext')].map((x) => x.innerText) } : null; })()`);
+  const firstScreen = await page<{ line: string; asks: string[]; rest: string[] } | null>(`(() => { const f = document.querySelector('[data-first]'); return f ? { line: f.querySelector('.fline').innerText, asks: [...f.querySelectorAll('[data-ask]')].map((b) => b.innerText), rest: [...f.querySelectorAll('.fnext')].map((x) => x.innerText) } : null; })()`);
   check('an empty show’s first screen is one line and one button', !!firstScreen && firstScreen.line === 'An empty show.' && firstScreen.asks.length === 1 && firstScreen.rest.length === 0, firstScreen);
   await shot('qirx-02-empty');
 
   // ── the resident: the assistant's eye in the side panel ──
-  const resident = () => page(`(() => { const r = document.querySelector('[data-resident]'); if (!r) return null; const q = r.querySelector('.qirx'); const css = (sel, prop) => { const el = q && q.querySelector(sel); return el ? getComputedStyle(el)[prop] : null; };
+  const resident = () => page<Resident | null>(`(() => { const r = document.querySelector('[data-resident]'); if (!r) return null; const q = r.querySelector('.qirx'); const css = (sel, prop) => { const el = q && q.querySelector(sel); return el ? getComputedStyle(el)[prop] : null; };
     return { state: r.dataset.resident, why: r.dataset.why, words: (r.querySelector('[data-resident-words]') || {}).innerText || '', dot: !!r.querySelector('.dot.standby'), label: r.querySelector('b').innerText.trim(), fill: css('.win', 'fill'), lamp: css('.lamp', 'opacity'), size: q ? Math.round(q.getBoundingClientRect().width) : 0,
       moving: q ? [...q.querySelectorAll('polygon')].some((i) => getComputedStyle(i).animationName !== 'none') : null }; })()`);
-  const settled = (want) => until(async () => { const x = await resident(); return !!x && want(x); }, 4000);
+  const settled = (want: (x: Resident) => unknown) => until(async () => { const x = await resident(); return !!x && want(x); }, 4000);
   await click('[data-assistant] [data-close]');
   await until(async () => !(await has('[data-assistant]')), 2000);
   check('on a new show the assistant’s eye is in the side panel, awake, saying what it is for', await settled((x) => x.state === 'awake' && /^Ask the assistant/.test(x.label) && x.size >= 18 && x.size <= 26), await resident());
@@ -86,7 +91,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   const size = win.getContentSize();
   win.setContentSize(1024, 700);
   await until(() => page('window.innerWidth === 1024 && window.innerHeight === 700'), 3000);
-  const over = () => page(`(() => { const r = document.querySelector('[data-resident]'); if (!r) return ['no resident']; const a = r.getBoundingClientRect(); const hits = [];
+  const over = () => page<string[]>(`(() => { const r = document.querySelector('[data-resident]'); if (!r) return ['no resident']; const a = r.getBoundingClientRect(); const hits = [];
     const rows = [...document.querySelectorAll('.list tbody tr')];
     for (const [name, el] of [['GO', document.querySelector('.go-btn')], ['the Playing strip', document.querySelector('.playing')], ['the inspector', document.querySelector('.inspector')], ['the drawer', document.querySelector('.drawer-pane')], ['the last cue row', rows[rows.length - 1]], ['the mixer', document.querySelector('.side .knobs')], ['the transport', document.querySelector('.transport')], ['the footer', document.querySelector('.footer')]]) {
       if (!el) continue; const b = el.getBoundingClientRect(); if (b.width && b.height && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) hits.push(name); }

@@ -17,6 +17,10 @@
  * Written from QLab 5's manual (Show Control Broadcast); not yet compared with QLab on a network.
  */
 import * as osc from './osc';
+import type { OscTyped } from './osc';
+
+/** One message to send: [address, args]. */
+export type EventMessage = [string, OscTyped[]];
 
 const CUE_EVENTS = ['go', 'auditionGo', 'cue/start', 'cue/stop', 'playhead'];
 const ALL_EVENTS = ['pauseAll', 'resumeAll', 'panicAll', 'stopAll', 'hardStopAll', 'resetAll'];
@@ -34,11 +38,11 @@ function keysOf(rest = '') {
 }
 
 /** A format as "/eventFormat" takes one, checked: { address, args } with the tokens still in it. Throws if it is not a message. */
-function parseFormat(text) {
+function parseFormat(text: unknown) {
   return osc.parseText(String(text));
 }
-function fill(format, values) {
-  const sub = (s) => String(s).replace(/#(data|address|workspace_id|status)#/g, (_t, k) => (values[k] == null ? '' : String(values[k])));
+function fill(format: string, values: Record<string, unknown>): EventMessage {
+  const sub = (s: unknown) => String(s).replace(/#(data|address|workspace_id|status)#/g, (_t, k: string) => (values[k] == null ? '' : String(values[k])));
   const m = parseFormat(format);
   return [sub(m.address), m.args.map((a) => (a.type === 's' ? { type: 's', value: sub(a.value) } : a))];
 }
@@ -50,14 +54,14 @@ function fill(format, values) {
  *   subs    the subscriber's keys (a Set)
  *   format  its "/eventFormat", or ''
  */
-function messages(event, cue, subs, { format = '', workspaceId = '' } = {}) {
-  const out = [];
-  const str = (v) => ({ type: 's', value: String(v == null ? '' : v) });
+function messages(event: string, cue: Record<string, unknown> | null | undefined, subs: Set<string>, { format = '', workspaceId = '' } = {}): EventMessage[] {
+  const out: EventMessage[] = [];
+  const str = (v: unknown) => ({ type: 's', value: String(v == null ? '' : v) });
   if (ALL_EVENTS.includes(event)) {
     if (subs.has(event) && !format) out.push([`${PREFIX}/${event}`, []]);       // (with a format only one-argument messages are sent)
     return out;
   }
-  const c = cue || {};
+  const c: Record<string, unknown> = cue || {};
   if (subs.has(event) && !format) out.push([`${PREFIX}/${event}`, FIELDS.map((f) => str(c[f]))]);
   for (const f of FIELDS) {
     if (!subs.has(`${event}/${f}`)) continue;

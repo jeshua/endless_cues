@@ -18,10 +18,10 @@ const NET = new Set(['theo', 'june']);  // whose session opens real network port
 
 function people() { return fs.readdirSync(path.join(__dirname, 'people')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort(); }
 
-function prepare(run, ids = people()) {
+function prepare(run: string, ids = people()) {
   const help = fs.readFileSync(path.join(REPO, 'bin/ec-user.js'), 'utf8').split('*/')[0].split('\n').slice(4).map((l) => l.replace(/^ \* ?/, '')).join('\n')
     .replace(/ec-user <session>/g, 'ec-user <session>').trim();
-  const out = [];
+  const out: { id: string; session: string; brief: string; net: boolean }[] = [];
   for (const id of ids) {
     if (!DESKS[id]) throw new Error(`no desk is defined for ${id} (materials.js)`);
     const session = path.join(__dirname, 'runs', run, id);
@@ -29,7 +29,7 @@ function prepare(run, ids = people()) {
     fs.rmSync(session, { recursive: true, force: true });
     fs.mkdirSync(path.join(session, 'desk'), { recursive: true });
     DESKS[id](path.join(session, 'desk'));
-    const fill = (text) => text.replace(/\{\{MANUAL\}\}/g, path.join(siteDir(), 'docs/index.html')).replace(/\{\{REPO\}\}/g, REPO).replace(/\{\{SESSION\}\}/g, session).replace(/\{\{ID\}\}/g, id)
+    const fill = (text: string) => text.replace(/\{\{MANUAL\}\}/g, path.join(siteDir(), 'docs/index.html')).replace(/\{\{REPO\}\}/g, REPO).replace(/\{\{SESSION\}\}/g, session).replace(/\{\{ID\}\}/g, id)
       .replace(/\{\{START\}\}/g, NET.has(id) ? ' --net' : '').replace(/\{\{HELP\}\}/g, help);
     const brief = `${fs.readFileSync(path.join(__dirname, 'people', `${id}.md`), 'utf8').trim()}\n\nYour session folder is \`${session}\`. Your desk is \`${session}/desk\`.\n\n---\n\n${fill(fs.readFileSync(path.join(__dirname, 'brief.md'), 'utf8'))}`;
     fs.writeFileSync(path.join(session, 'BRIEF.md'), brief);

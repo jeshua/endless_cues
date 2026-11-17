@@ -16,12 +16,17 @@
 import * as dgram from 'dgram';
 import * as os from 'os';
 import * as osc from '../net/osc';
+import type { OscMessage } from '../net/osc';
+import type { Device } from '../show/types';
+
+/** A prop that answered the hello. */
+export interface FoundProp { name: string; kind: string; fw: string; host: string; port: number; state: string; known: string | null; moved: boolean }
 
 const PORT = 53100;
 const WAIT_MS = 1500;
 
 /** Each network's broadcast address (IPv4), and this computer itself. */
-function targetsOf(port = PORT, interfaces = os.networkInterfaces()) {
+function targetsOf(port = PORT, interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): { host: string; port: number }[] {
   const out = [{ host: '127.0.0.1', port }];
   for (const list of Object.values(interfaces)) for (const i of list || []) {
     if (i.family !== 'IPv4' || i.internal || !i.netmask) continue;
@@ -32,14 +37,14 @@ function targetsOf(port = PORT, interfaces = os.networkInterfaces()) {
   return out;
 }
 
-function scan({ devices = [], port = PORT, wait = WAIT_MS, targets = null } = {}) {
+function scan({ devices = [], port = PORT, wait = WAIT_MS, targets = null }: { devices?: Pick<Device, 'id' | 'name' | 'host' | 'port'>[]; port?: number; wait?: number; targets?: { host: string; port?: number }[] | null } = {}): Promise<FoundProp[]> {
   return new Promise((resolve) => {
-    const found = new Map();
+    const found = new Map<string, FoundProp>();
     const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     const done = () => { try { sock.close(); } catch { /* closed */ } resolve([...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }) || a.host.localeCompare(b.host))); };
     sock.on('error', done);
     sock.on('message', (buf, from) => {
-      let msgs = []; try { msgs = osc.decodeAll(buf); } catch { /* not OSC */ }
+      let msgs: OscMessage[] = []; try { msgs = osc.decodeAll(buf); } catch { /* not OSC */ }
       for (const m of msgs) {
         if (m.address !== '/ec/here') continue;
         const name = String(m.args[0] ?? '');

@@ -18,7 +18,7 @@ The unit tests say the engine is right and the smoke test says the app starts an
 
 Each person's page says who they are, what is on their desk, their tasks (as goals, never as steps) and what they judge the app on. Some tasks are things the app cannot do yet; finding out how the app says so is the point of them.
 
-To add a person: a page in `people/` with tasks numbered and their ids in bold, and a desk in `materials.js`.
+To add a person: a page in `people/` with tasks numbered and their ids in bold, and a desk in `materials.ts`.
 
 ## How a run goes
 
@@ -34,7 +34,7 @@ A run's folder holds the desks (about 170 MB of synthesised sound), every pictur
 
 ## Hands, eyes and ears
 
-A virtual user touches the app only through `bin/ec-user.js`, which talks to a door the app opens when started with `--drive=<session>` (`app/main/drive.js`). The door offers what a person at the keyboard has:
+A virtual user touches the app only through `bin/ec-user.ts`, which talks to a door the app opens when started with `--drive=<session>` (`app/main/drive.ts`). The door offers what a person at the keyboard has:
 
 - **look**: a picture of the window, and a list of what is on it (each button, field, row and line of text, with where it is)
 - **click, drag, scroll, type, key**: real mouse and keyboard events sent to the window
@@ -44,11 +44,11 @@ A virtual user touches the app only through `bin/ec-user.js`, which talks to a d
 
 There is no command that edits or plays a show except through the window. A session runs like the smoke test: silent, its own settings folder, never the front window, and no network ports unless it was started with `--net` (one such session at a time, and it refuses to start beside a running Endless Cues).
 
-Everything a user does is written to `journal.jsonl`. `collect.js` counts actions per task from the journal, not from what the user says.
+Everything a user does is written to `journal.jsonl`. `collect.ts` counts actions per task from the journal, not from what the user says.
 
 ## The report
 
-Each user writes `report.md` and `report.json`. The shape is in [`brief.md`](brief.md) and is enforced by `collect.js`:
+Each user writes `report.md` and `report.json`. The shape is in [`brief.md`](brief.md) and is enforced by `collect.ts`:
 
 - a **verdict**: would this person run their show on it (`yes`, `with-workarounds`, `no`), and why
 - four **ratings**, 1 to 5: learn, speed, clarity, trust
@@ -61,7 +61,7 @@ Each user writes `report.md` and `report.json`. The shape is in [`brief.md`](bri
 
 1. Read `summary.md`. Findings that two people reported separately come first.
 2. Reproduce each bug before believing it. An agent can misread a screen.
-3. Each finding that stands becomes a line in [`docs/qlab-tracker.md`](../../docs/qlab-tracker.md) or a fix. Something that was hard to see twice becomes a check in `app/main/smoke.js`.
+3. Each finding that stands becomes a line in [`docs/qlab-tracker.md`](../../docs/qlab-tracker.md) or a fix. Something that was hard to see twice becomes a check in `app/main/smoke.ts`.
 4. Run it again after the fixes, under a new run name, and compare the two summaries.
 
 ## What this is not

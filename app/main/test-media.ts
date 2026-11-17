@@ -14,14 +14,14 @@ import * as zlib from 'zlib';
 
 // ── a PNG of one colour ───────────────────────────────────────────────────
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
-function crc32(buf) { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
-function chunk(type, data) {
+function crc32(buf: Uint8Array) { let c = 0xffffffff; for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+function chunk(type: string, data: Buffer) {
   const head = Buffer.alloc(4); head.writeUInt32BE(data.length);
   const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
   const tail = Buffer.alloc(4); tail.writeUInt32BE(crc32(body));
   return Buffer.concat([head, body, tail]);
 }
-function png(width, height, [r, g, b]) {
+function png(width: number, height: number, [r, g, b]: readonly number[]) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2;      // 8 bits a channel, RGB
   const row = Buffer.alloc(1 + width * 3);
@@ -32,25 +32,27 @@ function png(width, height, [r, g, b]) {
 
 // ── a WebM ────────────────────────────────────────────────────────────────
 // (EBML: every element is an id, a length and its data; lengths here are always written eight bytes wide)
-const size8 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); b[0] |= 0x01; return b; };
-const el = (id, data) => Buffer.concat([Buffer.from(id, 'hex'), size8(data.length), data]);
-const uint = (id, n, bytes = 8) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(Math.round(n))); return el(id, b.subarray(8 - bytes)); };
-const float = (id, x) => { const b = Buffer.alloc(8); b.writeDoubleBE(x); return el(id, b); };
-const str = (id, s) => el(id, Buffer.from(s, 'utf8'));
+const size8 = (n: number) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(n)); b[0] |= 0x01; return b; };
+const el = (id: string, data: Buffer) => Buffer.concat([Buffer.from(id, 'hex'), size8(data.length), data]);
+const uint = (id: string, n: number, bytes = 8) => { const b = Buffer.alloc(8); b.writeBigUInt64BE(BigInt(Math.round(n))); return el(id, b.subarray(8 - bytes)); };
+const float = (id: string, x: number) => { const b = Buffer.alloc(8); b.writeDoubleBE(x); return el(id, b); };
+const str = (id: string, s: string) => el(id, Buffer.from(s, 'utf8'));
 
+interface Frame { ms: number; key?: boolean; data: Buffer }
+interface Block extends Frame { track: number }
 /** `video`: { width, height, frames: [{ ms, key, data }] }; `audio`: { rate, channels, head, frames: [{ ms, data }] } or null. */
-function mux({ video, audio, ms }) {
+function mux({ video, audio, ms }: { video: { width: number; height: number; frames: Frame[] }; audio: { rate: number; channels: number; head: Buffer; frames: Frame[] } | null; ms: number }) {
   const tracks = [el('ae', Buffer.concat([uint('d7', 1, 1), uint('73c5', 1, 1), uint('83', 1, 1), str('86', 'V_VP8'),
     el('e0', Buffer.concat([uint('b0', video.width, 2), uint('ba', video.height, 2)]))]))];
   if (audio) tracks.push(el('ae', Buffer.concat([uint('d7', 2, 1), uint('73c5', 2, 1), uint('83', 2, 1), str('86', 'A_OPUS'),
     uint('56aa', (audio.head.readUInt16LE(10) / 48000) * 1e9), uint('56bb', 80e6), el('63a2', audio.head),
     el('e1', Buffer.concat([float('b5', audio.rate), uint('9f', audio.channels, 1)]))])));
   // one cluster a second, each starting on a key frame, so a skip lands cleanly
-  const blocks = [...video.frames.map((f) => ({ ...f, track: 1 })), ...(audio ? audio.frames.map((f) => ({ ...f, track: 2, key: true })) : [])].sort((a, b) => a.ms - b.ms || a.track - b.track);
-  const clusters = [];
+  const blocks: Block[] = [...video.frames.map((f) => ({ ...f, track: 1 })), ...(audio ? audio.frames.map((f) => ({ ...f, track: 2, key: true })) : [])].sort((a, b) => a.ms - b.ms || a.track - b.track);
+  const clusters: { ms: number; blocks: Block[] }[] = [];
   for (const b of blocks) {
-    if (!clusters.length || (b.track === 1 && b.key && b.ms - clusters.at(-1).ms >= 1000)) clusters.push({ ms: b.ms, blocks: [] });
-    clusters.at(-1).blocks.push(b);
+    if (!clusters.length || (b.track === 1 && b.key && b.ms - clusters.at(-1)!.ms >= 1000)) clusters.push({ ms: b.ms, blocks: [] });
+    clusters.at(-1)!.blocks.push(b);
   }
   const bodies = clusters.map((c) => el('1f43b675', Buffer.concat([uint('e7', c.ms), ...c.blocks.map((b) => {
     const head = Buffer.alloc(4); head[0] = 0x80 | b.track; head.writeInt16BE(Math.round(b.ms - c.ms), 1); head[3] = b.key ? 0x80 : 0;
@@ -59,7 +61,7 @@ function mux({ video, audio, ms }) {
   const info = el('1549a966', Buffer.concat([uint('2ad7b1', 1e6), str('4d80', 'Endless Cues test'), str('5741', 'Endless Cues test'), float('4489', ms)]));
   const trackEl = el('1654ae6b', Buffer.concat(tracks));
   // the cues say where each cluster starts (from the start of the segment's data), so they are sized before they are filled
-  const cue = (c, at) => el('bb', Buffer.concat([uint('b3', c.ms), el('b7', Buffer.concat([uint('f7', 1, 1), uint('f1', at)]))]));
+  const cue = (c: { ms: number }, at: number) => el('bb', Buffer.concat([uint('b3', c.ms), el('b7', Buffer.concat([uint('f7', 1, 1), uint('f1', at)]))]));
   const cuesSize = el('1c53bb6b', Buffer.concat(clusters.map((c) => cue(c, 0)))).length;
   let at = info.length + trackEl.length + cuesSize;
   const cues = el('1c53bb6b', Buffer.concat(clusters.map((c, i) => { const here = at; at += bodies[i].length; return cue(c, here); })));
@@ -72,8 +74,10 @@ function mux({ video, audio, ms }) {
  * (each [r, g, b]), with a steady tone for its sound unless `tone` is false. `page(js)` runs script in a window
  * (its encoders make the frames). Resolves to the file's bytes.
  */
-async function webm(page, { width = 160, height = 90, secs = 4, fps = 10, colours = [[20, 200, 60]], tone = true } = {}) {
-  const got = await page(`(async () => {
+interface Encoded { video: { ms: number; key: boolean; data: string }[]; audio: { ms: number; data: string }[]; head: string | null; error: string; audioError?: string }
+
+async function webm(page: <T>(js: string) => Promise<T>, { width = 160, height = 90, secs = 4, fps = 10, colours = [[20, 200, 60]] as readonly (readonly number[])[], tone = true } = {}) {
+  const got = await page<Encoded>(`(async () => {
     const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
     const out = { video: [], audio: [], head: null, error: '' };
     const canvas = new OffscreenCanvas(${width}, ${height});
@@ -107,14 +111,14 @@ async function webm(page, { width = 160, height = 90, secs = 4, fps = 10, colour
     return out;
   })()`);
   if (got.error || !got.video.length) throw new Error(`the test video could not be encoded: ${got.error || 'no frames'}`);
-  const bytes = (s) => Buffer.from(s, 'base64');
+  const bytes = (s: string) => Buffer.from(s, 'base64');
   let head = got.head ? bytes(got.head) : null;
   if (!head && got.audio.length) {      // OpusHead: version 1, one channel, 312 samples of pre-skip, 48 kHz, no gain, mapping family 0
     head = Buffer.alloc(19); head.write('OpusHead', 0, 'ascii'); head[8] = 1; head[9] = 1; head.writeUInt16LE(312, 10); head.writeUInt32LE(48000, 12);
   }
   return {
     bytes: mux({ ms: secs * 1000, video: { width, height, frames: got.video.map((f) => ({ ms: f.ms, key: f.key, data: bytes(f.data) })) },
-                 audio: got.audio.length ? { rate: 48000, channels: 1, head, frames: got.audio.map((f) => ({ ms: f.ms, data: bytes(f.data) })) } : null }),
+                 audio: got.audio.length ? { rate: 48000, channels: 1, head: head!, frames: got.audio.map((f) => ({ ms: f.ms, data: bytes(f.data) })) } : null }),
     sound: got.audio.length > 0, audioError: got.audioError || '',
   };
 }
@@ -125,8 +129,8 @@ async function webm(page, { width = 160, height = 90, secs = 4, fps = 10, colour
 // tone the other checks play is made here as a WAV (three seconds of 440 Hz fading in over the first half).
 const fixturesDir = () => process.env.EC_FIXTURES || path.join(__dirname, '../../test/fixtures');
 /** A fixture's path, or null when this run cannot see it. */
-function fixture(rel) { const f = path.join(fixturesDir(), rel); return fs.existsSync(f) ? f : null; }
-let madeTone = null;
+function fixture(rel: string) { const f = path.join(fixturesDir(), rel); return fs.existsSync(f) ? f : null; }
+let madeTone: string | null = null;
 /** The tone in this format when it is there; otherwise the WAV made here (a check that needs the format itself uses fixture()). */
 function tone(ext = 'wav') {
   const f = fixture(path.join('formats', `tone.${ext}`)) || fixture(path.join('formats', 'tone.wav'));

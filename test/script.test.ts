@@ -57,9 +57,9 @@ test('a script that names a cue that is not there is broken, and one that starts
     { op: 'cue.add', ref: 'e', cue: { type: 'script', number: '3', script: '# nothing yet' } },
   ]);
   const probs = show.problems(b.doc).map((p) => `${p.level} ${p.why}`);
-  assert.ok(probs.some((p) => /^error its script, line 1: no cue numbered 99/.test(p)), probs);
-  assert.ok(probs.some((p) => /^error its script, line 2: \/launch\/missiles is not a command/.test(p)), probs);
-  assert.ok(probs.some((p) => /^warning its script has no commands/.test(p)), probs);
+  assert.ok(probs.some((p) => /^error its script, line 1: no cue numbered 99/.test(p)), String(probs));
+  assert.ok(probs.some((p) => /^error its script, line 2: \/launch\/missiles is not a command/.test(p)), String(probs));
+  assert.ok(probs.some((p) => /^warning its script has no commands/.test(p)), String(probs));
   const { engine, logs } = rig(b.doc);
   engine.fire(b.id('loop'));
   assert.ok(logs.some((l) => /STOPPED a loop of scripts/.test(l)), 'a script that starts itself with no wait ends, instead of hanging the app');

@@ -23,7 +23,7 @@ function tempSite() {
   fs.copyFileSync(FIXTURE, path.join(dir, 'index.html'));
   return dir;
 }
-const run = (...args) => spawnSync(process.execPath, [RELEASE, ...args], { encoding: 'utf8', env: { ...process.env, EC_SITE_DIR: '' } });
+const run = (...args: string[]) => spawnSync(process.execPath, [RELEASE, ...args], { encoding: 'utf8', env: { ...process.env, EC_SITE_DIR: '' } });
 
 test('the site step writes the download into the site folder it is given', () => {
   const dir = tempSite();
@@ -109,7 +109,7 @@ test('a signed Windows build says so, still says how to get past SmartScreen whi
   const dir = tempSite();
   try {
     const win = path.join(dir, 'win.json');
-    const build = (more) => fs.writeFileSync(win, JSON.stringify({ platform: 'win', version: '0.3.0-alpha.5', date: '2026-11-20', commit: 'abc1234', notes: [], ...more,
+    const build = (more: Record<string, unknown>) => fs.writeFileSync(win, JSON.stringify({ platform: 'win', version: '0.3.0-alpha.5', date: '2026-11-20', commit: 'abc1234', notes: [], ...more,
       files: [{ file: 'Endless-Cues-0.3.0-alpha.5-win-x64-setup.exe', arch: 'x64', bytes: 116e6, sha256: 'c'.repeat(64) }] }));
     build({ signed: true });
     let r = run('site', '--base', 'https://downloads.example.org/', '--win-release', win, '--site-dir', dir);

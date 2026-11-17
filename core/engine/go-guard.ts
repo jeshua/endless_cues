@@ -18,12 +18,12 @@
  *
  * Pure: the clock is given.
  */
-function createGoGuard({ now = () => Date.now(), secs = () => 0.3, keep = 50 } = {}) {
+function createGoGuard({ now = () => Date.now(), secs = (): number => 0.3, keep = 50 } = {}) {
   let lastGo = -Infinity;
-  const lastBy = new Map();          // trigger key -> when it last started its cue
-  const dropped = [];
+  const lastBy = new Map<string, number>();          // trigger key -> when it last started its cue
+  const dropped: Ignored[] = [];
   const windowMs = () => Math.max(0, Number(secs()) || 0) * 1000;
-  const drop = (kind, key, from, after) => {
+  const drop = (kind: Ignored['kind'], key: string, from: string, after: number) => {
     dropped.push({ at: now(), kind, key, from: from || '', after: Math.round(after) });
     if (dropped.length > keep) dropped.shift();
     return false;
@@ -35,9 +35,9 @@ function createGoGuard({ now = () => Date.now(), secs = () => 0.3, keep = 50 } =
       lastGo = t;
       return true;
     },
-    trigger(key, from = '') {
+    trigger(key: string, from = '') {
       const t = now(), w = windowMs();
-      const was = lastBy.has(key) ? lastBy.get(key) : -Infinity;
+      const was = lastBy.has(key) ? lastBy.get(key)! : -Infinity;
       if (w > 0 && t - was < w) return drop('trigger', key, from, t - was);
       lastBy.set(key, t);
       if (lastBy.size > 500) for (const [k, at] of lastBy) if (t - at > w) lastBy.delete(k);     // (old keys forgotten)
@@ -47,5 +47,9 @@ function createGoGuard({ now = () => Date.now(), secs = () => 0.3, keep = 50 } =
     ignored() { return dropped.slice(); },
   };
 }
+
+/** A GO or a trigger that was ignored: when, which, from where, and how soon after the last (ms). */
+export interface Ignored { at: number; kind: 'go' | 'trigger'; key: string; from: string; after: number }
+export type GoGuard = ReturnType<typeof createGoGuard>;
 
 export { createGoGuard };

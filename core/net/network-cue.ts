@@ -16,11 +16,13 @@
  * The tokens may be in the address as well as the arguments. Text and hex messages are sent once: their
  * devices have no notion of a value arriving thirty times a second.
  */
+import type { Cue } from '../show/types';
+
 const DEFAULT_RATE = 30;
 const MAX_RATE = 120;
 
 // how far along the value is (0..1) when the time is x (0..1)
-const CURVES = {
+const CURVES: Record<string, (x: number) => number> = {
   linear: (x) => x,
   's-curve': (x) => x * x * (3 - 2 * x),        // slow away, slow in
   'ease-in': (x) => x * x,                      // slow away
@@ -28,9 +30,9 @@ const CURVES = {
 };
 
 /** "0,0 1,0.5 1,1" (also "0,0; 1,1" or "{0,0} {1,1}") -> [[x, y], …]. Throws on anything that is not pairs of numbers. */
-function parsePath(text) {
+function parsePath(text: unknown): [number, number][] {
   const pairs = String(text || '').replace(/[{}[\]()]/g, ' ').split(/[;\s]+/).filter(Boolean);
-  const out = [];
+  const out: [number, number][] = [];
   for (const p of pairs) {
     const [x, y, more] = p.split(',').map(Number);
     if (!Number.isFinite(x) || !Number.isFinite(y) || more !== undefined) throw new Error(`a path is points written x,y with spaces between (“${p}” is not one)`);
@@ -40,10 +42,10 @@ function parsePath(text) {
 }
 
 /** The point a fraction t (0..1) of the way along a path, by distance. */
-function along(points, t) {
+function along(points: [number, number][], t: number): [number, number] {
   if (!points.length) return [0, 0];
   if (points.length === 1) return points[0];
-  const lengths = [];
+  const lengths: number[] = [];
   let total = 0;
   for (let i = 1; i < points.length; i++) { const d = Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]); lengths.push(d); total += d; }
   if (!(total > 0)) return points[points.length - 1];
@@ -58,7 +60,10 @@ function along(points, t) {
   return points[points.length - 1];
 }
 
-function plan(cue) {
+/** What a Network cue's plan reads of it. */
+export type NetworkCueLike = Partial<Pick<Cue, 'message' | 'format' | 'duration' | 'fps' | 'curve' | 'whole' | 'fadeFrom' | 'path' | 'pathLoop'>> & { fadeTo?: number | string | null };
+
+function plan(cue: NetworkCueLike) {
   const text = String(cue.message || '');
   const format = cue.format || 'osc';
   const total = Number(cue.duration) || 0;
@@ -66,16 +71,16 @@ function plan(cue) {
   if (format !== 'osc') return { total: 0, rate, loop: false, at: () => text };
   const hasV = text.includes('#v#'), hasXY = text.includes('#x#') || text.includes('#y#');
   if (!hasV && !hasXY) return { total, rate, loop: false, at: () => text };
-  const shape = CURVES[cue.curve] || CURVES.linear;
+  const shape = CURVES[cue.curve as string] || CURVES.linear;
   const val = cue.whole
-    ? (v) => String(Math.round(v))
-    : (v) => { const r = Math.round(v * 1e6) / 1e6; return Number.isInteger(r) ? r.toFixed(1) : String(r); };
+    ? (v: number) => String(Math.round(v))
+    : (v: number) => { const r = Math.round(v * 1e6) / 1e6; return Number.isInteger(r) ? r.toFixed(1) : String(r); };
   const a = Number(cue.fadeFrom) || 0, b = cue.fadeTo != null && cue.fadeTo !== '' ? Number(cue.fadeTo) : 1;
-  let points = [];
+  let points: [number, number][] = [];
   if (hasXY) { try { points = parsePath(cue.path); } catch { points = []; } }
   return {
     total, rate, loop: hasXY && !!cue.pathLoop && total > 0,
-    at(x) {
+    at(x: number) {
       const k = shape(Math.max(0, Math.min(1, x)));
       let out = text;
       if (hasV) out = out.split('#v#').join(val(a + (b - a) * k));

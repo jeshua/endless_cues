@@ -20,9 +20,34 @@
 import * as show from '../show/show';
 import * as devices from '../rig/devices';
 import * as models from '../net/devices';
+import type { Cue, Device, ShowDoc } from '../show/types';
+import type { Op } from '../show/ops';
 
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const list = (words) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
+/** A file in the show folder, as core/rig/folder.js lists it (as much as is read here). */
+export interface FolderEntry { path: string; kind: string; usedBy?: string[] }
+/** A sound the plan makes a cue for: its path, its name in full, and the name it is given. */
+interface PlanCue { path: string; long: string; name: string; cues?: undefined }
+/** A run of sounds under one heading: by a sub-folder, or by a scene written at the front of their names. */
+interface PlanGroup { key: string; by: string; name: string; cues: PlanCue[] }
+export type Plan = ReturnType<typeof folderPlan>;
+/** One thing the drawer offers to ask. `offline`: the built-in helper can do it with no model. */
+export interface Ask { label: string; text: string; offline: boolean; action?: string }
+/** A way to have something answer (Settings, and the first screen with no model). */
+export interface SetupRow { id: string; label: string; says: string; found: boolean; set: string | null; open: string | null; signIn?: boolean }
+export interface FirstOptions {
+  doc: ShowDoc;
+  showDir?: string | null;
+  folder?: FolderEntry[] | null;
+  /** the Rig as the app has it: each device's state */
+  rig?: { devices?: Record<string, { state?: string }> } | null;
+  /** what the QLab import said */
+  imported?: { issues?: unknown[] } | null;
+  provider?: string;
+  installed?: Record<string, boolean | undefined>;
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const list = (words: string[]) => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
 const KIT_MODELS = ['ec-prop-light', 'ec-prop-switch'];
 
 // ── cues from a folder ────────────────────────────────────────────────
@@ -31,17 +56,17 @@ const KIT_MODELS = ['ec-prop-light', 'ec-prop-switch'];
 const BOUNCE = /[\s\-–(]+(?:final\d*|finals|master(?:ed)?|mix(?:down)?\d*|bounce\d*|edit\d*|new|copy|v\d+(?:\.\d+)?|\d{1,2}\)|take\s*\d+)\)?$/i;
 /** A scene written at the front of a name: "Sc2 thunder", "Act 1 - Storm", "Scene 3. rain". */
 const SCENE = /^(sc|scn|scene|act|part)\s*\.?\s*(\d+[a-z]?)\s*[-–:.\s]\s*(\S.*)$/i;
-const SCENE_WORD = { sc: 'Scene', scn: 'Scene', scene: 'Scene', act: 'Act', part: 'Part' };
+const SCENE_WORD: Record<string, string> = { sc: 'Scene', scn: 'Scene', scene: 'Scene', act: 'Act', part: 'Part' };
 /** Folders that hold a show's sounds without meaning anything by it: never a group. */
 const HOLDERS = new Set(['media', 'audio', 'sound', 'sounds', 'music', 'tracks', 'wav', 'wavs', 'mp3']);
 
-const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const stem = (file) => file.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+const capital = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const stem = (file: string) => file.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
 /** "01 walk-in" → "walk-in": a running-order number at the front goes (a name that is only a number stays). */
-const unnumbered = (s) => { const t = s.replace(/^\(?\d{1,3}[a-z]?\)?\s*[-–._)\s]\s*/i, '').trim(); return t || s; };
-function untidied(s) { let t = s; for (;;) { const u = t.replace(BOUNCE, '').trim(); if (!u || u === t) return t; t = u; } }
+const unnumbered = (s: string) => { const t = s.replace(/^\(?\d{1,3}[a-z]?\)?\s*[-–._)\s]\s*/i, '').trim(); return t || s; };
+function untidied(s: string) { let t = s; for (;;) { const u = t.replace(BOUNCE, '').trim(); if (!u || u === t) return t; t = u; } }
 
-function folderPlan(listing = [], { from = 1 } = {}) {
+function folderPlan(listing: FolderEntry[] = [], { from = 1 }: { from?: number } = {}) {
   const sounds = listing.filter((e) => e.kind === 'sound' && !(e.usedBy || []).length && !/^props\//.test(e.path));
   // each sound: where it is, the scene its name begins with (if it does), and its name both ways
   const items = sounds.map((e) => {
@@ -53,34 +78,34 @@ function folderPlan(listing = [], { from = 1 } = {}) {
   });
   // a sub-folder is a group when it does not hold everything; a scene prefix when two or more share it
   const dirs = new Set(items.map((i) => i.dir));
-  const scenes = new Map();
+  const scenes = new Map<string, number>();
   for (const i of items) if (i.scene && !(i.dir && dirs.size > 1)) scenes.set(i.scene, (scenes.get(i.scene) || 0) + 1);
-  const groups = [];            // in the order each is first met
-  const top = [];               // the running order: a sound, or a group at the place of its first sound
+  const groups: PlanGroup[] = [];            // in the order each is first met
+  const top: (PlanCue | PlanGroup)[] = [];               // the running order: a sound, or a group at the place of its first sound
   let tidied = false;
   for (const i of items) {
     const byDir = i.dir && dirs.size > 1;
-    const key = byDir ? `dir:${i.dir}` : i.scene && scenes.get(i.scene) > 1 ? `scene:${i.scene}` : '';
+    const key = byDir ? `dir:${i.dir}` : i.scene && scenes.get(i.scene)! > 1 ? `scene:${i.scene}` : '';
     const long = capital(key.startsWith('scene:') ? i.rest : i.base);
-    const cue = { path: i.path, long, name: capital(untidied(long)) };
+    const cue: PlanCue = { path: i.path, long, name: capital(untidied(long)) };
     if (!key) { top.push(cue); continue; }
     let g = groups.find((x) => x.key === key);
-    if (!g) { g = { key, by: byDir ? 'folder' : 'prefix', name: byDir ? capital(unnumbered(stem(i.dir.split('/').pop()))) : i.scene, cues: [] }; groups.push(g); top.push(g); }
+    if (!g) { g = { key, by: byDir ? 'folder' : 'prefix', name: byDir ? capital(unnumbered(stem(i.dir.split('/').pop()!))) : i.scene, cues: [] }; groups.push(g); top.push(g); }
     g.cues.push(cue);
   }
   // a tidied name that two sounds would share is no name: those keep what tells them apart
-  const all = [...top.filter((t) => !t.cues), ...groups.flatMap((g) => g.cues)];
-  const seen = new Map();
+  const all = [...top.filter((t): t is PlanCue => !t.cues), ...groups.flatMap((g) => g.cues)];
+  const seen = new Map<string, number>();
   for (const c of all) seen.set(c.name.toLowerCase(), (seen.get(c.name.toLowerCase()) || 0) + 1);
-  for (const c of all) { if (seen.get(c.name.toLowerCase()) > 1) c.name = c.long; else if (c.name !== c.long) tidied = true; }
+  for (const c of all) { if (seen.get(c.name.toLowerCase())! > 1) c.name = c.long; else if (c.name !== c.long) tidied = true; }
   // every sound gets a whole number in the running order, so that it can be called; a group is not a thing to call
   let n = Math.max(1, Math.round(Number(from)) || 1) - 1;
   const first = n + 1;
-  const audio = (c) => ({ type: 'audio', number: String(++n), name: c.name, file: c.path });
+  const audio = (c: PlanCue) => ({ type: 'audio', number: String(++n), name: c.name, file: c.path });
   // one GO a sound: a scene's sounds are a run of cues under a section heading (core/show/sections.js), which never
   // plays; a group would fire them together, which is never what a folder of a scene's sounds means
-  const ops = top.flatMap((t) => (t.cues
-    ? [{ op: 'cue.add', cue: { type: 'section', name: t.name } }, ...t.cues.map((c) => ({ op: 'cue.add', cue: audio(c) }))]
+  const ops = top.flatMap((t): Op[] => (t.cues
+    ? [{ op: 'cue.add', cue: { type: 'section', name: t.name } }, ...t.cues.map((c): Op => ({ op: 'cue.add', cue: audio(c) }))]
     : [{ op: 'cue.add', cue: audio(t) }]));
   return {
     ops, count: all.length, numbers: all.length ? [first, n] : null,
@@ -91,12 +116,12 @@ function folderPlan(listing = [], { from = 1 } = {}) {
     videos: listing.filter((e) => e.kind === 'video' && !(e.usedBy || []).length).length,
   };
 }
-const folderOps = (listing, opts) => folderPlan(listing, opts).ops;
+const folderOps = (listing: FolderEntry[], opts?: { from?: number }) => folderPlan(listing, opts).ops;
 /** The number the next new cue takes: one more than the highest whole number in the show. */
-function nextNumber(doc) { let top = 0; show.walk(doc, (c) => { const v = Number(c.number); if (Number.isFinite(v)) top = Math.max(top, Math.floor(v)); }); return top + 1; }
+function nextNumber(doc: ShowDoc) { let top = 0; show.walk(doc, (c) => { const v = Number(c.number); if (Number.isFinite(v)) top = Math.max(top, Math.floor(v)); }); return top + 1; }
 
 /** What the plan guessed, said plainly. The last sentence is always what was NOT done. */
-function said(plan) {
+function said(plan: Plan) {
   if (!plan.count) return 'There are no sounds in this folder that a cue does not already use.';
   const out = [`${plural(plan.count, 'cue')} in file-name order${plan.numbers ? (plan.numbers[0] === plan.numbers[1] ? `, numbered ${plan.numbers[0]}` : `, numbered ${plan.numbers[0]} to ${plan.numbers[1]}`) : ''}, named after their files${plan.tidied ? ', without words like “FINAL” or “v3”' : ''}.`];
   const folders = plan.groups.filter((g) => g.by === 'folder'), scenes = plan.groups.filter((g) => g.by === 'prefix');
@@ -114,9 +139,9 @@ function said(plan) {
 
 /** The ways to have something answer, each true of this computer (4.6.1). The Endless Cues assistant is first:
  *  nothing to install and no key; choosing it signs in (`signIn`), and nothing contacts the service before that. */
-function setupRows(installed = {}) {
-  const cli = (id, label, says) => ({ id, label, says, found: true, set: id, open: null });
-  const rows = [{ id: 'cloud', label: 'Endless Cues assistant', says: 'free during the beta', found: false, set: 'cloud', open: null, signIn: true }];
+function setupRows(installed: Record<string, boolean | undefined> = {}) {
+  const cli = (id: string, label: string, says: string): SetupRow => ({ id, label, says, found: true, set: id, open: null });
+  const rows: SetupRow[] = [{ id: 'cloud', label: 'Endless Cues assistant', says: 'free during the beta', found: false, set: 'cloud', open: null, signIn: true }];
   // (Claude Code first when both are there; Codex takes the place when it alone is)
   if (installed['claude-code']) rows.push(cli('claude-code', 'Claude Code', 'uses your Claude plan'));
   else if (installed.codex) rows.push(cli('codex', 'Codex', 'uses your Codex sign-in'));
@@ -129,7 +154,7 @@ function setupRows(installed = {}) {
 }
 
 /** Whether a list's numbers want doing again: one missing among numbered ones, one twice, one out of order. */
-function numbersUntidy(cues) {
+function numbersUntidy(cues: Cue[]) {
   const nums = cues.map((c) => (c.number == null ? '' : String(c.number).trim()));
   const have = nums.filter(Boolean);
   if (have.length < 3) return false;
@@ -139,20 +164,20 @@ function numbersUntidy(cues) {
   return n.some((x, i) => i > 0 && x <= n[i - 1]) || n.some((x) => !Number.isInteger(x));
 }
 
-function first({ doc, showDir = null, folder = null, rig = null, imported = null, provider = 'off', installed = {} } = {}) {
+function first({ doc, showDir = null, folder = null, rig = null, imported = null, provider = 'off', installed = {} }: FirstOptions) {
   const none = provider === 'off' || !provider, helper = provider === 'demo';
   const modelFree = none || helper;
-  const cues = []; show.walk(doc, (c) => cues.push(c));
+  const cues: Cue[] = []; show.walk(doc, (c) => cues.push(c));
   const devs = devices.list(doc);
   const files = folder || [];
-  const unused = (kind) => files.filter((e) => e.kind === kind && !(e.usedBy || []).length && !/^props\//.test(e.path));
+  const unused = (kind: string) => files.filter((e) => e.kind === kind && !(e.usedBy || []).length && !/^props\//.test(e.path));
   const sounds = unused('sound'), videos = unused('video');
   const script = (doc.settings.rig && doc.settings.rig.script) || '';
   const texts = files.filter((e) => e.kind === 'text' && !/^props\//.test(e.path) && !/^(AGENTS|CLAUDE)\.md$/.test(e.path) && !/\.(json|toml|yaml|csv|ino|h|cpp)$/i.test(e.path));
   const wasImported = !!imported || /^Imported from the QLab/.test(doc.notes || '');
-  const asks = [];
-  const ask = (label, text, offline = false, more = {}) => asks.push({ label, text: text === undefined ? `${label}.` : text, offline, ...more });
-  let state, line, next;
+  const asks: Ask[] = [];
+  const ask = (label: string, text?: string, offline = false, more: { action?: string } = {}) => asks.push({ label, text: text === undefined ? `${label}.` : text, offline, ...more });
+  let state: string, line: string, next: { label: string; text: string };
 
   const soundsAsk = () => { if (sounds.length) ask(cues.length ? `Make cues for ${plural(sounds.length, 'unused sound')}` : `Make cues from ${sounds.length === 1 ? 'this sound' : `these ${sounds.length} sounds`}`, cues.length ? `Make cues for the ${plural(sounds.length, 'sound')} in this folder that no cue uses.` : `Make cues from the ${plural(sounds.length, 'sound')} in this folder.`, true); };
   const textAsk = () => {
@@ -176,17 +201,17 @@ function first({ doc, showDir = null, folder = null, rig = null, imported = null
   } else if (devs.length) {
     state = 'devices';
     const live = (rig && rig.devices) || {};
-    const stateOf = (d) => (live[d.id] && live[d.id].state) || '';
+    const stateOf = (d: Device) => (live[d.id] && live[d.id].state) || '';
     const there = devs.filter((d) => stateOf(d) === 'ready'), away = devs.filter((d) => stateOf(d) === 'problem' || (stateOf(d) === 'look' && d.alive && d.alive.how !== 'none'));
     const known = there.length + away.length > 0;
     line = !known ? `${plural(devs.length, 'device')}: ${list(devs.slice(0, 4).map((d) => d.name))}${devs.length > 4 ? ` and ${devs.length - 4} more` : ''}.`
       : `${plural(devs.length, 'device')}: ${there.length === devs.length ? (devs.length === 1 ? 'it is answering' : devs.length === 2 ? 'both answering' : 'all answering') : `${there.length} answering`}${away.length ? `, ${list(away.slice(0, 3).map((d) => d.name))} ${away.length === 1 ? 'is' : 'are'} not` : ''}.`;
     if (away.length) ask(`Why is ${away[0].name} not answering?`, `Why is ${away[0].name} not answering?`, true);
-    const usedDevices = new Set(); for (const c of cues) { if (c.type === 'device' && c.device) usedDevices.add(c.device); if (c.type === 'network' && c.patch) usedDevices.add(c.patch); }
+    const usedDevices = new Set<string>(); for (const c of cues) { if (c.type === 'device' && c.device) usedDevices.add(c.device); if (c.type === 'network' && c.patch) usedDevices.add(c.patch); }
     const idle = devs.find((d) => !usedDevices.has(d.id) && (d.commands || []).length);
     if (idle) { const cmd = idle.commands.find((c) => c.id === idle.test) || idle.commands[0]; ask(`Add a cue: ${cmd.label} to ${idle.name}`, `Add a cue that sends ${cmd.label} to ${idle.name}.`, true); }
     ask('Is everything ready?', 'Is everything ready?', true);
-    const bare = showDir && devs.find((d) => KIT_MODELS.includes(d.model) && !files.some((e) => e.path.startsWith(`props/${d.id}/`)));
+    const bare = showDir && devs.find((d) => KIT_MODELS.includes(d.model as string) && !files.some((e) => e.path.startsWith(`props/${d.id}/`)));
     if (bare) ask(`Write firmware for ${bare.name}`, undefined, true);
     if (!cues.length) soundsAsk();
     next = { label: 'Next: ask me to hand the show over.', text: '' };
@@ -203,7 +228,7 @@ function first({ doc, showDir = null, folder = null, rig = null, imported = null
     const open = cues.filter((c) => c.type === 'audio' && !aimed.has(c.id));
     if (open.length > 1) {
       const buses = doc.settings.audio.buses || [];
-      const count = new Map(); for (const c of open) { const b = c.bus || (buses[0] && buses[0].id) || ''; count.set(b, (count.get(b) || 0) + 1); }
+      const count = new Map<string, number>(); for (const c of open) { const b = c.bus || (buses[0] && buses[0].id) || ''; count.set(b, (count.get(b) || 0) + 1); }
       const [busId] = [...count].sort((a, b) => b[1] - a[1])[0];
       const bus = buses.find((b) => b.id === busId);
       ask(`Add fade-outs to the ${bus ? bus.name : 'Audio'} cues`, `Add a 3 second fade-out after every ${bus ? `Audio cue on the ${bus.name} bus` : 'Audio cue'} that has none.`);
@@ -212,7 +237,7 @@ function first({ doc, showDir = null, folder = null, rig = null, imported = null
     next = { label: 'Next: tell me about your equipment.', text: '' };
   } else if (sounds.length || videos.length || (texts.length && showDir)) {
     state = 'folder';
-    const have = [sounds.length && plural(sounds.length, 'sound'), videos.length && plural(videos.length, 'video'), texts.length && plural(texts.length, 'text file')].filter(Boolean);
+    const have = [sounds.length && plural(sounds.length, 'sound'), videos.length && plural(videos.length, 'video'), texts.length && plural(texts.length, 'text file')].filter((x): x is string => !!x);
     line = `${capital(list(have))} not in a cue yet.`;
     soundsAsk();
     textAsk();

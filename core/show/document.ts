@@ -33,11 +33,54 @@ import { applyOps } from './ops';
 import { diffShows, describe, summary } from './diff';
 import * as versions from './versions';
 import * as showFiles from './files';
+import type { ShowDoc } from './types';
+import type { Op } from './ops';
+import type { Change } from './diff';
+import type { VersionEntry } from './versions';
+import type { ShowFile, CheckedFile } from './files';
+
+/** A step of undo or redo: the document as it was (its text), and what the step was called. */
+interface UndoStep { doc: string; label: string }
+
+/** A change waiting for review: its ops (null: a whole draft), the document it would make, and the show it was made against (`base`, a hash). */
+export interface Proposal {
+  id: string;
+  summary: string;
+  author: string;
+  ops: Op[] | null;
+  doc: ShowDoc;
+  base: string;
+  changes: Change[];
+  counts: ReturnType<typeof summary> & { files: number };
+  made: string[];
+  files: CheckedFile[];
+}
+
+/** What an edit (or an accepted proposal) did: the cues it made, their refs, whether anything changed, and the files it wrote. */
+export interface Edited { made: string[]; refs?: Record<string, string>; changed: boolean; files?: string[] }
+
+/** What 'change' is emitted with. */
+export interface DocChange { doc: ShowDoc; reason: string }
 
 const UNDO_MAX = 200;
 
 class ShowDocument extends EventEmitter {
-  constructor({ showDir = null, doc = null } = {}) {
+  showDir: string | null;
+  warnings: string[];
+  undoStack: UndoStep[];
+  redoStack: UndoStep[];
+  proposal: Proposal | null;
+  displaced: Proposal | null;
+  proposalSeq: number;
+  doc: ShowDoc;
+  saved: ShowDoc;
+  assisted: boolean;
+  recovered: boolean;
+  made: boolean;
+  localOnly: boolean;
+  pendingCache: { doc: ShowDoc; saved: ShowDoc; changes: Change[] } | null;
+
+  constructor({ showDir = null, doc = null }: { showDir?: string | null; doc?: unknown } = {}) {
     super();
     this.showDir = showDir;
     this.warnings = [];
@@ -55,11 +98,11 @@ class ShowDocument extends EventEmitter {
     this.pendingCache = null;
   }
 
-  static filePath(showDir) { return path.join(showDir, 'show.json'); }
-  static journalPath(showDir) { return path.join(showDir, 'show.unsaved.json'); }
+  static filePath(showDir: string) { return path.join(showDir, 'show.json'); }
+  static journalPath(showDir: string) { return path.join(showDir, 'show.unsaved.json'); }
 
   /** Open a show folder (made if it is not there). */
-  static open(showDir, { title } = {}) {
+  static open(showDir: string, { title }: { title?: string } = {}) {
     const d = new ShowDocument({ showDir });
     const file = ShowDocument.filePath(showDir);
     if (fs.existsSync(file)) {
@@ -114,7 +157,7 @@ class ShowDocument extends EventEmitter {
   }
 
   /** Keep what is pending: write the show and record a version of it. Returns the version (or null: nothing to save, no folder). */
-  save({ note = '' } = {}) {
+  save({ note = '' }: { note?: string } = {}): (VersionEntry & { same?: boolean }) | null {
     if (!this.showDir) throw new Error('save the show to a folder first');
     const first = !versions.list(this.showDir).length;
     if (!this.dirty && !first) return null;
@@ -140,7 +183,7 @@ class ShowDocument extends EventEmitter {
   }
 
   /** Apply ops as one undoable edit. Throws (OpError) and changes nothing if they do not fit. */
-  edit(ops, { label = '', reason = 'edit' } = {}) {
+  edit(ops: readonly Op[], { label = '', reason = 'edit' }: { label?: string; reason?: string } = {}): Edited {
     const r = applyOps(this.doc, ops);
     const before = show.stringify(this.doc);
     if (show.stringify(r.doc) === before) return { made: r.made, changed: false };
@@ -155,7 +198,7 @@ class ShowDocument extends EventEmitter {
 
   undo() { return this.step(this.undoStack, this.redoStack, 'undo'); }
   redo() { return this.step(this.redoStack, this.undoStack, 'redo'); }
-  step(from, to, reason) {
+  step(from: UndoStep[], to: UndoStep[], reason: string): string | boolean {
     const s = from.pop();
     if (!s) return false;
     to.push({ doc: show.stringify(this.doc), label: s.label });
@@ -170,22 +213,22 @@ class ShowDocument extends EventEmitter {
   listVersions() { return this.showDir ? versions.list(this.showDir) : []; }
 
   /** (The older name: a version is what a save records.) */
-  saveVersion(opts = {}) {
+  saveVersion(opts: { note?: string } = {}) {
     const all = this.showDir ? versions.list(this.showDir) : [];
     return this.save(opts) || { ...all[all.length - 1], same: true };
   }
 
   /** What a version differs by from the show as it is now (or from another version). */
-  compareVersion(id, otherId = null) {
-    const a = versions.read(this.showDir, id);
-    const b = otherId ? versions.read(this.showDir, otherId).doc : this.doc;
+  compareVersion(id: string, otherId: string | null = null) {
+    const a = versions.read(this.showDir!, id);
+    const b = otherId ? versions.read(this.showDir!, otherId).doc : this.doc;
     const changes = diffShows(a.doc, b);
     return { entry: a.entry, changes, summary: summary(changes) };
   }
 
   /** Go back to a version: an edit like any other (undo brings back what was there; it is not kept until saved). */
-  restoreVersion(id) {
-    const { entry, doc } = versions.read(this.showDir, id);
+  restoreVersion(id: string) {
+    const { entry, doc } = versions.read(this.showDir!, id);
     const before = show.stringify(this.doc);
     if (show.stringify(doc) === before) return entry;
     this.undoStack.push({ doc: before, label: `restore ${entry.id}` });
@@ -197,7 +240,7 @@ class ShowDocument extends EventEmitter {
   }
 
   /** The working document becomes `doc` (a backup, a settings-only copy): an edit like any other, undoable and not kept until saved. */
-  replace(doc, { label = 'restore', reason = 'restore' } = {}) {
+  replace(doc: unknown, { label = 'restore', reason = 'restore' }: { label?: string; reason?: string } = {}) {
     const next = show.normalise(doc).doc;
     const before = show.stringify(this.doc);
     if (show.stringify(next) === before) return false;
@@ -213,20 +256,20 @@ class ShowDocument extends EventEmitter {
   // ── proposals (the assistant's edits, reviewed before they land) ─────────
 
   /** The files a proposal carries, checked (files.js): [] for none. Throws, with the sentence to show, when one may not be written. */
-  filesFor(files) {
+  filesFor(files: ShowFile[] | null | undefined): CheckedFile[] {
     if (!files || !files.length) return [];
     const r = showFiles.check(this.showDir, files);
     if (!r.ok) throw new Error(r.why);
     return r.files;
   }
   /** What a proposal is called when nobody named it. */
-  static proposalText(changes, files) {
+  static proposalText(changes: Change[], files: CheckedFile[]) {
     const f = files.length ? `${files.length} file${files.length === 1 ? '' : 's'} for the show folder` : '';
     return changes.length ? `${describe(changes)}${f ? ` · ${f}` : ''}` : f || describe(changes);
   }
 
   /** Stage ops for review. Throws if they do not apply; nothing changes until accept(). `files`: [{ path, text }] written on accept. */
-  propose(ops, { summary: text = '', author = 'assistant', files = null } = {}) {
+  propose(ops: Op[], { summary: text = '', author = 'assistant', files = null }: { summary?: string; author?: string; files?: ShowFile[] | null } = {}): Proposal {
     const r = applyOps(this.doc, ops);
     const changes = diffShows(this.doc, r.doc);
     const carried = this.filesFor(files);
@@ -238,7 +281,7 @@ class ShowDocument extends EventEmitter {
 
   /** Stage a whole draft for review (the assistant's working copy, itself built only by edit operations). `files` as for propose:
    *  a draft that is the show as it stands, with files, is a proposal of files alone. */
-  proposeDocument(draft, { summary: text = '', author = 'assistant', files = null } = {}) {
+  proposeDocument(draft: unknown, { summary: text = '', author = 'assistant', files = null }: { summary?: string; author?: string; files?: ShowFile[] | null } = {}): Proposal {
     const doc = show.normalise(draft).doc;
     const changes = diffShows(this.doc, doc);
     const carried = this.filesFor(files);
@@ -249,15 +292,15 @@ class ShowDocument extends EventEmitter {
   }
 
   /** The proposal lands: one undoable edit, pending like any other until the show is saved. */
-  accept(id) {
+  accept(id?: string | null): Edited {
     const p = this.proposal;
     if (!p || (id && p.id !== id)) throw new Error('no such proposal');
     if (p.base !== show.hash(this.doc)) throw new Error('the show changed since this was proposed; ask again');
     // its files first, checked again against the folder as it is now: if one cannot be written, nothing has changed
     // and the proposal is still waiting
-    const written = p.files && p.files.length ? showFiles.write(this.showDir, p.files) : [];
+    const written = p.files && p.files.length ? showFiles.write(this.showDir!, p.files) : [];
     this.proposal = null; this.displaced = null;
-    let r;
+    let r: Edited;
     if (p.ops) r = this.edit(p.ops, { label: p.summary, reason: 'proposal' });
     else {
       // a draft: the working document becomes it, as one undoable step
@@ -278,7 +321,7 @@ class ShowDocument extends EventEmitter {
     return r;
   }
 
-  reject(id) {
+  reject(id?: string | null) {
     if (!this.proposal || (id && this.proposal.id !== id)) return false;
     this.proposal = null; this.displaced = null;
     this.emit('proposal', null);
@@ -290,7 +333,7 @@ class ShowDocument extends EventEmitter {
    * Unlike reject, which is the person's answer, this puts back the proposal it had taken the place of, when
    * that one still fits the show: a turn that goes wrong leaves the review as it found it.
    */
-  withdraw(id) {
+  withdraw(id?: string | null) {
     if (!this.proposal || (id && this.proposal.id !== id)) return false;
     const was = this.displaced;
     this.proposal = was && was.base === show.hash(this.doc) ? was : null;
@@ -300,7 +343,7 @@ class ShowDocument extends EventEmitter {
   }
 
   /** Where a cue's file is on disk: relative to the show folder unless absolute. */
-  resolveFile(file) {
+  resolveFile(file: string | null | undefined) {
     if (!file) return null;
     // (\\host\share and //host/share: not touched for a show from another computer until it is turned on)
     if (this.localOnly && /^[\\/]{2}/.test(String(file))) return null;

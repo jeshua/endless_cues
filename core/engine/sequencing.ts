@@ -13,17 +13,17 @@
  * These are methods of CueEngine (cue-engine.js installs them); they are here so that file stays about
  * what a cue does and this one about when.
  */
-import type { CueEngine } from './cue-engine';
+import type { CueEngine, EngineCue } from './cue-engine';
 import { geometryOf } from '../video/stage';
 
-export function sequencing({ SILENT_DB }) {
+export function sequencing({ SILENT_DB }: { SILENT_DB: number }) {
   return {
 
     // ── the playhead ──────────────────────────────────────────────────────
 
     /** `=` and `-`: the playhead to the next (or the previous) cue that needs a GO: one the cue before it does
      *  not continue into. Returns whether there was one. */
-    moveSequence(step) {
+    moveSequence(step: number) {
       const top = this.steps();
       const starts = top.map((c, i) => i).filter((i) => i === 0 || !(top[i - 1].autoContinue || top[i - 1].autoFollow));
       let at = top.findIndex((c) => c.id === this.playhead);
@@ -35,7 +35,7 @@ export function sequencing({ SILENT_DB }) {
     },
 
     /** The cue after `id` where it sits: the next stop of its list, or the next child of its group. */
-    nextOf(id) {
+    nextOf(id: string): EngineCue | null {
       const l = this.lists.find((x) => x.cues.some((c) => c.id === id));
       const beside = l ? this.steps(l.name) : (this.byId.get(this.parentOf.get(id)) || {}).children || [];
       const i = beside.findIndex((c) => c.id === id);
@@ -43,7 +43,7 @@ export function sequencing({ SILENT_DB }) {
     },
 
     /** A cue that is about to be started by another takes the playhead past itself, as a continue does. */
-    passHead(id) {
+    passHead(id: string) {
       const l = this.homes.get(id);
       if (!l || this.heads.get(l.name) !== id) return;
       const next = this.nextOf(id);
@@ -54,7 +54,7 @@ export function sequencing({ SILENT_DB }) {
 
     /** A cue fired again while it is running, with a `secondTrigger` other than "restart": that happens, and the
      *  cue is not started again. (nothing | panic: out over the panic time | stop: dead | devamp: out of its loop) */
-    secondAction(cue) {
+    secondAction(cue: EngineCue) {
       const id = cue.id;
       this.log(`second trigger on ${cue.number || id} ${cue.name}: ${cue.secondTrigger}`);
       switch (cue.secondTrigger) {
@@ -67,7 +67,7 @@ export function sequencing({ SILENT_DB }) {
 
     /** The key (or the note) that fired a cue was let go. A cue with `secondOnRelease` takes that as its second
      *  trigger: a sound that plays for as long as a key is held down. */
-    released(id) {
+    released(id: string) {
       const cue = this.byId.get(id);
       if (!cue || !cue.secondOnRelease || !this.isLive(id)) return false;
       if (!cue.secondTrigger || cue.secondTrigger === 'restart') this.start(id);
@@ -77,7 +77,7 @@ export function sequencing({ SILENT_DB }) {
 
     /** One cue out as Esc takes everything out: what is sounding under it fades over the panic time and stops;
      *  what was waiting in it, or to follow it, does not happen. */
-    panicCue(id) {
+    panicCue(id: string) {
       this.following.delete(this.topOf(id));
       this.leavePlaylists(id);
       for (const k of [...this.waits.keys()]) if (this.within(k, id)) this.cancelWait(k);
@@ -91,7 +91,7 @@ export function sequencing({ SILENT_DB }) {
 
     /** A sound out of its loop: one going round a section (or about to) plays on after this pass; one that loops
      *  whole finishes this pass and ends. Returns what it did, or null for a sound that is not looping. */
-    devamp(key) {
+    devamp(key: string): 'let go' | 'disarmed' | 'armed' | 'last pass' | null {
       const r = this.running.get(key);
       if (!r) return null;
       if (r.region || r.loopTo) return this.holdOrLetGo(key, 'let go');
@@ -107,14 +107,14 @@ export function sequencing({ SILENT_DB }) {
     /** A cue with `duckOthers` has fired: every other sound moves by that many dB (down, or up for a boost) over
      *  `duckTime`, and comes back the same way when the cue has finished (checkDucks). The move is a layer of its
      *  own in the audio backend (`audio.duck`), so the sounds' own levels, fades and trims are not touched. */
-    startDuck(cue) {
+    startDuck(cue: EngineCue) {
       const secs = Number(cue.duckTime) >= 0 && cue.duckTime != null ? Number(cue.duckTime) : 1;
       this.ducks.set(cue.id, { db: Number(cue.duckOthers), secs });
       this.applyDucks(secs);
     },
 
     /** Every running sound held where the cues ducking it say: the sum of them, a cue's own sounds left out. */
-    applyDucks(secs) {
+    applyDucks(secs: number) {
       for (const [k, r] of this.running) {
         if (r.still) continue;                                 // a still, a title or a camera has no sound to move
         if (this.busRule(k).live) continue;                    // a bus set to be left alone (its `noDuck`: microphones) is not one of "the others"
@@ -140,11 +140,11 @@ export function sequencing({ SILENT_DB }) {
 
     /** Which cues are "the others" of a cue with `fadeOthersScope`: all of them, those of its list, or its peers
      *  (the cues beside it in its group; a top-level cue's peers are its list). */
-    othersOf(cue) {
+    othersOf(cue: EngineCue): (id: string) => boolean {
       const home = this.homes.get(cue.id);
       const parent = this.parentOf.get(cue.id);
-      if (cue.fadeOthersScope === 'peers' && parent) return (id) => this.isInside(id, parent);
-      if (cue.fadeOthersScope === 'list' || cue.fadeOthersScope === 'peers') return (id) => this.homes.get(id) === home;
+      if (cue.fadeOthersScope === 'peers' && parent) return (id: string) => this.isInside(id, parent);
+      if (cue.fadeOthersScope === 'list' || cue.fadeOthersScope === 'peers') return (id: string) => this.homes.get(id) === home;
       return () => true;
     },
 
@@ -152,9 +152,9 @@ export function sequencing({ SILENT_DB }) {
 
     /** The child a "start one at random" group fires: dealt like cards, so each plays once before any plays again,
      *  and a new round never opens with the child the last one closed on. */
-    deal(cue, armed) {
+    deal(cue: EngineCue, armed: EngineCue[]): EngineCue | null | undefined {
       if (!armed.length) return null;
-      const d = this.dealt.get(cue.id) || { left: [], last: null };
+      const d: { left: string[]; last: string | null } = this.dealt.get(cue.id) || { left: [], last: null };
       d.left = d.left.filter((id) => armed.some((c) => c.id === id));
       let from = d.left;
       if (!from.length) {
@@ -174,13 +174,13 @@ export function sequencing({ SILENT_DB }) {
      *  disarmed as written, aimed where it was written to aim, a group back at its first child; and a Fade's
      *  effect undone: the sounds it moved, if they are still playing, are back at their own level (and a picture
      *  it moved is back where its own cue puts it). */
-    resetCue(id) {
+    resetCue(id: string) {
       const cue = this.byId.get(id);
       if (!cue) return false;
       this.following.delete(this.topOf(id));
       this.leavePlaylists(id);
       this.stopTree(id);
-      const each = (c) => {
+      const each = (c: EngineCue) => {
         this.loads.delete(c.id);
         this.loadAt.delete(c.id);
         if (this.loaded && this.loaded.id === c.id) this.loaded = null;
@@ -189,11 +189,11 @@ export function sequencing({ SILENT_DB }) {
         this.entered.delete(c.id);
         this.dealt.delete(c.id);
         this.ducks.delete(c.id);
-        if (this.retargets.has(c.id)) { c.target = this.retargets.get(c.id).was; this.retargets.delete(c.id); this.holdsCache = new Map(); }
+        if (this.retargets.has(c.id)) { c.target = this.retargets.get(c.id)!.was; this.retargets.delete(c.id); this.holdsCache = new Map(); }
         for (const k of this.moved.get(c.id) || []) {
           const r = this.running.get(k);
           if (!r) continue;
-          for (const fid of [c.id, `${c.id}:${k}`]) if (this.fades.has(fid)) { this.clock.clearTimeout(this.fades.get(fid).timer); this.fades.delete(fid); }
+          for (const fid of [c.id, `${c.id}:${k}`]) if (this.fades.has(fid)) { this.clock.clearTimeout(this.fades.get(fid)!.timer); this.fades.delete(fid); }
           if (r.band) this.fadeBand(k, 0, 0, `band:${k}`);
           if (!r.still) this.fadeAudio(k, Number((this.byId.get(k) || {}).gainDb) || 0, 0, false, `level:${k}`);
           if (r.pic) this.movePicture(k, geometryOf(this.byId.get(k) || {}), 0);      // (and its picture is back where its cue puts it)
@@ -209,14 +209,14 @@ export function sequencing({ SILENT_DB }) {
 
     /** A Target cue: cue `id` is aimed at `to` from now on (until Reset, a Reset cue on it, or an edit to its
      *  target in the show). Refused when either is gone or `id` is a cue that has no target. */
-    retarget(id, to) {
+    retarget(id: string, to: string) {
       const cue = this.byId.get(id);
       if (!cue || !('target' in cue) || !(this.byId.has(to) || this.listAt(to))) { this.log(`target cue: cannot aim ${id} at ${to}`); return false; }
       if (!this.retargets.has(id)) this.retargets.set(id, { was: cue.target, to });
-      this.retargets.get(id).to = to;
+      this.retargets.get(id)!.to = to;
       cue.target = to;
       this.holdsCache = new Map();
-      this.log(`  ↳ ${cue.number || id} ${cue.name} now targets ${(this.byId.get(to) || this.listAt(to)).name || to}`);
+      this.log(`  ↳ ${cue.number || id} ${cue.name} now targets ${(this.byId.get(to) || this.listAt(to))!.name || to}`);
       return true;
     },
 
@@ -231,8 +231,8 @@ export function sequencing({ SILENT_DB }) {
     },
 
     /** Whether a cue's sounds are decoded ahead while it stands by (`autoLoad`, on it or on a group it is in). */
-    autoLoads(c) {
-      for (let x = c; x; x = this.byId.get(this.parentOf.get(x.id))) if (x.autoLoad) return true;
+    autoLoads(c: EngineCue) {
+      for (let x: EngineCue | undefined = c; x; x = this.byId.get(this.parentOf.get(x.id))) if (x.autoLoad) return true;
       return false;
     },
   } satisfies ThisType<CueEngine>;

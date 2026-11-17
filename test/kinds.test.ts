@@ -10,7 +10,7 @@ import { rig, build } from './helpers';
 import * as sig from '../app/main/test-signals';
 
 test('a bus’s kind is the one it says, else read from its id and name', () => {
-  const k = (id, name, kind) => kinds.kindOf({ id, name, ...(kind ? { kind } : {}) });
+  const k = (id: string, name: string, kind?: string) => kinds.kindOf({ id, name, ...(kind ? { kind } : {}) });
   assert.strictEqual(k('music', 'Music'), 'music');
   assert.strictEqual(k('effects', 'Effects'), 'effects');
   assert.strictEqual(k('vocals', 'Vocals'), 'voice');
@@ -153,7 +153,7 @@ test('a bus that plays one at a time: a new sound crossfades with the one playin
   for (const f of ['a.wav', 'b.wav', 'm.wav']) r.engine.setDuration(f, 100);
   r.engine.busRules = { effects: { oneAtATime: 3 } };
   r.engine.go();
-  assert.strictEqual(r.audio.calls.find((c) => c[0] === 'play')[2].gainDb, 0, 'nothing to take over from: it starts at its level');
+  assert.strictEqual(r.audio.calls.find((c) => c[0] === 'play')![2].gainDb, 0, 'nothing to take over from: it starts at its level');
   r.advance(5);
   r.engine.go();
   const calls = r.audio.calls.slice(-3).map((c) => c.slice(0, 4));
@@ -173,7 +173,7 @@ test('a microphone on a bus set to be left alone is not held down by a cue that 
     { op: 'cue.add', ref: 'm', cue: { type: 'audio', file: 'm.wav', bus: 'music' } },
     { op: 'cue.add', ref: 'vo', cue: { type: 'audio', file: 'vo.wav', bus: 'effects', duckOthers: -12, duckTime: 0.5 } },
   ]);
-  const ducked = [];
+  const ducked: [string, number][] = [];
   const r = rig(s.doc);
   r.audio.duck = (k, db) => ducked.push([k, db]);
   r.engine.setDuration('m.wav', 100); r.engine.setDuration('vo.wav', 10);
@@ -188,7 +188,7 @@ test('a Fade cue’s chainTo is sent to the sound it fades, over the fade’s ti
     { op: 'cue.add', ref: 'f', cue: { type: 'fade', target: '@a', db: -6, duration: 8, chainTo: { lowpass: { hz: 400 } } } },
   ]);
   assert.deepStrictEqual(s.doc.lists[0].cues[0].chain, { lowpass: { hz: 20000, slope: 12 } });
-  const swept = [];
+  const swept: unknown[][] = [];
   const r = rig(s.doc);
   r.audio.sweep = (...a) => swept.push(a);
   r.engine.setDuration('a.wav', 100);
@@ -210,7 +210,7 @@ test('where the speech is: stretches above the floor, a breath joined, a click d
 });
 
 test('the kind of a sound is guessed from what it is: speech, music, an effect, a bed', () => {
-  const g = (x) => kinds.guessKind(x, sig.RATE);
+  const g = (x: Float32Array) => kinds.guessKind(x, sig.RATE);
   assert.strictEqual(g(sig.speech(20)).kind, 'voice');
   assert.strictEqual(g(sig.speech(6, 7)).kind, 'voice', 'a short line is still a voice');
   assert.strictEqual(g(sig.speech(90, 4)).kind, 'voice', 'and a long speech is not music because it is long');

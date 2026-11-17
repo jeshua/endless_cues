@@ -12,22 +12,27 @@
  * Used by the assistant to check a sequence it has built before proposing it, and by anyone who
  * wants to read a show rather than listen to it (`ec simulate`).
  */
-import { CueEngine } from './cue-engine';
+import { CueEngine, type Clock, type EngineAudio } from './cue-engine';
 import * as show from '../show/show';
+import type { ShowDoc } from '../show/types';
 
-const fmt = (t) => `${t.toFixed(2).padStart(7)} s`;
-const dB = (d) => (d <= -60 ? 'silence' : `${d > 0 ? '+' : ''}${Math.round(d * 10) / 10} dB`);
+const fmt = (t: number) => `${t.toFixed(2).padStart(7)} s`;
+const dB = (d: number) => (d <= -60 ? 'silence' : `${d > 0 ? '+' : ''}${Math.round(d * 10) / 10} dB`);
 
-function simulate(doc, { from = null, gos = 1, durations = {}, settle = 30, gap = null, maxEvents = 400 } = {}) {
-  let t = 0, timers = [], nextId = 1;
-  const events = [];
-  const say = (text) => { if (events.length < maxEvents) events.push({ t: Math.round(t * 100) / 100, text }); };
-  const clock = {
+/** How to run it: from a cue's number, how many GOs, the lengths of the sounds (file -> seconds), how long to let
+ *  each GO settle, or a fixed gap between GOs, and how many events to keep. */
+export interface SimulateOptions { from?: string | number | null; gos?: number; durations?: Record<string, number>; settle?: number; gap?: number | null; maxEvents?: number }
+
+function simulate(doc: ShowDoc, { from = null, gos = 1, durations = {}, settle = 30, gap = null, maxEvents = 400 }: SimulateOptions = {}) {
+  let t = 0, timers: { id: number; at: number; fn: () => void }[] = [], nextId = 1;
+  const events: { t: number; text: string }[] = [];
+  const say = (text: string) => { if (events.length < maxEvents) events.push({ t: Math.round(t * 100) / 100, text }); };
+  const clock: Clock = {
     now: () => t,
     setTimeout: (fn, ms) => { const id = nextId++; timers.push({ id, at: t + Math.max(0, ms) / 1000, fn }); return id; },
     clearTimeout: (id) => { timers = timers.filter((x) => x.id !== id); },
   };
-  const advance = (secs) => {
+  const advance = (secs: number) => {
     const end = t + secs;
     for (let guard = 0; guard < 100000; guard++) {
       timers.sort((a, b) => a.at - b.at);
@@ -38,12 +43,12 @@ function simulate(doc, { from = null, gos = 1, durations = {}, settle = 30, gap 
     t = end;
   };
   const { byId } = show.index(doc);
-  const name = (id) => { const c = byId.get(id); return c ? (c.name || c.file || c.type) : id; };
-  const ends = new Map();           // sound key -> the timer that ends it
-  let engine;
-  const endAt = (key, secs) => { clock.clearTimeout(ends.get(key)); if (secs > 0) ends.set(key, clock.setTimeout(() => { ends.delete(key); say(`${name(key)} reaches its end`); engine.audioEnded(key); }, secs * 1000)); };
-  const audio = {
-    play: (key, o) => { say(`▶ ${name(key)} plays (${o.file}) at ${dB(o.gainDb)} on ${o.bus}${o.from ? `, from ${o.from} s` : ''}${o.loop ? ', looping' : ''}`); const d = durations[o.file]; if (d > 0 && !o.loop) endAt(key, d - (o.from || 0)); },
+  const name = (id: string) => { const c = byId.get(id); return c ? (c.name || c.file || c.type) : id; };
+  const ends = new Map<string, unknown>();           // sound key -> the timer that ends it
+  let engine: CueEngine;
+  const endAt = (key: string, secs: number) => { clock.clearTimeout(ends.get(key)); if (secs > 0) ends.set(key, clock.setTimeout(() => { ends.delete(key); say(`${name(key)} reaches its end`); engine.audioEnded(key); }, secs * 1000)); };
+  const audio: EngineAudio = {
+    play: (key, o) => { say(`▶ ${name(key)} plays (${o.file}) at ${dB(o.gainDb)} on ${o.bus}${o.from ? `, from ${o.from} s` : ''}${o.loop ? ', looping' : ''}`); const d = durations[o.file!]; if (d > 0 && !o.loop) endAt(key, d - (o.from || 0)); },
     fade: (key, db, secs, range) => say(`◢ ${name(key)} ${range === 'voice' ? 'voice band ' : ''}→ ${range === 'voice' ? `${db} dB` : dB(db)}${secs > 0 ? ` over ${Math.round(secs * 100) / 100} s` : ''}`),
     duck: (key, db, secs) => say(db ? `${name(key)} is held ${db > 0 ? '+' : ''}${db} dB by a cue that ${db > 0 ? 'boosts' : 'ducks'} the others${secs > 0 ? ` (over ${secs} s)` : ''}` : `${name(key)} comes back to its level${secs > 0 ? ` (over ${secs} s)` : ''}`),
     stop: (key) => { clock.clearTimeout(ends.get(key)); ends.delete(key); say(`■ ${name(key)} stops`); },
@@ -54,9 +59,9 @@ function simulate(doc, { from = null, gos = 1, durations = {}, settle = 30, gap 
     setLoop: (key, on) => say(`${name(key)} ${on ? 'loops' : 'will finish this pass and end'}`),
     move: (key, o) => say(`${name(key)} moves to ${Math.round(o.to * 100) / 100} s (${o.sync.blend}, ${o.sync.xf} s)`),
   };
-  const patches = new Map(doc.settings.network.patches.map((p) => [p.id, p.name]));
+  const patches = new Map<string | undefined, string>(doc.settings.network.patches.map((p) => [p.id, p.name]));
   // (a device is somewhere a message can go, as a patch is; "the only patch" still counts patches only)
-  const devices = new Map(((doc.settings.rig || {}).devices || []).map((d) => [d.id, d.name]));
+  const devices = new Map<string | undefined, string>(((doc.settings.rig || {}).devices || []).map((d) => [d.id, d.name]));
   engine = new CueEngine({
     audio, clock, panicFade: doc.settings.go.panicFade,
     // a Device cue says what it is as well as what it sends: "⇄ Lantern A ▸ Effect (breathe)  /ec/effect breathe  → Lantern A"
@@ -85,13 +90,15 @@ function simulate(doc, { from = null, gos = 1, durations = {}, settle = 30, gap 
 }
 
 /** The same, as text. */
-function describe(result) {
-  if (result.error) return result.error;
+function describe(result: Simulation) {
+  if (result.error != null) return result.error;
   const lines = result.events.map((e) => `${fmt(e.t)}  ${e.text}`);
   lines.push('', `Still sounding afterwards: ${result.playing.length ? result.playing.join('; ') : 'nothing'}`, `Standing by: ${result.playhead}`);
   if (result.problems.length) lines.push(`Broken cues (skipped when fired): ${result.problems.join('; ')}`);
   if (result.truncated) lines.push('(more happened than is listed)');
   return lines.join('\n');
 }
+
+export type Simulation = ReturnType<typeof simulate>;
 
 export { simulate, describe };

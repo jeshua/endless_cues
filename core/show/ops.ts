@@ -46,16 +46,48 @@ import * as cart from './cart';
 import { KIND_ORDER } from '../audio/kinds';
 import * as rigDevices from '../rig/devices';
 import * as sections from './sections';
+import type { ShowDoc, Cue, CueFields, Device } from './types';
+
+/** Where an added or moved cue lands: before or after a cue, at the end of a group, or at the end of a list. */
+export interface Place { after?: string | null; before?: string | null; parent?: string | null; list?: string | null }
+/** A cue as `cue.add` takes it: its type and fields, and its children (each one of these). */
+export type CueSpec = { type: string; ref?: string; children?: CueSpec[] } & { [field in keyof CueFields]?: unknown } & { [field: string]: unknown };
+/** The fields a `cue.set` or `device.set` changes: { field: value | null } (null clears it). */
+export type Props = Record<string, unknown>;
+
+/** One edit to a show (the list at the top of this file). */
+export type Op =
+  | ({ op: 'cue.add'; cue: CueSpec; ref?: string } & Place)
+  | { op: 'cue.set'; id: string; props: Props }
+  | { op: 'cue.remove'; id: string }
+  | ({ op: 'cue.move'; ids?: string[]; id?: string } & Place)
+  | { op: 'cue.duplicate'; id: string; ref?: string }
+  | { op: 'cue.renumber'; ids: string[]; start?: number | string; step?: number | string; prefix?: string; suffix?: string }
+  | { op: 'cue.unnumber'; ids: string[] }
+  | { op: 'list.add'; name?: string; cart?: { rows?: number; columns?: number } | null }
+  | { op: 'list.rename'; id: string; name: string }
+  | { op: 'list.remove'; id: string }
+  | { op: 'list.cart'; id: string; rows?: number | null; columns?: number | null }
+  | { op: 'show.set'; path: string; value: unknown }
+  | { op: 'device.add'; device: Partial<Device> }
+  | { op: 'device.set'; id: string; props: Props }
+  | { op: 'device.remove'; id: string };
+export type OpName = Op['op'];
+
+/** What applyOps gives back: the new show, the ids of the cues it made, their refs, and the devices it touched. */
+export interface Applied { doc: ShowDoc; made: string[]; refs: Record<string, string>; devices: { added: string[]; changed: string[]; removed: string[] } }
 
 class OpError extends Error {
-  constructor(message, at) { super(message); this.name = 'OpError'; this.at = at; }
+  /** the index of the operation that failed (−1: the batch as a whole) */
+  at: number;
+  constructor(message: string, at: number) { super(message); this.name = 'OpError'; this.at = at; }
 }
 
-const clone = (v) => JSON.parse(JSON.stringify(v));
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
 /** What each operation takes: the shape check and the assistant's reference both read this. */
 const PLACES = ['after', 'before', 'parent', 'list'];
-const OP_KEYS = {
+const OP_KEYS: Record<OpName, string[]> = {
   'cue.add': ['cue', 'ref', ...PLACES],
   'cue.set': ['id', 'props'],
   'cue.remove': ['id'],
@@ -75,9 +107,9 @@ const OP_KEYS = {
 const DEVICE_OPS = 'device.add, device.set and device.remove';
 
 /** A show.set path with a bus or a patch named by its id, as the index the operation wants. */
-function settingPath(pathText, doc, fail) {
+function settingPath(pathText: string, doc: ShowDoc, fail: (msg: string) => never) {
   const keys = String(pathText || '').split('.');
-  for (const [list, noun, at] of [[doc.settings.audio.buses, 'bus', 'settings.audio.buses'], [doc.settings.network.patches, 'patch', 'settings.network.patches']]) {
+  for (const [list, noun, at] of [[doc.settings.audio.buses, 'bus', 'settings.audio.buses'], [doc.settings.network.patches, 'patch', 'settings.network.patches']] as [{ id?: string }[], string, string][]) {
     const depth = at.split('.').length;
     if (keys.slice(0, depth).join('.') !== at || keys.length === depth) continue;
     const k = keys[depth];
@@ -91,9 +123,9 @@ function settingPath(pathText, doc, fail) {
 }
 
 /** One operation as the switch below wants it, or a refusal that says what to send instead. `doc` is the show as the batch has left it so far. */
-function shaped(o, doc, fail) {
+function shaped(o: any, doc: ShowDoc, fail: (msg: string) => never): Op {
   if (!o || typeof o !== 'object' || Array.isArray(o)) fail('not an operation (an object with "op")');
-  const keys = OP_KEYS[o.op];
+  const keys = OP_KEYS[o.op as OpName];
   if (!keys) fail(`unknown operation (the operations are ${Object.keys(OP_KEYS).join(', ')})`);
   for (const k of Object.keys(o)) if (k !== 'op' && !keys.includes(k)) fail(`“${k}” is not something a ${o.op} takes (it takes: ${keys.join(', ')})`);
   const places = PLACES.filter((k) => keys.includes(k) && o[k] != null);
@@ -106,11 +138,11 @@ function shaped(o, doc, fail) {
       if (!o.props || typeof o.props !== 'object' || Array.isArray(o.props) || !Object.keys(o.props).length) fail('"props" is required: the fields to change, { "field": value }');
       break;
     case 'cue.move':
-      if (![].concat(o.ids || o.id || []).length) fail('"ids" is required: the cues to move');
+      if (!([] as string[]).concat(o.ids || o.id || []).length) fail('"ids" is required: the cues to move');
       if (!places.length) fail('say where to: "before" or "after" a cue, "parent" (a group) or "list"');
       break;
     case 'cue.renumber':
-      if (![].concat(o.ids || []).length) fail('"ids" is required: the cues to renumber, in order');
+      if (!([] as string[]).concat(o.ids || []).length) fail('"ids" is required: the cues to renumber, in order');
       for (const k of ['start', 'step']) if (o[k] != null && !Number.isFinite(Number(o[k]))) fail(`"${k}" is a number (use "prefix" and "suffix" for letters)`);
       break;
     case 'device.add':
@@ -139,9 +171,9 @@ function shaped(o, doc, fail) {
 }
 
 /** What is wrong with a show's settings, as sentences: things show.set would otherwise let through. */
-function settingsTrouble(doc) {
-  const out = [];
-  const kinds = (base, node, at) => {
+function settingsTrouble(doc: ShowDoc): string[] {
+  const out: string[] = [];
+  const kinds = (base: object, node: any, at: string) => {
     for (const [k, want] of Object.entries(base)) {
       const have = node == null ? undefined : node[k];
       if (Array.isArray(want)) { if (!Array.isArray(have)) out.push(`${at}${k} is a list`); continue; }
@@ -152,7 +184,7 @@ function settingsTrouble(doc) {
   };
   kinds(show.defaultSettings(), doc.settings, 'settings.');
   kinds(show.defaultModules(), doc.modules, 'modules.');
-  const items = (list, at, noun, each) => {
+  const items = <T extends { id?: unknown; name?: unknown }>(list: T[], at: string, noun: string, each: (x: T, at: string) => void) => {
     const seen = new Set();
     for (let i = 0; i < (Array.isArray(list) ? list.length : 0); i++) {
       const x = list[i];
@@ -168,9 +200,9 @@ function settingsTrouble(doc) {
     if (b.db !== undefined && (typeof b.db !== 'number' || !Number.isFinite(b.db))) out.push(`${at}.db is a number of dB (it was given ${JSON.stringify(b.db)})`);
     if (b.out !== undefined && !(Number.isInteger(b.out) && b.out >= 1 && b.out % 2 === 1)) out.push(`${at}.out is the first of a pair of outputs: 1, 3, 5 … (it was given ${JSON.stringify(b.out)})`);
     // what kind of sound it carries, and what its kind was offered (core/audio/kinds.js)
-    if (b.kind !== undefined && !KIND_ORDER.includes(b.kind)) out.push(`${at}.kind is one of ${KIND_ORDER.join(', ')} (it was given ${JSON.stringify(b.kind)})`);
+    if (b.kind !== undefined && !(KIND_ORDER as readonly string[]).includes(b.kind)) out.push(`${at}.kind is one of ${KIND_ORDER.join(', ')} (it was given ${JSON.stringify(b.kind)})`);
     if (b.noDuck !== undefined && typeof b.noDuck !== 'boolean') out.push(`${at}.noDuck is true or false (it was given ${JSON.stringify(b.noDuck)})`);
-    for (const k of ['stopFade', 'oneAtATime']) if (b[k] !== undefined && !(typeof b[k] === 'number' && b[k] >= 0 && b[k] <= 60)) out.push(`${at}.${k} is a time in seconds, 0 to 60 (it was given ${JSON.stringify(b[k])})`);
+    for (const k of ['stopFade', 'oneAtATime'] as const) if (b[k] !== undefined && !(typeof b[k] === 'number' && b[k] >= 0 && b[k] <= 60)) out.push(`${at}.${k} is a time in seconds, 0 to 60 (it was given ${JSON.stringify(b[k])})`);
   });
   items(doc.settings.network.patches, 'settings.network.patches', 'patch', (p, at) => {
     if (typeof p.host !== 'string') out.push(`${at}: a patch needs a "host" (an address)`);
@@ -189,19 +221,19 @@ function settingsTrouble(doc) {
   return out;
 }
 
-function applyOps(input, ops) {
+function applyOps(input: ShowDoc, ops: readonly Op[]): Applied {
   if (!Array.isArray(ops)) throw new OpError('ops: a list of operations', -1);
   const doc = clone(input);
-  const refs = new Map();
-  const made = [];
-  const devices = { added: [], changed: [], removed: [] };      // the ids of the devices this batch touched (`made` is for cues)
+  const refs = new Map<string, string>();
+  const made: string[] = [];
+  const devices: Applied['devices'] = { added: [], changed: [], removed: [] };      // the ids of the devices this batch touched (`made` is for cues)
   let at = 0;
-  const fail = (msg) => { throw new OpError(`op ${at + 1}${ops[at] && typeof ops[at].op === 'string' ? ` (${ops[at].op})` : ''}: ${msg}`, at); };
+  const fail: (msg: string) => never = (msg) => { throw new OpError(`op ${at + 1}${ops[at] && typeof ops[at].op === 'string' ? ` (${ops[at].op})` : ''}: ${msg}`, at); };
 
-  const resolve = (name, what = 'cue') => {
+  const resolve = (name: unknown, what = 'cue'): string => {
     if (name == null || name === '') fail(`no ${what} named`);
     const s = String(name);
-    if (s.startsWith('@')) { if (!refs.has(s.slice(1))) fail(`no cue was added with ref ${s.slice(1)}`); return refs.get(s.slice(1)); }
+    if (s.startsWith('@')) { if (!refs.has(s.slice(1))) fail(`no cue was added with ref ${s.slice(1)}`); return refs.get(s.slice(1))!; }
     if (s.startsWith('#')) { const c = show.findByNumber(doc, s.slice(1)); if (!c) fail(`no cue numbered ${s.slice(1)}`); return c.id; }
     if (!show.locate(doc, s)) {
       const c = show.findByNumber(doc, s);       // forgiving: a bare number
@@ -210,20 +242,22 @@ function applyOps(input, ops) {
     }
     return s;
   };
-  const listById = (id) => doc.lists.find((l) => l.id === id || l.name === id) || fail(`no list ${id}`);
+  const listById = (id: unknown) => doc.lists.find((l) => l.id === id || l.name === id) || fail(`no list ${id}`);
+  // (a cue named here has been resolved: it is in the show)
+  const found = (id: string) => show.locate(doc, id)!;
 
   /** Where an add / move lands: { siblings, at }. */
-  const place = (o, moving = []) => {
-    let siblings;
+  const place = (o: Place, moving: string[] = []) => {
+    let siblings: Cue[];
     if (o.before != null || o.after != null) {
       const anchor = resolve(o.before != null ? o.before : o.after);
       if (moving.includes(anchor)) fail('cannot place a cue relative to itself');
-      const loc = show.locate(doc, anchor);
+      const loc = found(anchor);
       return { siblings: loc.siblings, at: loc.at + (o.before != null ? 0 : 1) };
     }
     if (o.parent != null) {
       const pid = resolve(o.parent, 'group');
-      const p = show.locate(doc, pid);
+      const p = found(pid);
       const g = p.siblings[p.at];
       if (!TYPES[g.type].container) fail(`${g.number || g.id} is not a group`);
       siblings = g.children || (g.children = []);
@@ -231,7 +265,7 @@ function applyOps(input, ops) {
     return { siblings, at: siblings.length };
   };
 
-  const setProps = (cue, props) => {
+  const setProps = (cue: Cue, props: Props | undefined) => {
     for (const [key, raw] of Object.entries(props || {})) {
       if (key === 'id' || key === 'type' || key === 'children') fail(`${key} cannot be set`);
       const f = fieldsOf(cue.type).find((x) => x.key === key);
@@ -247,9 +281,9 @@ function applyOps(input, ops) {
     }
   };
 
-  const build = (spec) => {
+  const build = (spec: CueSpec): { cue: Cue; pending: (() => void)[] } => {
     if (!spec || !TYPES[spec.type]) fail(`unknown cue type ${JSON.stringify(spec && spec.type)} (types: ${Object.keys(TYPES).join(', ')})`);
-    const cue = { id: show.newId(), type: spec.type };
+    const cue: Cue = { id: show.newId(), type: spec.type as Cue['type'] };
     const { type, children, id, ref, ...props } = spec;
     if (ref) refs.set(String(ref), cue.id);
     made.push(cue.id);
@@ -257,14 +291,14 @@ function applyOps(input, ops) {
     // children first, so the group's own fields (and theirs) can name each other by @ref
     if (children && !TYPES[type].container) fail(`a ${TYPES[type].label} cue cannot have children`);
     const pending = [() => setProps(cue, props)];
-    for (const k of children || []) { const b = build(k); cue.children.push(b.cue); pending.push(...b.pending); }
+    for (const k of children || []) { const b = build(k); cue.children!.push(b.cue); pending.push(...b.pending); }
     return { cue, pending };
   };
 
-  const isInside = (id, ancestorId) => {
-    const a = show.locate(doc, ancestorId);
+  const isInside = (id: string, ancestorId: string) => {
+    const a = found(ancestorId);
     let hit = false;
-    const go = (cues) => { for (const c of cues || []) { if (c.id === id) hit = true; go(c.children); } };
+    const go = (cues: Cue[] | undefined) => { for (const c of cues || []) { if (c.id === id) hit = true; go(c.children); } };
     go(a.siblings[a.at].children);
     return hit;
   };
@@ -280,53 +314,53 @@ function applyOps(input, ops) {
         break;
       }
       case 'cue.set': {
-        const loc = show.locate(doc, resolve(o.id));
+        const loc = found(resolve(o.id));
         setProps(loc.siblings[loc.at], o.props);
         break;
       }
       case 'cue.remove': {
-        const loc = show.locate(doc, resolve(o.id));
+        const loc = found(resolve(o.id));
         loc.siblings.splice(loc.at, 1);
         break;
       }
       case 'cue.move': {
-        const ids = [].concat(o.ids || o.id || []).map((x) => resolve(x));
+        const ids = ([] as string[]).concat(o.ids || o.id || []).map((x) => resolve(x));
         if (!ids.length) fail('no cues to move');
         if (o.parent != null) { const pid = resolve(o.parent, 'group'); for (const id of ids) if (id === pid || isInside(pid, id)) fail('cannot move a group into itself'); }
-        if (o.before != null || o.after != null) { const anchor = resolve(o.before != null ? o.before : o.after); for (const id of ids) if (id !== anchor && show.locate(doc, id).siblings[show.locate(doc, id).at].children && isInside(anchor, id)) fail('cannot move a group into itself'); }
+        if (o.before != null || o.after != null) { const anchor = resolve(o.before != null ? o.before : o.after); for (const id of ids) if (id !== anchor && found(id).siblings[found(id).at].children && isInside(anchor, id)) fail('cannot move a group into itself'); }
         // take them out (in document order), then put them in at the anchor
-        const taken = [];
+        const taken: Cue[] = [];
         for (const id of ids) { const loc = show.locate(doc, id); if (!loc) continue; taken.push(loc.siblings.splice(loc.at, 1)[0]); }
         const where = place(o, ids);
         where.siblings.splice(where.at, 0, ...taken);
         break;
       }
       case 'cue.duplicate': {
-        const loc = show.locate(doc, resolve(o.id));
+        const loc = found(resolve(o.id));
         const copy = clone(loc.siblings[loc.at]);
-        const remap = new Map();
-        const reid = (c) => { const id = show.newId(); remap.set(c.id, id); c.id = id; made.push(id); (c.children || []).forEach(reid); };
+        const remap = new Map<string, string>();
+        const reid = (c: Cue) => { const id = show.newId(); remap.set(c.id, id); c.id = id; made.push(id); (c.children || []).forEach(reid); };
         reid(copy);
         // a target inside the copy follows the copy; one outside stays
-        const retarget = (c) => { if (c.target && remap.has(c.target)) c.target = remap.get(c.target); (c.children || []).forEach(retarget); };
+        const retarget = (c: Cue) => { if (c.target && remap.has(c.target)) c.target = remap.get(c.target); (c.children || []).forEach(retarget); };
         retarget(copy);
         // numbers are not copied (two cues with one number): the copy and everything in it start unnumbered
-        const unnumber = (c) => { if (c.number) delete c.number; (c.children || []).forEach(unnumber); };
+        const unnumber = (c: Cue) => { if (c.number) delete c.number; (c.children || []).forEach(unnumber); };
         unnumber(copy);
         if (o.ref) refs.set(String(o.ref), copy.id);
         loc.siblings.splice(loc.at + 1, 0, copy);
         break;
       }
       case 'cue.renumber': {
-        const ids = [].concat(o.ids || []).map((x) => resolve(x));
+        const ids = ([] as string[]).concat(o.ids || []).map((x) => resolve(x));
         const step = Number.isFinite(Number(o.step)) && Number(o.step) !== 0 ? Number(o.step) : 1;
         let n = Number.isFinite(Number(o.start)) ? Number(o.start) : 1;
         const places = Math.max(...[n, step].map((x) => (String(x).split('.')[1] || '').length));
         // a number another cue already has (one that is not being renumbered) is passed over, never given twice
-        const taken = new Set();
+        const taken = new Set<string>();
         show.walk(doc, (c) => { if (c.number != null && c.number !== '' && !ids.includes(c.id)) taken.add(String(c.number).toLowerCase()); });
         for (const id of ids) {
-          const loc = show.locate(doc, id);
+          const loc = found(id);
           if (loc.siblings[loc.at].type === 'section') continue;      // (a heading is not called, so it has no number)
           const text = () => `${o.prefix || ''}${places ? n.toFixed(places) : n}${o.suffix || ''}`;
           for (let tries = 0; taken.has(text().toLowerCase()) && tries < 100000; tries++) n += step;
@@ -336,20 +370,20 @@ function applyOps(input, ops) {
         break;
       }
       case 'cue.unnumber': {
-        for (const id of [].concat(o.ids || []).map((x) => resolve(x))) { const loc = show.locate(doc, id); delete loc.siblings[loc.at].number; }
+        for (const id of ([] as string[]).concat(o.ids || []).map((x) => resolve(x))) { const loc = found(id); delete loc.siblings[loc.at].number; }
         break;
       }
       case 'list.add': {
         const name = String(o.name || '').trim() || `List ${doc.lists.length + 1}`;
         if (doc.lists.some((l) => l.name === name)) fail(`there is already a list called ${name}`);
         if (o.cart != null && !cart.cleanCart(o.cart)) fail('"cart" is the size of the grid: { "rows": 4, "columns": 4 }');
-        doc.lists.push({ id: show.newId('list'), name, ...(o.cart != null ? { cart: cart.cleanCart(o.cart) } : {}), cues: [] });
+        doc.lists.push({ id: show.newId('list'), name, ...(o.cart != null ? { cart: cart.cleanCart(o.cart)! } : {}), cues: [] });
         break;
       }
       case 'list.cart': {
         const l = listById(o.id);
         if (o.rows == null && o.columns == null) { delete l.cart; break; }
-        for (const k of ['rows', 'columns']) if (!(Number.isInteger(Number(o[k])) && Number(o[k]) >= 1 && Number(o[k]) <= cart.MAX)) fail(`"${k}" is a whole number from 1 to ${cart.MAX} (rows: null makes it a plain list again)`);
+        for (const k of ['rows', 'columns'] as const) if (!(Number.isInteger(Number(o[k])) && Number(o[k]) >= 1 && Number(o[k]) <= cart.MAX)) fail(`"${k}" is a whole number from 1 to ${cart.MAX} (rows: null makes it a plain list again)`);
         l.cart = { rows: Number(o.rows), columns: Number(o.columns) };
         break;
       }
@@ -372,9 +406,9 @@ function applyOps(input, ops) {
         if (!(path === 'title' || path === 'notes' || path.startsWith('settings.') || path.startsWith('modules.'))) fail(`cannot set ${path} (title, notes, settings.…, modules.…)`);
         const keys = path.split('.');
         if (keys.some((k) => k === '__proto__' || k === 'constructor' || k === 'prototype' || k === '')) fail('bad path');
-        let node = doc;
+        let node: any = doc;
         for (const k of keys.slice(0, -1)) { if (!node[k] || typeof node[k] !== 'object') node[k] = {}; node = node[k]; }
-        if (o.value === undefined) delete node[keys.at(-1)]; else node[keys.at(-1)] = clone(o.value);
+        if (o.value === undefined) delete node[keys.at(-1)!]; else node[keys.at(-1)!] = clone(o.value);
         break;
       }
       // ── devices (core/rig/devices.js): each is held to `trouble` as it lands; an id shared with a patch is the
@@ -382,18 +416,18 @@ function applyOps(input, ops) {
       case 'device.add': {
         const rig = doc.settings.rig;
         const taken = new Set([...rig.devices.map((d) => d.id), ...doc.settings.network.patches.map((p) => p && p.id)]);
-        let d = clone(o.device);
+        let d: Record<string, any> = clone(o.device);       // (as asked for: `trouble` checks it below)
         if (d.model !== undefined && d.model !== null && d.model !== '') {
           const all = Object.keys(require('../net/devices').DEVICES);
           if (!all.includes(d.model)) fail(`no model “${d.model}” (the models are: ${all.join(', ')})`);
-          if (!Array.isArray(d.commands) || !d.commands.length) d = rigDevices.fromModel(d.model, d);
+          if (!Array.isArray(d.commands) || !d.commands.length) d = rigDevices.fromModel(d.model, d)!;
         }
         if (typeof d.name !== 'string' || !d.name.trim()) fail('a device needs a name');
         if (d.id === undefined || d.id === null || d.id === '') d.id = rigDevices.idFrom(d.name, taken);
-        if (rig.devices.some((x) => x.id === d.id)) fail(`there is already a device with the id ${d.id} (${rig.devices.find((x) => x.id === d.id).name}): change it with device.set, or give this one another id`);
+        if (rig.devices.some((x) => x.id === d.id)) fail(`there is already a device with the id ${d.id} (${rig.devices.find((x) => x.id === d.id)!.name}): change it with device.set, or give this one another id`);
         const bad = rigDevices.trouble(d);
         if (bad.length) fail(bad[0]);
-        rig.devices.push(rigDevices.clean(d).device);
+        rig.devices.push(rigDevices.clean(d).device!);
         devices.added.push(d.id);
         break;
       }
@@ -409,7 +443,7 @@ function applyOps(input, ops) {
         }
         const bad = rigDevices.trouble(d);
         if (bad.length) fail(bad[0]);
-        rig.devices[i] = rigDevices.clean(d).device;
+        rig.devices[i] = rigDevices.clean(d).device!;
         if (!devices.added.includes(o.id) && !devices.changed.includes(o.id)) devices.changed.push(o.id);
         break;
       }
@@ -425,8 +459,8 @@ function applyOps(input, ops) {
     }
   }
   // the result must still be a show this app can open
-  let clean;
-  try { clean = show.normalise(doc).doc; } catch (err) { throw new OpError(`that would leave the show unreadable (${err.message})`, -1); }
+  let clean: ShowDoc;
+  try { clean = show.normalise(doc).doc; } catch (err) { throw new OpError(`that would leave the show unreadable (${(err as Error).message})`, -1); }
   // and no setting may be left as something it cannot be (what was already wrong before the batch is not this batch's to answer for)
   const had = new Set(settingsTrouble(input));
   const bad = settingsTrouble(clean).find((t) => !had.has(t));

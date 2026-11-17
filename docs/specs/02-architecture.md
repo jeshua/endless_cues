@@ -5,9 +5,9 @@
 ```
 ┌──────────────────────────── main process (Node) ────────────────────────────┐
 │                                                                              │
-│   app/main/main.js      window, menu, file dialogs, per-computer config      │
+│   app/main/main.ts      window, menu, file dialogs, per-computer config      │
 │                                                                              │
-│   app/main/host.js  ── the show host ──────────────────────────────────────  │
+│   app/main/host.ts  ── the show host ──────────────────────────────────────  │
 │     ShowDocument  (core/show)      the open show, undo, versions, proposals  │
 │     CueEngine     (core/engine)    plays it: playhead, waits, fades, holds   │
 │     mixer                          bus and master levels → the audio window  │
@@ -33,7 +33,7 @@ Three processes, one owner of truth.
 
 **The audio window holds no show state.** It is a player: `play`, `fade`, `stop`, `seek`, `move`, `region`. If it crashes, the host makes a new one and clears the engine's idea of what is running, so the next GO works. The cost is one renderer process; the benefit is that Web Audio's whole engine (decoding, sample-accurate scheduling, device routing) comes for free on three platforms. [05 · Audio](05-audio.md) says where that stops being enough.
 
-**The stage window is the same idea for pictures.** `app/stage/stage.html` is the output window Video, Text and Camera cues are drawn in; `app/main/stage.js` owns it and the display it is on. It too holds no show state, and the sound of a video never passes through it ([13 · Video and the stage](13-video.md)).
+**The stage window is the same idea for pictures.** `app/stage/stage.html` is the output window Video, Text and Camera cues are drawn in; `app/main/stage.ts` owns it and the display it is on. It too holds no show state, and the sound of a video never passes through it ([13 · Video and the stage](13-video.md)).
 
 **One door.** `host.cmd({ op, … })` is the only way anything acts on the show. The window calls it over IPC; the OSC module calls it for a UDP packet; the web remote calls it for an HTTP POST. They cannot disagree about what GO means, double-GO protection applies to all of them, and Show mode's lock is enforced in one place. The full command list is in [06 · Control surfaces](06-control-surfaces.md).
 
@@ -51,7 +51,7 @@ There are three kinds of state, kept apart on purpose.
 
 The show never contains a credential or a device id. The run is never written to disk (crash recovery of the playhead is a roadmap item, and will be a separate journal file, not the show).
 
-**Edits.** `document.edit(ops)` applies operations to a copy (`core/show/ops.js`), and if they all fit, swaps the working document, journals it, and emits `change`. Nothing reaches `show.json` until the show is saved ([03](03-show-file.md#saving)). The host answers `change` by converting the document for the engine (`show.toEngineDoc`) and calling `engine.load()`, which keeps the playhead and everything that is sounding. If a playing cue's level changed, the host trims the live sound by the difference, so an edit is heard as it is made.
+**Edits.** `document.edit(ops)` applies operations to a copy (`core/show/ops.ts`), and if they all fit, swaps the working document, journals it, and emits `change`. Nothing reaches `show.json` until the show is saved ([03](03-show-file.md#saving)). The host answers `change` by converting the document for the engine (`show.toEngineDoc`) and calling `engine.load()`, which keeps the playhead and everything that is sounding. If a playing cue's level changed, the host trims the live sound by the difference, so an edit is heard as it is made.
 
 **Pushes.** The host pushes a snapshot to every view whenever the engine or document changes, and ten times a second while anything is running (for clocks and meters). The document itself is large and changes rarely, so it is sent only when its revision changes; the per-tick push is the engine's small state. A view that has just loaded asks for `state` and gets everything.
 
@@ -77,6 +77,6 @@ Shipped: **OSC control** (QLab-compatible addresses), **Lighting desk** (Light c
 
 ## What is deliberately not here
 
-- **No bundler, no TypeScript build, no framework runtime beyond Preact.** [ADR 0001](../adr/0001-electron-no-build.md). The app starts from its sources; a contributor edits a file and reloads.
+- **No framework runtime beyond Preact, and one build script.** The code is TypeScript; `build/compile.mjs` writes the `.js` beside each `.ts` and bundles the main window ([ADR 0006](../adr/0006-typescript.md), replacing the no-build half of [0001](../adr/0001-electron-no-build.md)). With `npm run watch`, a contributor edits a file and reloads.
 - **No database.** The show is a file; versions are files. [ADR 0002](../adr/0002-versions-as-files.md).
 - **No server.** The app listens on a port only when a module that needs one is switched on.

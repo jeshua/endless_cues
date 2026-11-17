@@ -30,14 +30,43 @@ import * as fixtures from './fixtures';
 import * as commands from './commands';
 import { createRig } from './rig';
 import { createLightOutput } from './output';
+import type { LightOutput } from './output';
+import type { LightInput } from './patch';
+import type { Cue } from '../show/types';
+import type { Op } from '../show/ops';
+import type { CueEngine } from '../engine/cue-engine';
 
-function createLighting({ log = () => {}, changed = () => {}, dryRun = false, clock = () => Date.now() / 1000, output = null, timers = { setInterval, clearInterval } } = {}) {
+/** A timer's handle, as far as this needs to know it. */
+type Interval = { unref?(): void };
+
+/** What lighting needs of the cue engine. */
+export type LightEngine = Pick<CueEngine, 'fades' | 'clock' | 'dmxHook'>;
+/** The timers the refresh runs on (handed in by a test). */
+export interface LightTimers {
+  setInterval(fn: () => void, ms: number): Interval | null;
+  clearInterval(timer: Interval): void;
+}
+/** A dashboard command (the host's `cmd`, op 'light-…'). */
+export interface LightCmd {
+  op: string; secs?: unknown; text?: unknown; name?: string; param?: string | null; value?: unknown; on?: unknown;
+  mode?: string; id?: string | null; after?: string;
+}
+/** What the host hands a dashboard command: its edit function, the cues by id, whether Show mode locks editing. */
+export interface LightContext {
+  edit?: (ops: Op[], label: string) => { made?: string[] } | null | undefined;
+  cueOf?: (id: string) => Cue | undefined;
+  locked?: boolean;
+}
+
+function createLighting({ log = () => {}, changed = () => {}, dryRun = false, clock = () => Date.now() / 1000, output = null, timers = { setInterval, clearInterval } as LightTimers }: {
+  log?: (line: string) => void; changed?: () => void; dryRun?: boolean; clock?: () => number; output?: LightOutput | null; timers?: LightTimers;
+} = {}) {
   const rig = createRig();
   const out = output || createLightOutput({ dryRun, log, changed });
-  let engine = null;
-  let light = patchLib.defaults();
+  let engine: LightEngine | null = null;
+  let light: LightInput = patchLib.defaults();
   let patch = rig.patch();
-  let timer = null, rate = 0;
+  let timer: Interval | null = null, rate = 0;
   let lastPush = 0;
   let frames = 0;
 
@@ -49,7 +78,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
       // a cue's fade is the engine's: how far it has got is read from there, so pause, resume and stop need no second clock
       const f = engine && engine.fades.get(m.id);
       if (!f || !f.light) { rig.halt(m.id); continue; }
-      rig.progress(m.id, Math.min(0.9999, ((f.pausedAt != null ? f.pausedAt : engine.clock.now()) - f.startedAt) / f.total));      // (it lands when the engine says it is done)
+      rig.progress(m.id, Math.min(0.9999, ((f.pausedAt != null ? f.pausedAt : engine!.clock.now()) - f.startedAt) / f.total));      // (it lands when the engine says it is done)
     }
     const moving = rig.tick(now);
     frames++;
@@ -63,7 +92,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
     if (timer) timers.clearInterval(timer);
     timer = null; rate = want;
     if (!want) return;
-    timer = timers.setInterval(() => { try { step(); } catch (err) { log(`refresh: ${err.stack || err}`); } }, 1000 / want);
+    timer = timers.setInterval(() => { try { step(); } catch (err) { log(`refresh: ${(err as Error).stack || err}`); } }, 1000 / want);
     if (timer && timer.unref) timer.unref();
   }
 
@@ -71,7 +100,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
     rig, output: out, step,
 
     /** The show's light settings, whenever the show changes. Levels are kept for the instruments that are still there. */
-    configure(settings) {
+    configure(settings?: LightInput | null) {
       light = { ...patchLib.defaults(), ...(settings && typeof settings === 'object' ? settings : {}) };
       patch = rig.setPatch(patchLib.compile(light));
       out.configure(patch.universes, { on: patch.on && patch.instruments.size > 0 });
@@ -79,7 +108,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
     },
 
     /** The engine whose Light cues these are. */
-    attach(eng) {
+    attach(eng: LightEngine) {
       engine = eng;
       engine.dmxHook = (action, cue, target) => {
         const secs = Number(cue.duration) || 0;
@@ -97,7 +126,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
     },
 
     /** Esc. `hard`: the second one. Returns what it did, for the log. */
-    panic(hard, fadeSecs = 1) {
+    panic(hard: boolean, fadeSecs = 1) {
       rig.haltAll();
       if (!patch.panicBlackout || !patch.instruments.size) return 'held';
       rig.clear({ secs: hard ? 0 : fadeSecs, now: clock() });
@@ -108,13 +137,13 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
     /** Reset: nothing moves any more; the levels stay. */
     reset() { rig.haltAll(); step(); },
     /** DMX out held back for a rehearsal (the host's override): the lights are worked out as ever, and nothing is sent. */
-    hold(on) { out.hold(on); changed(); },
+    hold(on: unknown) { out.hold(on); changed(); },
 
     /**
      * The dashboard's commands. `ctx`: { edit(ops, label) → { made }, cueOf(id), locked } from the host.
      * Returns { ok } | { error } like any host command.
      */
-    cmd(c, ctx = {}) {
+    cmd(c: LightCmd, ctx: LightContext = {}) {
       const now = clock();
       const secs = Math.max(0, Number(c.secs) || 0);
       switch (c.op) {
@@ -138,14 +167,14 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
           const all = c.mode === 'all';
           const levels = rig.capture({ changes: !all });
           if (!levels.size) return { error: all ? 'there are no instruments to record (Settings ▸ Integrations ▸ Light)' : 'nothing has been changed by hand: move a level first, or record everything' };
-          let id = c.id || null;
+          let id: string | null | undefined = c.id || null;
           if (id) {
             const cue = ctx.cueOf && ctx.cueOf(id);
             if (!cue || cue.type !== 'light') return { error: 'select a Light cue to update' };
             const text = all ? commands.format(levels, patch) : commands.merge(cue.levels || '', levels, patch);
-            ctx.edit([{ op: 'cue.set', id, props: { levels: text, ...(all ? { block: true } : {}) } }], 'update light cue');
+            ctx.edit!([{ op: 'cue.set', id, props: { levels: text, ...(all ? { block: true } : {}) } }], 'update light cue');
           } else {
-            const r = ctx.edit([{ op: 'cue.add', cue: { type: 'light', levels: commands.format(levels, patch), ...(all ? { block: true } : {}) }, ...(c.after ? { after: c.after } : {}) }], 'record light cue');
+            const r = ctx.edit!([{ op: 'cue.add', cue: { type: 'light', levels: commands.format(levels, patch), ...(all ? { block: true } : {}) }, ...(c.after ? { after: c.after } : {}) }], 'record light cue');
             id = r && r.made && r.made[0];
           }
           rig.recorded([...levels.keys()], id);
@@ -162,7 +191,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
           let id = c.id || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'fixture';
           if (!c.id) { const base = id; for (let n = 2; fixtures.all(own).has(id); n++) id = `${base}-${n}`; }
           const def = { id, name, params: r.params };
-          ctx.edit([{ op: 'show.set', path: 'settings.light.fixtures', value: own.some((f) => f.id === id) ? own.map((f) => (f.id === id ? def : f)) : [...own, def] }], 'light fixture');
+          ctx.edit!([{ op: 'show.set', path: 'settings.light.fixtures', value: own.some((f) => f.id === id) ? own.map((f) => (f.id === id ? def : f)) : [...own, def] }], 'light fixture');
           return { ok: true, id };
         }
         default: return { error: `no lighting command ${c.op}` };
@@ -183,7 +212,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
       };
     },
     /** The levels last made for a universe, as they would be on the wire (a test run looks here): Buffer of 512, or null. */
-    frame(universe) { const f = rig.render().get(universe); return f || null; },
+    frame(universe: number) { const f = rig.render().get(universe); return f || null; },
     stats: () => ({ frames, rate, timer: !!timer }),
 
     close() {
@@ -194,5 +223,7 @@ function createLighting({ log = () => {}, changed = () => {}, dryRun = false, cl
   };
   return api;
 }
+
+export type Lighting = ReturnType<typeof createLighting>;
 
 export { createLighting };

@@ -11,8 +11,8 @@ import type { cleanMatrix, cleanEq } from '../audio/routing';
 import type { cleanChain, cleanSweep } from '../audio/chain';
 import type { cleanShape, cleanEnvelope } from '../audio/curves';
 import type { cleanAutomation } from '../audio/lanes';
-import type { defaultSettings, defaultModules } from './show';
 import type { cleanCart } from './cart';
+import type { defaults as lightDefaults } from '../light/patch';
 
 export type { CueFields, CueType };
 
@@ -43,11 +43,13 @@ export interface Desk {
   buses?: Record<string, { eq?: Record<string, number>; filter?: number; pan?: number; mute?: boolean; xf?: string }>;
 }
 
-/** A cue as the show file keeps it. A group's (and a playlist's) cues are its `children`. */
+/** A cue as the show file keeps it. A group's (and a playlist's) cues are its `children`. What this version does
+ *  not know (a field from a newer one, or written by hand) is kept as it was: any other key is there, unknown. */
 export interface Cue extends CueFields {
   id: string;
   type: CueType;
   children?: Cue[];
+  [field: string]: unknown;
 }
 
 /** One cue list (a show has one or more; a cart is a list drawn as buttons). */
@@ -58,8 +60,153 @@ export interface CueList {
   cart?: Cart;
 }
 
-export type Settings = ReturnType<typeof defaultSettings>;
-export type Modules = ReturnType<typeof defaultModules>;
+/** A bus: where a cue's sound goes. `kind` is a label (core/audio/kinds.js); the rest is said only when used. */
+export interface Bus {
+  id: string;
+  name: string;
+  db: number;
+  kind?: string;
+  /** the first of its pair of outputs, counted from 1 */
+  out?: number;
+  /** sends to the reverb and the delay, dB */
+  reverb?: number;
+  delay?: number;
+  eq?: Record<string, number>;
+  filter?: number;
+  pan?: number;
+  mute?: boolean;
+  xf?: string;
+  stopFade?: number;
+  oneAtATime?: number;
+  noDuck?: boolean;
+  /** its tint in the Live view: one of the cue colours (cue-types.js `COLORS`) */
+  color?: string;
+}
+
+/** A further place a patch's (or a device's) messages go. */
+export interface Destination { host: string; port?: number; protocol?: 'udp' | 'tcp'; framing?: 'slip' | 'length'; iface?: string }
+
+/** A network patch: somewhere Network cues send. */
+export interface Patch {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  protocol?: 'udp' | 'tcp';
+  framing?: 'slip' | 'length';
+  device?: string;
+  listenPort?: number;
+  notes?: string;
+  /** the network interface it leaves by (en0); none: the system chooses */
+  iface?: string;
+  destinations?: Destination[];
+}
+
+/** One of a device command's parameters (core/rig/devices.js PARAM_FIELDS). */
+export interface DeviceParam {
+  key: string;
+  label: string;
+  kind: 'number' | 'text' | 'enum';
+  default?: string | number | boolean;
+  min?: number;
+  max?: number;
+  whole?: boolean;
+  options?: string[];
+  help?: string;
+}
+/** A device's named command: a message with holes in it (COMMAND_FIELDS). */
+export interface DeviceCommand { id: string; label: string; template: string; params: DeviceParam[]; fade?: string; notes?: string }
+/** How a device is known to be there (ALIVE_FIELDS). */
+export interface DeviceAlive { how: 'none' | 'ask' | 'heartbeat'; send?: string; reply?: string; every?: number; hears?: string; within?: number }
+/** What is read out of what a device says about itself (REPORT_FIELDS). */
+export interface DeviceReport { key: string; label: string; from: string; arg: number; unit?: string; warnBelow?: number; warnAbove?: number; none?: unknown }
+/** A piece of the show's equipment (settings.rig.devices), as core/rig/devices.js `clean` leaves it. */
+export interface Device {
+  id: string;
+  name: string;
+  kind: string;
+  via: 'osc' | 'text' | 'hex' | 'midi';
+  model?: string;
+  host?: string;
+  port?: number;
+  protocol?: 'udp' | 'tcp';
+  framing?: 'slip' | 'length';
+  listenPort?: number;
+  iface?: string;
+  destinations?: Destination[];
+  commands: DeviceCommand[];
+  test?: string;
+  alive: DeviceAlive;
+  reports?: DeviceReport[];
+  resend?: number;
+  needed?: boolean;
+  notes?: string;
+  /** what this version does not know is kept as it was */
+  [field: string]: unknown;
+}
+/** A line of the operator's own checklist on the Rig page. */
+export interface RigCheck { id: string; text: string }
+
+/** A Live desk mapping: { on: 'key q' | 'cc 7 ch 1' | 'note 60 ch 1', to: 'clip:<cue id>' | 'fader:<bus>' | … }. */
+export interface DeskMapping { on: string; to: string }
+
+/** OSC or MIDI messages that run the show, written as a trigger is: '' is none. */
+export interface ShowCommands { go: string; panic: string; pause: string; resume: string; next: string; previous: string }
+
+/** How one kind dips under the ones listened to (settings.audio.ducking.under). */
+export interface DuckUnder { depth: number; attack: number; hold: number; release: number; range: 'voice' | 'all' }
+
+/** The show's settings (show.json `settings`): `defaultSettings()` in show.js, and what is written only when used. */
+export interface Settings {
+  go: { doubleGoProtection: number; panicFade: number };
+  audio: {
+    masterDb: number;
+    limiter: boolean;
+    buses: Bus[];
+    duck: { on: boolean; key: string; target: string; threshold: number; depth: number; attack: number; hold: number; release: number; range: 'voice' | 'all' };
+    levels: { min: number; max: number };
+    monitor: { on: boolean; out: number; db: number };
+    sortNew: boolean;
+    /** ducking by kind, once a person has asked for it */
+    ducking?: { on: boolean; threshold: number; by: string[]; under: Record<string, DuckUnder> };
+    /** the outputs' names and trims: { "3": { name, trim } } */
+    outs?: Record<string, { name?: string; trim?: number }>;
+    /** the first of the pair an audition plays to */
+    auditionOut?: number;
+    fx?: { reverb?: { secs?: number; db?: number; out?: number }; delay?: { secs?: number; feedback?: number; db?: number; out?: number } };
+    /** the show's own sound design presets, by name */
+    chains?: Record<string, { chain?: Chain; eq?: Eq }>;
+    /** the Live desk's crossfader, −1 (all A) … +1 (all B) */
+    crossfader?: number;
+  };
+  editing: { autoNumber: boolean; numberStep: number; lockPlayhead: boolean; longSoundsToMusic: boolean };
+  /** what a new cue of a type starts with: { fade: { duration: 5 } } */
+  templates: Partial<Record<CueType, Partial<CueFields>>>;
+  network: { patches: Patch[]; inputPort: number; listen: boolean; commands: ShowCommands };
+  backup: { minutes: number; keep: number };
+  midi: { output: string; mscIn: boolean; deviceId: number; commands: ShowCommands };
+  light: ReturnType<typeof lightDefaults>;
+  live: { overlap: boolean; tempo: number; map: DeskMapping[] };
+  rig: { devices: Device[]; checks: RigCheck[]; script: string };
+  timecode: { source: 'off' | 'mtc' | 'ltc'; rate: '24' | '25' | '29.97df' | '30'; input: string; channel: number; catchUp: boolean; follow: boolean };
+  /** the stage: its size, and four corners (each [x, y], 0–1) or none */
+  video?: { width?: number; height?: number; pin?: [number, number][] };
+}
+
+/** Who may do what over OSC: a passcode and what it allows. */
+export interface Passcode { code: string; view?: boolean; edit?: boolean; control?: boolean }
+
+/** The show's modules (show.json `modules`): `defaultModules()` in show.js. */
+export interface Modules {
+  'osc-control': { enabled: boolean; passcode: string; replyPort: number; passcodes?: Passcode[]; noPasscode?: { view?: boolean; edit?: boolean; control?: boolean } };
+  'show-feedback': { enabled: boolean; patch: string; prefix: string };
+  'lighting-desk': { enabled: boolean; kind: string; host: string; port: number; listenPort: number; list: number };
+  'web-remote': { enabled: boolean; port: number; control: boolean; key: string };
+  'backup-link': { enabled: boolean; role: 'main' | 'backup'; patch: string; passcode: string };
+}
+
+/** The cues by id (show.index), with the show's cue lists and devices hung on it by id: a target may be a whole list. */
+export type CueIndex = Map<string, Cue> & { lists: Map<string, CueList>; devices: Map<string, Device> };
 
 /** The whole show (show.json). */
 export interface ShowDoc {

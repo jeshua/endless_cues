@@ -18,10 +18,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** This computer's record of its own shows: { "<show folder>": "<show id>" } (`true`: taken from its recent shows). */
+export type TrustRecord = Record<string, string | true>;
+
 const KEEP = 400;                   // the record keeps the last this many shows (the oldest go first)
 
 /** The folder as a key: its real path (links resolved), and on Windows and macOS, where case does not matter, in one case. */
-function keyOf(dir, platform = process.platform) {
+function keyOf(dir: unknown, platform: string = process.platform) {
   if (!dir) return '';
   let real = path.resolve(String(dir));
   try { real = fs.realpathSync.native(real); } catch { /* not there (yet): as given */ }
@@ -30,7 +33,7 @@ function keyOf(dir, platform = process.platform) {
 }
 
 /** Whether the show `id` in folder `dir` is this computer's, by the record. */
-function isMine(record, dir, id, platform) {
+function isMine(record: TrustRecord | null | undefined, dir: unknown, id: unknown, platform?: string) {
   const key = keyOf(dir, platform);
   if (!key || !record || typeof record !== 'object') return false;
   const had = Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
@@ -39,10 +42,10 @@ function isMine(record, dir, id, platform) {
 }
 
 /** The record with this show in it (the newest last; the oldest dropped past KEEP). A new object: the old is not changed. */
-function remember(record, dir, id, platform) {
+function remember(record: TrustRecord | null | undefined, dir: unknown, id: unknown, platform?: string): TrustRecord {
   const key = keyOf(dir, platform);
   if (!key) return { ...(record || {}) };
-  const out = {};
+  const out: TrustRecord = {};
   for (const [k, v] of Object.entries(record || {})) if (k !== key) out[k] = v;
   out[key] = String(id || '');
   const keys = Object.keys(out);
@@ -52,13 +55,13 @@ function remember(record, dir, id, platform) {
 
 /** The first record, for a computer that had shows before there was one: its recent shows (and the last one open)
  *  are taken as its own, so nothing that was already working here is held back by an update. */
-function firstRecord(config = {}, platform) {
-  const out = {};
+function firstRecord(config: { recent?: unknown; lastShow?: string | null } = {}, platform?: string): TrustRecord {
+  const out: TrustRecord = {};
   for (const dir of [...(Array.isArray(config.recent) ? config.recent : []), config.lastShow]) if (dir) out[keyOf(dir, platform)] = true;
   return out;
 }
 
 /** A path that names another computer: \\host\share\…, //host/share/…, and Windows's \\?\ and \\.\ forms. */
-const isRemote = (file) => /^[\\/]{2}/.test(String(file || ''));
+const isRemote = (file: unknown) => /^[\\/]{2}/.test(String(file || ''));
 
 export { keyOf, isMine, remember, firstRecord, isRemote, KEEP };

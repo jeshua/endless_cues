@@ -18,6 +18,12 @@ import * as zlib from 'zlib';
 import * as show from '../show/show';
 import { mediaKind } from '../video/stage';
 import { wavInfo } from '../engine/waveform';
+import type { ShowDoc } from '../show/types';
+
+/** A file of the show folder, as `listing` gives it. */
+export interface FolderEntry { path: string; kind: string; bytes: number; secs?: number; usedBy: string[] }
+/** A text file's lines, or why not. */
+export type ReadAll = { ok: true; lines: string[] } | { ok: false; why: string };
 
 const SOUND = /\.(wav|aiff?|aifc|caf|mp3|m4a|aac|flac|ogg|opus)$/i;
 const MIDI = /\.(mid|midi|smf)$/i;
@@ -30,8 +36,8 @@ const MAX_LINES = 400;
 const MAX_ENTRIES = 2000;
 const NO_FOLDER = 'This show is not in a folder yet.';
 
-const natural = (a, b) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
-function kindOf(name) {
+const natural = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true, sensitivity: 'base' });
+function kindOf(name: string): string {
   if (SOUND.test(name)) return 'sound';
   if (MIDI.test(name)) return 'midi';
   const m = mediaKind(name);
@@ -40,23 +46,23 @@ function kindOf(name) {
 }
 
 /** Every file under the show folder (`depth` folders down), in the order a person would read their names. */
-function listing(showDir, doc = null, { durations = {}, depth = 2, under = '' } = {}) {
+function listing(showDir: string | null | undefined, doc: Pick<ShowDoc, 'lists'> | null = null, { durations = {}, depth = 2, under = '' }: { durations?: Record<string, unknown>; depth?: number; under?: string } = {}): FolderEntry[] {
   if (!showDir) return [];
   // which cues use which file: a cue names a file relative to the folder (media/rain.wav) or by its whole path
-  const usedBy = new Map();
+  const usedBy = new Map<string, string[]>();
   if (doc) show.walk(doc, (c) => {
     if (!c.file) return;
     const f = String(c.file).split('\\').join('/');
-    const rel = path.isAbsolute(c.file) ? path.relative(showDir, c.file).split(path.sep).join('/') : f;
+    const rel = path.isAbsolute(c.file) ? path.relative(showDir!, c.file).split(path.sep).join('/') : f;
     const list = usedBy.get(rel) || []; list.push(c.number ? `#${c.number}` : c.id); usedBy.set(rel, list);
   });
-  const out = [];
+  const out: FolderEntry[] = [];
   const start = String(under || '').split('/').filter((s) => s && s !== '.' && s !== '..');
-  const go = (parts, left) => {
-    let names = [];
-    try { names = fs.readdirSync(path.join(showDir, ...parts), { withFileTypes: true }); } catch { return; }
+  const go = (parts: string[], left: number) => {
+    let names: fs.Dirent[] = [];
+    try { names = fs.readdirSync(path.join(showDir!, ...parts), { withFileTypes: true }); } catch { return; }
     names.sort((a, b) => natural(a.name, b.name));
-    const dirs = [];
+    const dirs: string[] = [];
     for (const d of names) {
       if (out.length >= MAX_ENTRIES) return;
       if (d.name.startsWith('.') || d.name === 'node_modules') continue;
@@ -64,11 +70,11 @@ function listing(showDir, doc = null, { durations = {}, depth = 2, under = '' } 
       if (d.isSymbolicLink()) continue;                  // a link may point anywhere: what is listed is what is in the folder
       if (d.isDirectory()) { if (!(parts.length === 0 && OWN_DIRS.includes(d.name)) && left > 0) dirs.push(d.name); continue; }
       if (!d.isFile() || (parts.length === 0 && OWN_FILES.includes(d.name)) || /\.tmp$/.test(d.name)) continue;
-      const abs = path.join(showDir, ...parts, d.name);
+      const abs = path.join(showDir!, ...parts, d.name);
       let bytes = 0; try { bytes = fs.statSync(abs).size; } catch { continue; }
       const kind = kindOf(d.name);
-      const e = { path: rel, kind, bytes, usedBy: usedBy.get(rel) || [] };
-      if (kind === 'sound' || kind === 'video') { const secs = Number(durations[rel]) > 0 ? Number(durations[rel]) : /\.wav$/i.test(d.name) ? (wavInfo(abs) || {}).seconds : undefined; if (secs > 0) e.secs = Math.round(secs * 100) / 100; }
+      const e: FolderEntry = { path: rel, kind, bytes, usedBy: usedBy.get(rel) || [] };
+      if (kind === 'sound' || kind === 'video') { const secs = Number(durations[rel]) > 0 ? Number(durations[rel]) : /\.wav$/i.test(d.name) ? (wavInfo(abs) || {}).seconds : undefined; if ((secs as number) > 0) e.secs = Math.round((secs as number) * 100) / 100; }
       out.push(e);
     }
     for (const name of dirs) go([...parts, name], left - 1);
@@ -78,13 +84,13 @@ function listing(showDir, doc = null, { durations = {}, depth = 2, under = '' } 
 }
 
 /** How many of what, for one line: { sounds, videos, texts, unused } (unused: sounds and videos no cue uses). */
-function counts(list) {
-  const n = (k) => list.filter((e) => e.kind === k).length;
+function counts(list: FolderEntry[]) {
+  const n = (k: string) => list.filter((e) => e.kind === k).length;
   return { sounds: n('sound'), videos: n('video'), texts: n('text'), unused: list.filter((e) => (e.kind === 'sound' || e.kind === 'video') && !e.usedBy.length).length };
 }
 
 // ── a .docx is a zip holding word/document.xml: its paragraphs, as lines ──
-function unzipOne(buf, name) {
+function unzipOne(buf: Buffer, name: string): Buffer {
   let end = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 66000); i--) if (buf.readUInt32LE(i) === 0x06054b50) { end = i; break; }
   if (end < 0) throw new Error('not a zip');
@@ -103,10 +109,10 @@ function unzipOne(buf, name) {
   }
   throw new Error('no document in it');
 }
-function docxLines(buf) {
+function docxLines(buf: Buffer): string[] {
   const xml = unzipOne(buf, 'word/document.xml').toString('utf8');
-  const entity = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, '\'').replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_m, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
-  const lines = [];
+  const entity = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, '\'').replace(/&#(\d+);/g, (_m, n: string) => String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, '&');
+  const lines: string[] = [];
   for (const p of xml.match(/<w:p[ >][\s\S]*?<\/w:p>|<w:p\/>/g) || []) {
     let text = '';
     for (const m of p.matchAll(/<w:t(?: [^>]*)?>([\s\S]*?)<\/w:t>|<w:tab\/>|<w:br\/>|<w:cr\/>/g)) text += m[1] !== undefined ? entity(m[1]) : m[0] === '<w:tab/>' ? '\t' : '\n';
@@ -116,7 +122,7 @@ function docxLines(buf) {
 }
 
 /** Every line of a text file in the show folder: { ok, lines: [text] } or { ok: false, why }. */
-function readAll(showDir, rel) {
+function readAll(showDir: string | null | undefined, rel: unknown): ReadAll {
   if (!showDir) return { ok: false, why: NO_FOLDER };
   const p = String(rel || '').split('\\').join('/').replace(/^\.\//, '');
   if (!p) return { ok: false, why: 'Which file? Give its path in the show folder.' };
@@ -125,7 +131,7 @@ function readAll(showDir, rel) {
   if (parts.length === 1 && OWN_FILES.includes(parts[0])) return { ok: false, why: `${p} is the show itself: it is read with the show’s own tools, not as a file.` };
   if (OWN_DIRS.includes(parts[0])) return { ok: false, why: `${parts[0]}/ is the app’s own (versions, backups, logs, recordings): it is not read as files.` };
   const abs = path.join(showDir, ...parts);
-  let real, root;
+  let real: string, root: string;
   try { root = fs.realpathSync(showDir); real = fs.realpathSync(abs); } catch { return { ok: false, why: `There is no file ${p} in the show folder.` }; }
   const out = path.relative(root, real);
   if (out.startsWith('..') || path.isAbsolute(out)) return { ok: false, why: `${p} is a link that points out of the show folder: it is not read.` };
@@ -142,11 +148,11 @@ function readAll(showDir, rel) {
     const lines = text.split(/\r\n|\r|\n/);
     if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
     return { ok: true, lines };
-  } catch (err) { return { ok: false, why: `${p} could not be read: ${err.message}.` }; }
+  } catch (err) { return { ok: false, why: `${p} could not be read: ${(err as Error).message}.` }; }
 }
 
 /** Some lines of a text file: `from` counted from 1, at most 400 a call. `to` is the last line given; `total` how many there are. */
-function readText(showDir, rel, { from = 1, lines = MAX_LINES } = {}) {
+function readText(showDir: string | null | undefined, rel: unknown, { from = 1, lines = MAX_LINES }: { from?: unknown; lines?: unknown } = {}) {
   const r = readAll(showDir, rel);
   if (!r.ok) return { ok: false, why: r.why, text: '', from: 0, to: 0, total: 0 };
   const total = r.lines.length;

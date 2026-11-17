@@ -4,19 +4,19 @@ Out of the box Endless Cues is a plain cue list: it plays sound and sends what i
 analyses, decides, or acts on its own is off until a person switches it on**, and switching it on is one obvious
 control in the place a person would look. This file is the list of every such behaviour, what it is set to on a new
 show, and where its switch is. A new behaviour of that kind is added here, off, with a test in
-`test/defaults.test.js`.
+`test/defaults.test.ts`.
 
 Three rules follow from that:
 
 - **A new show and an imported QLab workspace start the same**: `defaultSettings()` and `defaultModules()` in
-  `core/show/show.js`. The importer sets only what the workspace says (its patches, its double-GO time, its panic time).
+  `core/show/show.ts`. The importer sets only what the workspace says (its patches, its double-GO time, its panic time).
 - **A show that has something switched on keeps it.** Settings live in the show file and are never reset on open.
 - **Hiding a view never changes what is heard.** The engine does what the show says whether or not the view that
   made it is shown.
 
 ## The Live view
 
-The Live view (`app/renderer/Live.js`: a mixer strip for each bus with eq, filter and pan, a crossfader, clips
+The Live view (`app/renderer/Live.ts`: a mixer strip for each bus with eq, filter and pan, a crossfader, clips
 launched on the bar, a desk tempo and warp, keys and controllers mapped to all of it) is **hidden until it is switched
 on**, on this computer: **Settings ▸ General ▸ Show the Live view**, or **View ▸ Show the Live View** (the same
 setting: `view.live` in this computer's `config.json`, not in the show). The app is for running a show once, from a
@@ -26,19 +26,19 @@ With it off:
 
 - there is no Cues | Live switch in the title bar, no Live Mixer item in the View menu, and ⌘L is nobody's;
 - nothing looks for a tempo in any sound (see below);
-- a Mix cue's kept desk (the one field marked `live: true` in `core/show/cue-types.js`) is not in the inspector,
+- a Mix cue's kept desk (the one field marked `live: true` in `core/show/cue-types.ts`) is not in the inspector,
   unless the cue already has one;
 - a show that was made with it **plays exactly as it was made**: warped sounds play warped, a Mix cue recalls its
   desk, a bus's eq, pan and mute are what is heard, MIDI controls mapped to the desk still move it (all of that is
   the host's and the engine's, which do not know whether the view is shown). The title bar says so in one quiet
-  line, "Uses the Live view · show it" (`core/show/uses-live.js` says what in the show came from it), and a click
+  line, "Uses the Live view · show it" (`core/show/uses-live.ts` says what in the show came from it), and a click
   shows the view. A muted bus still has its red MUTED chip; with the view hidden a click on it unmutes.
 
 Keyboard keys mapped to the desk are read by the Live view itself, as before: they work while that view is on screen.
 
 ## Tempo and beat analysis
 
-`core/audio/tempo.js` runs only when a person asks, for the sounds they ask about:
+`core/audio/tempo.ts` runs only when a person asks, for the sounds they ask about:
 
 - **Time & Loops ▸ Tempo ▸ Find the tempo** on one Audio cue, or **Find the tempo** in the Playing strip while it plays (the cue list's own way; that sound only);
 - in the Live view, a clip's Find, or Find Tempos for every sound that has none.
@@ -82,7 +82,7 @@ controllers mapped to the desk.
 | Ducking (a bus dips while another sounds) | Off (`settings.audio.duck.on`) | Settings ▸ Audio; show | No. Nothing switches it on in a new or imported show (tested). |
 | A cue ducking the others while it runs | Off (`duckOthers` 0) | The cue, under More | No. |
 | "Fade & stop others" on a cue or group | Off (0) | The cue, under More | No. |
-| A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.js` `stopsTarget`) | The Fade cue's switch | **Yes: it was always off**, as QLab's is, which leaves a faded sound playing at −∞. An imported QLab fade carries QLab's own setting, so it plays as it did there. |
+| A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.ts` `stopsTarget`) | The Fade cue's switch | **Yes: it was always off**, as QLab's is, which leaves a faded sound playing at −∞. An imported QLab fade carries QLab's own setting, so it plays as it did there. |
 | Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip; the Live view | It never ran by itself; it could only be asked for in the Live view. Now also asked for on one cue's Time & Loops tab. |
 | Warp (a sound played at the desk's tempo) | Off (`warp` ''; a hidden field) | The Live view's Clip view | No. |
 | Launch on the bar (a clip launched in the Live view waits for the bar) | Applies only to launches from the Live view | The Live view's control bar | No. A GO, a cart button and a trigger never wait unless a group's Quantise says so. |
@@ -123,7 +123,7 @@ setting asks for it, or a cue that sends is fired.
 | Timecode chase (MTC or LTC in) | Off (`settings.timecode.source` 'off'; no audio input is opened) | Settings ▸ Integrations ▸ Network ▸ Timecode; show | No. |
 | Timecode out | Only while a Timecode cue runs | The cue | No. |
 | The stage (video) window | Opened only once a display (or "In a window") is chosen for it | Settings ▸ Integrations ▸ Video; computer | No. |
-| The door for coding agents (a local socket for `bin/ec-mcp.js`) | Shut | Settings ▸ Assistant; computer | No. |
+| The door for coding agents (a local socket for `bin/ec-mcp.ts`) | Shut | Settings ▸ Assistant; computer | No. |
 | Reports to the service (Help ▸ Report a Problem…; [17](17-service-protocol.md) section 3) | Nothing is sent until the person presses Send. No telemetry and no crash reports. A report that could not be sent is kept on disk and tried again 30 s after the next launch and after 30 s, 2 and 10 minutes, three times at most | The form's Send; the picture, the show's name and the show log's last lines each have their own box (the picture on, the name off, the log off; the log goes as times, kinds, cue numbers and words, with every cue's and file's name taken out, in `context.show_log`) | New with Report a problem. |
 | The Rig page ([15](15-assistant-and-rig.md)) | A view that is always there. It reads what the app already knows; it opens no port and sends nothing. An empty new show has three rows | — | New with the rig. |
 | Asking a device whether it is there (one message every 2 s, kept out of the monitor) | A new or an imported show has no devices, so nothing is asked (`settings.rig.devices` is empty; a device's `alive.how` is `none` unless it says otherwise) | A device whose "Is it there" is *Ask it*: adding one is the switch, and the review says "asked every 2 s" | New with the rig. |
@@ -141,7 +141,7 @@ setting asks for it, or a cue that sends is fired.
 |---|---|---|---|
 | The assistant | Off (`provider: 'off'`). Nothing is sent to any service until a provider is chosen and a question is asked | Settings ▸ Assistant; computer | No. |
 | The assistant applying its own proposals | Off (`autoApply`) | Settings ▸ Assistant; computer | No. |
-| Checking for a new version (`core/update/updates.js`) | **On**, by the owner's decision: once a day, only in Edit mode with nothing playing (a check that is due waits; in Show mode nothing about updates happens at all). The request is one GET of the feed's file (`https://downloads.endlesscues.com/latest-mac.yml`) and sends nothing about the person or the show. A copy run from source never checks | Settings ▸ General ▸ Check for updates automatically; computer (`updates.auto`). Help ▸ Check for Updates… works either way | New with updates. |
+| Checking for a new version (`core/update/updates.ts`) | **On**, by the owner's decision: once a day, only in Edit mode with nothing playing (a check that is due waits; in Show mode nothing about updates happens at all). The request is one GET of the feed's file (`https://downloads.endlesscues.com/latest-mac.yml`) and sends nothing about the person or the show. A copy run from source never checks | Settings ▸ General ▸ Check for updates automatically; computer (`updates.auto`). Help ▸ Check for Updates… works either way | New with updates. |
 | Downloading and installing a new version | **Never by itself.** A version found is one line in the title bar; it downloads only after Download, installs when the app quits or on Restart now (Edit mode, nothing playing, after the unsaved-changes question). Show mode hides the line and stops a download | The line's buttons | New with updates. |
 | Test versions (the feed under `…/test/`) | Off | Settings ▸ General ▸ Test versions; computer (`updates.test`) | New with updates. |
 | Telemetry, crash reports | **None exist** | — | No. |
@@ -152,7 +152,7 @@ setting asks for it, or a cue that sends is fired.
 | Run from here (right-click ▸ Run from Here…, Tools ▸ Run from the Selected Cue…) | Only when asked, in Edit mode, after a preview of what it will start; Show mode refuses it | — | New. |
 | Keeping the display awake | On while the app is open | None | No. |
 | Reopening the last show at launch | On | None | No. |
-| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | No. QLab comes with 0; an imported workspace takes QLab's value. Left for the owner to decide. **Now it covers every GO** (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.js`). |
+| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | No. QLab comes with 0; an imported workspace takes QLab's value. Left for the owner to decide. **Now it covers every GO** (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.ts`). |
 | Numbering new cues; the playhead locked to the selection | On, as QLab comes | Settings ▸ Show; show | No. |
 | Cue templates | None | "Start like this one" in the inspector | No. |
 | The side panel's Network section (the last messages sent) | **Hidden** | ⋯ ▸ Network in the Side Panel (also View ▸ Network and MIDI Monitor for the full monitor); this window's storage, per viewer | **Yes: it showed itself as soon as anything was sent.** |
@@ -168,7 +168,7 @@ Yes: **every integration is in the open-source app, with no key, account or lice
 |---|---|---|
 | Audio to many outputs (buses to pairs, a cue's own matrix, trims, a monitor feed) | Yes | An audio interface. |
 | Video, text and camera on a second display | Yes | A display. Codecs are Chromium's: H.264, VP8/9, AV1; not ProRes or HAP (`13-video.md`). |
-| Lighting: DMX over Art-Net and sACN, a patch, fixtures, Light cues | Yes | A node on the network. USB DMX widgets are not wired in (the framing is written, `core/light/usb.js`; nothing opens a serial port). |
+| Lighting: DMX over Art-Net and sACN, a patch, fixtures, Light cues | Yes | A node on the network. USB DMX widgets are not wired in (the framing is written, `core/light/usb.ts`; nothing opens a serial port). |
 | A lighting desk fired from Light cues (ETC Eos, grandMA3) | Yes | The desk. |
 | MIDI cues, MIDI Show Control in and out, MIDI File cues | Yes | A MIDI port. |
 | Timecode: MTC and LTC, out and in (chase, timecode triggers) | Yes | A MIDI port, or an audio output or input for LTC. |

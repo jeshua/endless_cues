@@ -8,15 +8,20 @@ import * as starters from '../core/assistant/starters';
 import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import { build } from './helpers';
+import type { FirstOptions } from '../core/assistant/starters';
+import type { Op } from '../core/show/ops';
 
-const kindOf = (p) => (/\.(wav|mp3|aif)$/.test(p) ? 'sound' : /\.(md|txt)$/.test(p) ? 'text' : /\.mp4$/.test(p) ? 'video' : 'other');
-const listing = (paths, used = {}) => paths.map((p) => ({ path: p, kind: kindOf(p), bytes: 1, usedBy: used[p] || [] }));
+/** A plan's op: every one adds a cue. */
+type AddOp = Extract<Op, { op: 'cue.add' }>;
+
+const kindOf = (p: string) => (/\.(wav|mp3|aif)$/.test(p) ? 'sound' : /\.(md|txt)$/.test(p) ? 'text' : /\.mp4$/.test(p) ? 'video' : 'other');
+const listing = (paths: string[], used: Record<string, string[]> = {}) => paths.map((p) => ({ path: p, kind: kindOf(p), bytes: 1, usedBy: used[p] || [] }));
 const MESSY = ['01 walk-in.wav', '02 Overture FINAL.wav', 'notes.txt', 'rain loop.aif', 'Sc2_door.wav', 'Sc2_thunder FINAL v3.mp3', 'script.md'];
-const first = (o) => starters.first({ provider: 'anthropic', installed: {}, ...o });
+const first = (o: FirstOptions) => starters.first({ provider: 'anthropic', installed: {}, ...o });
 
 test('cues from a messy folder: file-name order, numbered, names cleaned, a scene prefix is a section, and nothing else is set', () => {
   const plan = starters.folderPlan(listing(MESSY));
-  const cues = plan.ops.map((o) => o.cue);
+  const cues = plan.ops.map((o) => (o as AddOp).cue);
   assert.deepEqual(cues.map((c) => [c.type, c.name]), [['audio', 'Walk-in'], ['audio', 'Overture'], ['audio', 'Rain loop'], ['section', 'Scene 2'], ['audio', 'Door'], ['audio', 'Thunder']]);
   assert.deepEqual(cues.slice(4).map((c) => [c.number, c.name, c.file]), [['4', 'Door', 'Sc2_door.wav'], ['5', 'Thunder', 'Sc2_thunder FINAL v3.mp3']]);
   // one GO a sound, not all at once: a heading over a run of cues, never a group that fires them together
@@ -29,19 +34,19 @@ test('cues from a messy folder: file-name order, numbered, names cleaned, a scen
   for (const words of [/5 cues in file-name order, numbered 1 to 5/, /without words like “FINAL” or “v3”/, /Scene 2/, /Each sound is its own GO/, /“Rain loop” is called a loop\. I did not make it loop\./, /I did not read notes\.txt and script\.md/, /Nothing else is set: no levels, fades or loops/]) assert.match(said, words);
   // the ops really apply, and the sounds are where they were
   const doc = applyOps(show.newShow('T'), plan.ops).doc;
-  assert.equal(show.findByNumber(doc, '5').file, 'Sc2_thunder FINAL v3.mp3');
+  assert.equal(show.findByNumber(doc, '5')!.file, 'Sc2_thunder FINAL v3.mp3');
   assert.deepEqual(show.problems(doc).filter((p) => p.level === 'error'), []);
 });
 
 test('cues from a folder: a sub-folder is a section, a folder that only holds the sounds is not, and a used file is left alone', () => {
   const plan = starters.folderPlan(listing(['01 Overture.wav', 'act two/01 storm.wav', 'act two/02 calm.wav', 'media/bell.wav', 'props/x/readme.wav'], { '01 Overture.wav': ['#1'] }), { from: 2 });
-  assert.deepEqual(plan.ops.map((o) => [o.cue.type, o.cue.number, o.cue.name]), [['section', undefined, 'Act two'], ['audio', '2', 'Storm'], ['audio', '3', 'Calm'], ['audio', '4', 'Bell']]);
+  assert.deepEqual(plan.ops.map((o) => [(o as AddOp).cue.type, (o as AddOp).cue.number, (o as AddOp).cue.name]), [['section', undefined, 'Act two'], ['audio', '2', 'Storm'], ['audio', '3', 'Calm'], ['audio', '4', 'Bell']]);
   assert.deepEqual(plan.groups, [{ name: 'Act two', by: 'folder', count: 2 }]);
   // every sound in one sub-folder: that folder means nothing, so there is no group of everything
-  assert.deepEqual(starters.folderPlan(listing(['tracks/01 a.wav', 'tracks/02 b.wav'])).ops.map((o) => o.cue.type), ['audio', 'audio']);
+  assert.deepEqual(starters.folderPlan(listing(['tracks/01 a.wav', 'tracks/02 b.wav'])).ops.map((o) => (o as AddOp).cue.type), ['audio', 'audio']);
   // one file with a scene prefix is not a section; two versions of one sound keep what tells them apart
   const odd = starters.folderPlan(listing(['Sc2_thunder.wav', 'crash v2.wav', 'crash v3.wav']));
-  assert.deepEqual(odd.ops.map((o) => o.cue.name), ['Sc2 thunder', 'Crash v2', 'Crash v3']);
+  assert.deepEqual(odd.ops.map((o) => (o as AddOp).cue.name), ['Sc2 thunder', 'Crash v2', 'Crash v3']);
   assert.equal(starters.said(starters.folderPlan([])), 'There are no sounds in this folder that a cue does not already use.');
   const doc = build([{ op: 'cue.add', cue: { type: 'memo', number: '7.5' } }, { op: 'cue.add', cue: { type: 'memo', number: 'A' } }]).doc;
   assert.equal(starters.nextNumber(doc), 8);
@@ -128,7 +133,7 @@ test('the first screen with no model: only what the helper can do, and five true
   assert.equal(h.state, 'folder');
   assert.equal(h.helper, true);
   assert.deepEqual(h.asks.map((a) => a.offline), [true]);
-  assert.equal(h.note, undefined, 'the drawer’s header says who answers');
+  assert.equal((h as { note?: string }).note, undefined, 'the drawer’s header says who answers');
   assert.equal(h.next.label, '', 'with sounds waiting, the ask above is the step');
   const hc = starters.first({ doc: { ...doc, lists: [{ ...doc.lists[0], cues: [{ id: 'c1', type: 'memo', name: 'x' }] }] }, showDir: '/x', folder: [], provider: 'demo' });
   assert.equal(hc.next.label, 'Next: ask me to “look for props”.', 'the next rung, in words the helper takes');

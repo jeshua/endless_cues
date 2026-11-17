@@ -5,9 +5,12 @@ Thank you. Three things to know before sending a change.
 ## 1. The checks
 
 ```bash
-npm test          # must pass
+npm test          # must pass: builds, checks the types (strict), runs the tests
 npm run smoke     # after any change under app/
+npm run watch     # while working: rebuilds on every save (then reload the window)
 ```
+
+The code is TypeScript (`strict`). `build/compile.mjs` writes the `.js` beside each `.ts` (not kept in git); edit the `.ts`.
 
 `CLAUDE.md` lists the rules the code is held to (a show changes only through edit operations; `core/` never requires Electron; the renderer is a view; colour carries meaning). `docs/specs/` says how each part is meant to work; if your change alters that, change the spec in the same pull request.
 

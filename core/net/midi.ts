@@ -19,11 +19,22 @@
  *                                                    value, a pressure, a bend), for a MIDI cue that moves it
  */
 
-const MSC_COMMANDS = { go: 0x01, stop: 0x02, resume: 0x03, 'timed-go': 0x04, load: 0x05, fire: 0x07, 'all-off': 0x08, restore: 0x09, reset: 0x0a, 'go-off': 0x0b };
-const MSC_FORMATS = { lighting: 0x01, 'moving-lights': 0x02, sound: 0x10, machinery: 0x20, video: 0x30, projection: 0x40, all: 0x7f };
-const nameOf = (table, byte) => Object.keys(table).find((k) => table[k] === byte);
+interface MidiFields {
+  number?: number; value?: number; channel?: number;
+  command?: string; cue?: string; list?: string; time?: string; device?: number; format?: string; bytes?: number[];
+}
+/** A MIDI message, as parseText and decode give it (every kind's fields can be asked of any). */
+export type MidiMessage =
+  | (MidiFields & { kind: 'note' | 'noteoff' | 'pc' | 'cc' | 'kp'; number: number })
+  | (MidiFields & { kind: 'cp' | 'bend'; value: number })
+  | (MidiFields & { kind: 'msc'; command: string })
+  | (MidiFields & { kind: 'raw'; bytes: number[] });
 
-function parseText(text) {
+const MSC_COMMANDS: Record<string, number> = { go: 0x01, stop: 0x02, resume: 0x03, 'timed-go': 0x04, load: 0x05, fire: 0x07, 'all-off': 0x08, restore: 0x09, reset: 0x0a, 'go-off': 0x0b };
+const MSC_FORMATS: Record<string, number> = { lighting: 0x01, 'moving-lights': 0x02, sound: 0x10, machinery: 0x20, video: 0x30, projection: 0x40, all: 0x7f };
+const nameOf = (table: Record<string, number>, byte: number) => Object.keys(table).find((k) => table[k] === byte);
+
+function parseText(text: unknown): MidiMessage {
   const words = String(text || '').trim().toLowerCase().replace(/\bch(\d+)\b/g, 'ch $1').replace(/\bnote\s*off\b|\bnoteoff\b/, 'noteoff')
     .replace(/\b(key|poly)\s*(pressure|aftertouch)\b|\baftertouch\b/, 'kp').replace(/\b(channel\s*)?pressure\b/, 'cp').replace(/\bpitch\s*bend\b|\bpitchbend\b/, 'bend')
     .replace(/\btimed[\s-]*go\b/, 'timed-go').split(/[\s,]+/).filter(Boolean);
@@ -35,7 +46,7 @@ function parseText(text) {
     if (bytes[0] === 0xf0 && bytes[bytes.length - 1] !== 0xf7) throw new Error('SysEx starts with F0 and ends with F7');
     return { kind: 'raw', bytes };
   }
-  const take = (key, max, what) => {
+  const take = (key: string, max: number, what: string) => {
     const i = words.indexOf(key);
     if (i < 0) return undefined;
     const v = words[i + 1];
@@ -45,26 +56,27 @@ function parseText(text) {
   };
   const channel = take('ch', 16, 'a channel, 1 to 16');
   if (channel === 0) throw new Error('channels are 1 to 16');
-  const kind = { note: 'note', noteoff: 'noteoff', pc: 'pc', program: 'pc', cc: 'cc', control: 'cc', kp: 'kp', cp: 'cp', bend: 'bend', pb: 'bend', msc: 'msc' }[words.shift()];
+  const kinds: Record<string, 'note' | 'noteoff' | 'pc' | 'cc' | 'kp' | 'cp' | 'bend' | 'msc'> = { note: 'note', noteoff: 'noteoff', pc: 'pc', program: 'pc', cc: 'cc', control: 'cc', kp: 'kp', cp: 'cp', bend: 'bend', pb: 'bend', msc: 'msc' };
+  const kind = kinds[words.shift()!];
   if (!kind) throw new Error('a MIDI message starts with note, note off, pc, cc, key pressure, pressure, bend or msc (or is raw bytes in hex)');
-  const withCh = (m) => (channel ? { ...m, channel } : m);
+  const withCh = <T extends object>(m: T) => (channel ? { ...m, channel } : m);
   if (kind === 'msc') {
     const device = take('dev', 127, 'a device ID, 0 to 127');
     const li = words.indexOf('list');
-    let list;
+    let list: string | undefined;
     if (li >= 0) { list = words[li + 1]; if (!/^[\d.]+$/.test(list || '')) throw new Error('list needs a number'); words.splice(li, 2); }
     const ti = words.indexOf('time');
-    let time;
-    if (ti >= 0) { const m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;.](\d{1,2})$/.exec(words[ti + 1] || ''); if (!m || m[1] > 23 || m[2] > 59 || m[3] > 59 || m[4] > 29) throw new Error('time needs hours:minutes:seconds:frames (00:00:05:00)'); time = m.slice(1).map(Number).join(':'); words.splice(ti, 2); }
+    let time: string | undefined;
+    if (ti >= 0) { const m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;.](\d{1,2})$/.exec(words[ti + 1] || ''); if (!m || Number(m[1]) > 23 || Number(m[2]) > 59 || Number(m[3]) > 59 || Number(m[4]) > 29) throw new Error('time needs hours:minutes:seconds:frames (00:00:05:00)'); time = m.slice(1).map(Number).join(':'); words.splice(ti, 2); }
     const fi = words.findIndex((w) => w in MSC_FORMATS);
     const format = fi >= 0 ? words.splice(fi, 1)[0] : undefined;
     const command = words.shift();
-    if (!(command in MSC_COMMANDS)) throw new Error(`msc needs a command: ${Object.keys(MSC_COMMANDS).join(', ')}`);
+    if (!((command as string) in MSC_COMMANDS)) throw new Error(`msc needs a command: ${Object.keys(MSC_COMMANDS).join(', ')}`);
     const cue = words.shift();
     if (cue !== undefined && !/^[\d.]+$/.test(cue)) throw new Error('a show-control cue number is digits and points (12, 12.5)');
     if (words.length) throw new Error(`not understood: ${words.join(' ')}`);
     if (time !== undefined && command !== 'timed-go') throw new Error('only a timed go has a time');
-    return { kind, command, ...(cue !== undefined ? { cue } : {}), ...(list !== undefined ? { list } : {}), ...(time !== undefined ? { time } : {}), ...(device !== undefined ? { device } : {}), ...(format ? { format } : {}) };
+    return { kind, command: command as string, ...(cue !== undefined ? { cue } : {}), ...(list !== undefined ? { list } : {}), ...(time !== undefined ? { time } : {}), ...(device !== undefined ? { device } : {}), ...(format ? { format } : {}) };
   }
   // a pitch bend is one fourteen-bit number; the whole channel's pressure is one seven-bit one
   if (kind === 'bend' || kind === 'cp') {
@@ -74,11 +86,11 @@ function parseText(text) {
   }
   const nums = words.map((w) => (/^\d+$/.test(w) && Number(w) <= 127 ? Number(w) : NaN));
   if (nums.some(Number.isNaN)) throw new Error('MIDI numbers are 0 to 127');
-  if (nums.length < 1 || nums.length > 2 || (kind === 'pc' && nums.length > 1)) throw new Error({ note: 'note <number> [velocity]', noteoff: 'note off <number>', pc: 'pc <program>', cc: 'cc <controller> <value>', kp: 'key pressure <note> <value>' }[kind]);
+  if (nums.length < 1 || nums.length > 2 || (kind === 'pc' && nums.length > 1)) throw new Error(({ note: 'note <number> [velocity]', noteoff: 'note off <number>', pc: 'pc <program>', cc: 'cc <controller> <value>', kp: 'key pressure <note> <value>' } as Record<string, string>)[kind]);
   return withCh({ kind, number: nums[0], ...(nums.length > 1 ? { value: nums[1] } : {}) });
 }
 
-function encode(msg) {
+function encode(msg: MidiMessage): number[] {
   const ch = (Number(msg.channel) || 1) - 1;
   switch (msg.kind) {
     case 'note': return [0x90 | ch, msg.number, msg.value === undefined ? 100 : msg.value];
@@ -89,7 +101,7 @@ function encode(msg) {
     case 'cp': return [0xd0 | ch, msg.value];
     case 'bend': return [0xe0 | ch, msg.value & 0x7f, (msg.value >> 7) & 0x7f];      // the low seven bits go first
     case 'msc': {
-      const ascii = (s) => [...String(s)].map((c) => c.charCodeAt(0));
+      const ascii = (s: unknown) => [...String(s)].map((c) => c.charCodeAt(0));
       // (a timed go carries a time before its cue number: hours, minutes, seconds, frames and fractions of a frame)
       const data = msg.command === 'fire' ? [Number(msg.cue) & 0x7f]
         : [...(msg.command === 'timed-go' ? [...String(msg.time || '0:0:0:0').split(':').map(Number), 0] : []),
@@ -101,7 +113,7 @@ function encode(msg) {
   }
 }
 
-function decode(bytes) {
+function decode(bytes: Iterable<number> | null | undefined): MidiMessage | null {
   const b = [...(bytes || [])];
   if (!b.length || b[0] < 0x80) return null;
   const hi = b[0] & 0xf0, channel = (b[0] & 0x0f) + 1;
@@ -118,7 +130,7 @@ function decode(bytes) {
       const timed = command === 'timed-go' && b.length >= 12;
       const data = b.slice(timed ? 11 : 6, -1), cut = data.indexOf(0);
       const time = timed && b.slice(6, 10).some(Boolean) ? [b[6] & 31, b[7], b[8], b[9] & 31].join(':') : undefined;
-      const text = (a) => String.fromCharCode(...a);
+      const text = (a: number[]) => String.fromCharCode(...a);
       const cue = command === 'fire' ? (data.length ? String(data[0]) : undefined) : text(cut < 0 ? data : data.slice(0, cut)) || undefined;
       const rest = cut < 0 ? [] : data.slice(cut + 1), cut2 = rest.indexOf(0);
       const list = text(cut2 < 0 ? rest : rest.slice(0, cut2)) || undefined;
@@ -128,10 +140,10 @@ function decode(bytes) {
   return { kind: 'raw', bytes: b };
 }
 
-const hex = (bytes) => bytes.map((x) => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+const hex = (bytes: number[]) => bytes.map((x) => x.toString(16).toUpperCase().padStart(2, '0')).join(' ');
 
 /** A message as a person reads it. `brief`: as a trigger is written (no velocity, no device). */
-function toText(msg, { brief = false } = {}) {
+function toText(msg: MidiMessage | null | undefined, { brief = false } = {}): string {
   if (!msg) return '';
   const ch = msg.channel ? ` ch ${msg.channel}` : '';
   switch (msg.kind) {
@@ -149,9 +161,9 @@ function toText(msg, { brief = false } = {}) {
 
 /** Whether `msg` (decoded, as it arrived) is what `trigger` (parsed from a cue's text) waits for: what the
  *  trigger leaves out matches anything. */
-function matches(trigger, msg) {
+function matches(trigger: MidiMessage | null | undefined, msg: MidiMessage | null | undefined): boolean {
   if (!trigger || !msg || trigger.kind !== msg.kind) return false;
-  if (trigger.kind === 'raw') return hex(trigger.bytes) === hex(msg.bytes);
+  if (trigger.kind === 'raw') return hex(trigger.bytes) === hex(msg.bytes!);
   if (trigger.kind === 'msc') return trigger.command === msg.command && (trigger.cue === undefined || trigger.cue === msg.cue) && (trigger.list === undefined || trigger.list === msg.list);
   return trigger.number === msg.number && (trigger.channel === undefined || trigger.channel === msg.channel)
     && (trigger.value === undefined || trigger.kind === 'noteoff' || trigger.value === msg.value);
@@ -159,8 +171,8 @@ function matches(trigger, msg) {
 
 /** The one number of a message that a MIDI cue can move over a time: a controller's or a key pressure's value, the
  *  channel's pressure, a bend. `valueMax` is how high it goes (0 for a message with nothing to fade). */
-const valueMax = (msg) => (!msg ? 0 : msg.kind === 'bend' ? 16383 : ['cc', 'kp', 'cp'].includes(msg.kind) ? 127 : 0);
-const valueOf = (msg) => (valueMax(msg) ? Number(msg.value) || 0 : null);
-const withValue = (msg, v) => ({ ...msg, value: Math.max(0, Math.min(valueMax(msg), Math.round(v))) });
+const valueMax = (msg: MidiMessage | null | undefined) => (!msg ? 0 : msg.kind === 'bend' ? 16383 : ['cc', 'kp', 'cp'].includes(msg.kind) ? 127 : 0);
+const valueOf = (msg: MidiMessage | null | undefined) => (valueMax(msg) ? Number(msg!.value) || 0 : null);
+const withValue = (msg: MidiMessage, v: number): MidiMessage => ({ ...msg, value: Math.max(0, Math.min(valueMax(msg), Math.round(v))) });
 
 export { parseText, encode, decode, toText, matches, hex, valueOf, withValue, valueMax, MSC_COMMANDS, MSC_FORMATS };

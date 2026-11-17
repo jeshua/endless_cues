@@ -10,21 +10,29 @@
 
 const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'ogv'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'svg'];
-const ext = (file) => (/\.([a-z0-9]+)$/i.exec(String(file || '')) || [])[1]?.toLowerCase() || '';
+const ext = (file: unknown) => (/\.([a-z0-9]+)$/i.exec(String(file || '')) || [])[1]?.toLowerCase() || '';
 
 /** What a Video cue's file is: 'video' (it has a length, and perhaps sound), 'image' (a still), or null. */
-function mediaKind(file) {
+function mediaKind(file: unknown): 'video' | 'image' | null {
   const e = ext(file);
   return VIDEO_EXT.includes(e) ? 'video' : IMAGE_EXT.includes(e) ? 'image' : null;
 }
 
-const DEFAULT_STAGE = { width: 1920, height: 1080, pin: null };
-const FADEABLE = ['opacity', 'x', 'y', 'scale', 'rotation'];
-const REST = { opacity: 100, x: 0, y: 0, scale: 1, rotation: 0 };
-const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d);
+/** A picture's geometry: opacity (0–100), position in stage pixels, scale and rotation (degrees). */
+export interface Geometry { opacity: number; x: number; y: number; scale: number; rotation: number }
+export type Fadeable = keyof Geometry;
+/** Four corners, each [x, y] as fractions of the stage. */
+export type Pin = [number, number][];
+/** The show's stage, cleaned. */
+export interface Stage { width: number; height: number; pin: Pin | null }
+
+const DEFAULT_STAGE: Stage = { width: 1920, height: 1080, pin: null };
+const FADEABLE: Fadeable[] = ['opacity', 'x', 'y', 'scale', 'rotation'];
+const REST: Geometry = { opacity: 100, x: 0, y: 0, scale: 1, rotation: 0 };
+const num = (v: unknown, d: number) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Number(v) : d);
 
 /** A cue's geometry as the output window wants it: every number present and in range. */
-function geometryOf(cue) {
+function geometryOf(cue: Partial<Record<Fadeable, unknown>>): Geometry {
   return {
     opacity: Math.max(0, Math.min(100, num(cue.opacity, REST.opacity))),
     x: num(cue.x, 0), y: num(cue.y, 0),
@@ -34,8 +42,8 @@ function geometryOf(cue) {
 }
 
 /** What a Fade cue moves on a picture: only the geometry it names ({} when it names none). */
-function movesOf(fade) {
-  const out = {};
+function movesOf(fade: Partial<Record<Fadeable, unknown>>): Partial<Geometry> {
+  const out: Partial<Geometry> = {};
   for (const k of FADEABLE) if (fade[k] !== undefined && fade[k] !== null && fade[k] !== '' && Number.isFinite(Number(fade[k]))) out[k] = Number(fade[k]);
   if (out.opacity !== undefined) out.opacity = Math.max(0, Math.min(100, out.opacity));
   if (out.scale !== undefined) out.scale = Math.max(0, out.scale);
@@ -43,7 +51,7 @@ function movesOf(fade) {
 }
 
 /** A geometry `x` (0–1) of the way from `a` to `b`; what `b` does not name stays as it is in `a`. */
-function mix(a, b, x) {
+function mix(a: Geometry, b: Partial<Geometry>, x: number): Geometry {
   const t = Math.max(0, Math.min(1, x));
   const out = { ...a };
   for (const k of FADEABLE) if (b[k] !== undefined) out[k] = a[k] + (b[k] - a[k]) * t;
@@ -51,19 +59,20 @@ function mix(a, b, x) {
 }
 
 /** The show's stage settings (settings.video), cleaned: a size, and four corners or none. */
-function stageOf(settings) {
+function stageOf(settings: { video?: { width?: unknown; height?: unknown; pin?: unknown } | null } | null | undefined): Stage {
   const v = (settings && settings.video) || {};
-  const size = (n, d) => (Number(n) >= 16 && Number(n) <= 16384 ? Math.round(Number(n)) : d);
+  const size = (n: unknown, d: number) => (Number(n) >= 16 && Number(n) <= 16384 ? Math.round(Number(n)) : d);
   return { width: size(v.width, DEFAULT_STAGE.width), height: size(v.height, DEFAULT_STAGE.height), pin: cleanPin(v.pin) };
 }
 
-const SQUARE = [[0, 0], [1, 0], [1, 1], [0, 1]];
+const SQUARE: Pin = [[0, 0], [1, 0], [1, 1], [0, 1]];
 /** Four corners (top left, top right, bottom right, bottom left) as fractions of the stage, or null when they
  *  are missing, are the stage's own corners, or could not be a picture (three of them in a line). */
-function cleanPin(pin) {
+function cleanPin(pin: unknown): Pin | null {
   if (!Array.isArray(pin) || pin.length !== 4) return null;
-  const p = pin.map((c) => (Array.isArray(c) && c.length === 2 ? [Number(c[0]), Number(c[1])] : null));
-  if (p.some((c) => !c || !Number.isFinite(c[0]) || !Number.isFinite(c[1]) || Math.abs(c[0]) > 4 || Math.abs(c[1]) > 4)) return null;
+  const read = pin.map((c): [number, number] | null => (Array.isArray(c) && c.length === 2 ? [Number(c[0]), Number(c[1])] : null));
+  if (read.some((c) => !c || !Number.isFinite(c[0]) || !Number.isFinite(c[1]) || Math.abs(c[0]) > 4 || Math.abs(c[1]) > 4)) return null;
+  const p = read as Pin;
   if (p.every((c, i) => Math.abs(c[0] - SQUARE[i][0]) < 1e-6 && Math.abs(c[1] - SQUARE[i][1]) < 1e-6)) return null;
   // each corner must turn the same way as the one before it: a quad that folds over itself has no picture
   let sign = 0;
@@ -74,14 +83,14 @@ function cleanPin(pin) {
     if (sign && Math.sign(cross) !== sign) return null;
     sign = Math.sign(cross);
   }
-  return p.map((c) => [Math.round(c[0] * 1e5) / 1e5, Math.round(c[1] * 1e5) / 1e5]);
+  return p.map((c): [number, number] => [Math.round(c[0] * 1e5) / 1e5, Math.round(c[1] * 1e5) / 1e5]);
 }
 
 /**
  * The corner pin as a CSS matrix3d (16 numbers, applied with its origin at the stage's top left): the
  * projective map that takes the stage's corners to `pin`'s. null when there is no pin.
  */
-function pinMatrix(width, height, pin) {
+function pinMatrix(width: number, height: number, pin: unknown): number[] | null {
   const p = cleanPin(pin);
   if (!p) return null;
   const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = p.map(([u, v]) => [u * width, v * height]);
@@ -96,7 +105,7 @@ function pinMatrix(width, height, pin) {
 }
 
 /** Where a stage pixel lands under a matrix from pinMatrix (for the tests, and for anyone drawing handles). */
-function project(m, x, y) {
+function project(m: number[], x: number, y: number): [number, number] {
   const w = m[3] * x + m[7] * y + m[15];
   return [(m[0] * x + m[4] * y + m[12]) / w, (m[1] * x + m[5] * y + m[13]) / w];
 }

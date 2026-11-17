@@ -14,7 +14,7 @@ const RATE = 44100;
 const TAU = Math.PI * 2;
 
 /** A stand-in sound: `secs` long, pitched by `seed`, with a pulse every `beat` seconds (0: none). */
-function sound(file, secs, seed, beat = 0) {
+function sound(file: string, secs: number, seed: number, beat = 0) {
   const n = Math.round(secs * RATE);
   const L = new Float32Array(n), R = new Float32Array(n);
   const f = 110 * 2 ** ((seed % 12) / 12);
@@ -30,7 +30,7 @@ function sound(file, secs, seed, beat = 0) {
 }
 
 const HERE = __dirname;
-const DESKS = {
+const DESKS: Record<string, (desk: string) => void> = {
   // a play: a QLab workspace with its audio folder beside it
   priya(desk) {
     const dir = path.join(desk, 'The Glass Orchard');

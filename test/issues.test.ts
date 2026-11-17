@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isIssue, createIssues } from '../core/report/issues';
 import { makeContext } from '../core/report/report';
+import type { Scrub } from '../core/report/report';
 
 test('an error, a sound that could not play, an output gone or a window that died is an issue; the day-to-day log is not', () => {
   for (const line of [
@@ -35,7 +36,7 @@ test('an issue is announced once; the same again soon is counted, not announced;
   assert.deepEqual(iss.latest(), { line: '[audio] could not decode a.wav: bad', at: 1000, count: 1 });
   t += 5000;
   assert.equal(iss.seen('10:00:05.000 [audio] could not decode a.wav: bad'), false, 'a repeat within the quiet time');
-  assert.equal(iss.latest().count, 2);
+  assert.equal(iss.latest()!.count, 2);
   assert.equal(iss.seen('10:00:05.000 [midi] DROPPED note 60: no port'), true, 'a different one is news');
   iss.dismiss();
   assert.equal(iss.latest(), null);
@@ -44,10 +45,10 @@ test('an issue is announced once; the same again soon is counted, not announced;
 });
 
 test('a report opened from the status bar carries the issue, scrubbed and cut, beside the recent error lines', () => {
-  const scrub = (s) => s.replace('/Users/someone', '~');
+  const scrub: Scrub = (s) => (s as string).replace('/Users/someone', '~');
   const ctx = makeContext({ issue: '[audio] could not decode /Users/someone/a.wav: ' + 'x'.repeat(900), log: ['10:00 [audio] could not decode /Users/someone/a.wav'] }, scrub);
-  assert.ok(ctx.issue.startsWith('[audio] could not decode ~/a.wav'));
-  assert.ok(ctx.issue.length <= 500);
-  assert.equal(ctx.errors.length, 1);
+  assert.ok(ctx.issue!.startsWith('[audio] could not decode ~/a.wav'));
+  assert.ok(ctx.issue!.length <= 500);
+  assert.equal(ctx.errors!.length, 1);
   assert.equal(makeContext({ log: [] }).issue, undefined);
 });

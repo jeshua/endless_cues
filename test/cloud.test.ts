@@ -4,19 +4,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as http from 'http';
+import type { AddressInfo } from 'net';
 import * as cloud from '../core/assistant/cloud';
 import { createAssistant, cloudProvider, providerFor, missingFor } from '../core/assistant/assistant';
+import type { CloudUsage } from '../core/assistant/assistant';
 import { ShowDocument } from '../core/show/document';
 import { build } from './helpers';
 
+/** A request the stand-in saw (its body as parsed from JSON). */
+interface Seen { method?: string; url?: string; headers: http.IncomingHttpHeaders; body: any }
+/** What the stand-in answers. */
+interface Answer { status?: number; body?: unknown; headers?: Record<string, string> }
+type Route = Answer | ((r: Seen, seen: Seen[]) => Answer);
+
 /** A stand-in service: answers by route from `routes`, keeps every request. */
-async function fakeService(routes) {
-  const seen = [];
+async function fakeService(routes: Record<string, Route>) {
+  const seen: Seen[] = [];
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
     req.on('end', () => {
-      const r = { method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null };
+      const r: Seen = { method: req.method, url: req.url, headers: req.headers, body: body ? JSON.parse(body) : null };
       seen.push(r);
       const h = routes[`${req.method} ${req.url}`];
       const out = typeof h === 'function' ? h(r, seen) : h || { status: 404, body: { error: 'not_found', message: 'No such endpoint.' } };
@@ -24,8 +32,8 @@ async function fakeService(routes) {
       res.end(JSON.stringify(out.body || {}));
     });
   });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${server.address().port}`, seen, close: () => { server.closeAllConnections(); server.close(); } };
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen, close: () => { server.closeAllConnections(); server.close(); } };
 }
 
 const START = { device_code: 'ecc_x', user_code: 'QXRM-7KPD', verification_uri: 'https://account.example/connect', verification_uri_complete: 'https://account.example/connect?code=QXRM-7KPD', expires_in: 900, interval: 5 };
@@ -42,7 +50,7 @@ test('the device flow: a code, the browser, polling through pending and slow_dow
       return { body: { token: 'ecd_token', token_type: 'Bearer', device: { id: 3, name: 'Mac' }, account: { email: 'x@example.org', role: 'user' } } };
     },
   });
-  const opened = [], states = [], waits = [];
+  const opened: string[] = [], states: unknown[] = [], waits: number[] = [];
   const c = cloud.client({ endpoint: svc.url, version: '0.2.0-alpha.1' });
   const r = await cloud.signIn({ client: c, name: 'Stage Mac', open: (u) => opened.push(u), onState: (s) => states.push(s), sleep: (ms) => { waits.push(ms); return Promise.resolve(); } }).done;
   svc.close();
@@ -52,24 +60,24 @@ test('the device flow: a code, the browser, polling through pending and slow_dow
   assert.deepEqual(waits, [5000, 5000, 10000], 'waits the interval, and longer after slow_down');
   assert.deepEqual(svc.seen[0].body, { name: 'Stage Mac' });
   assert.deepEqual(svc.seen.slice(1).map((x) => x.body), [{ device_code: 'ecc_x' }, { device_code: 'ecc_x' }, { device_code: 'ecc_x' }]);
-  assert.match(svc.seen[0].headers['user-agent'], /^EndlessCues\/0\.2\.0-alpha\.1 \(/);
+  assert.match(svc.seen[0].headers['user-agent']!, /^EndlessCues\/0\.2\.0-alpha\.1 \(/);
 });
 
 test('the device flow ends in one line: refused, run out, cancelled, or no network', async () => {
   for (const [code, line] of [['access_denied', 'Refused in the browser.'], ['expired_token', 'The code ran out. Sign in again.'], ['invalid_grant', 'That sign-in didn’t finish. Try again.']]) {
     const svc = await fakeService({ 'POST /v1/auth/device/start': { body: START }, 'POST /v1/auth/device/poll': { status: 400, body: { error: code, message: 'x' } } });
-    await assert.rejects(cloud.signIn({ client: cloud.client({ endpoint: svc.url }), sleep: noSleep }).done, (err) => cloud.said(err) === line);
+    await assert.rejects(cloud.signIn({ client: cloud.client({ endpoint: svc.url }), sleep: noSleep }).done, (err: cloud.CloudError) => cloud.said(err) === line);
     svc.close();
   }
   // cancelled while waiting
   const svc = await fakeService({ 'POST /v1/auth/device/start': { body: START }, 'POST /v1/auth/device/poll': { status: 400, body: { error: 'authorization_pending' } } });
-  let flow;
+  let flow: ReturnType<typeof cloud.signIn>;
   flow = cloud.signIn({ client: cloud.client({ endpoint: svc.url }), sleep: () => { flow.cancel(); return Promise.resolve(); } });
-  await assert.rejects(flow.done, (err) => err.code === 'cancelled' && cloud.said(err) === '');
+  await assert.rejects(flow.done, (err: cloud.CloudError) => err.code === 'cancelled' && cloud.said(err) === '');
   svc.close();
   // nothing listening: the first request fails, in words
   await assert.rejects(cloud.signIn({ client: cloud.client({ endpoint: 'http://127.0.0.1:9' }), sleep: noSleep }).done,
-    (err) => cloud.said(err) === 'Can’t reach Endless Cues. Check the internet.');
+    (err: cloud.CloudError) => cloud.said(err) === 'Can’t reach Endless Cues. Check the internet.');
   assert.equal(cloud.dayWords('2026-12-01T00:00:00.000Z'), '1 December');
 });
 
@@ -92,7 +100,7 @@ test('a turn through the cloud provider: the token, the three headers, one turn 
     { choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, ec_state: 'OPAQUE-1', tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_show', arguments: '{}' } }] } }] },
     { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'Rain is cue 1.' } }] },
   ];
-  const svc = await fakeService({ 'POST /v1/chat/completions': () => ({ body: replies.shift(), headers: { 'x-ec-tier': 'after', 'x-ec-used': '100', 'x-ec-resets': '2026-12-01T00:00:00.000Z' } }) });
+  const svc = await fakeService({ 'POST /v1/chat/completions': () => ({ body: replies.shift()!, headers: { 'x-ec-tier': 'after', 'x-ec-used': '100', 'x-ec-resets': '2026-12-01T00:00:00.000Z' } }) });
   const a = createAssistant({ config: { provider: 'cloud' }, provider: cloudProvider({ endpoint: svc.url, token: 'ecd_t', version: '0.2.0-alpha.1' }) });
   const r = await a.ask('which cue is the rain?', { document: doc() });
   svc.close();
@@ -102,9 +110,9 @@ test('a turn through the cloud provider: the token, the three headers, one turn 
   assert.equal(one.headers.authorization, 'Bearer ecd_t');
   assert.equal(one.headers['x-ec-version'], '0.2.0-alpha.1');
   assert.deepEqual([one.headers['x-ec-step'], two.headers['x-ec-step']], ['0', '1']);
-  assert.ok(one.headers['x-ec-turn'].length >= 8 && one.headers['x-ec-turn'] === two.headers['x-ec-turn'], 'one id for the whole turn');
-  assert.equal(two.body.messages.find((m) => m.role === 'assistant').ec_state, 'OPAQUE-1', 'the reasoning goes back as it came');
-  assert.deepEqual(a.status().cloud.usage, { tier: 'after', used: 100, resets: '2026-12-01T00:00:00.000Z' });
+  assert.ok(one.headers['x-ec-turn']!.length >= 8 && one.headers['x-ec-turn'] === two.headers['x-ec-turn'], 'one id for the whole turn');
+  assert.equal(two.body.messages.find((m: { role: string }) => m.role === 'assistant').ec_state, 'OPAQUE-1', 'the reasoning goes back as it came');
+  assert.deepEqual(a.status().cloud!.usage, { tier: 'after', used: 100, resets: '2026-12-01T00:00:00.000Z' });
 });
 
 test('the cloud provider’s errors are one line each, and a 401 signs this computer out', async () => {
@@ -114,17 +122,17 @@ test('the cloud provider’s errors are one line each, and a 401 signs this comp
     { status: 502, body: { error: 'upstream_error', message: 'x' } },
     { status: 401, body: { error: 'unauthorized', message: 'Sign in again.' } },
   ];
-  const svc = await fakeService({ 'POST /v1/chat/completions': () => answers.shift() });
+  const svc = await fakeService({ 'POST /v1/chat/completions': () => answers.shift()! });
   let out = 0;
   const p = cloudProvider({ endpoint: svc.url, token: 'ecd_t', signedOut: () => { out++; } });
   const a = createAssistant({ config: { provider: 'cloud' }, provider: p });
-  const lines = [];
+  const lines: (string | undefined)[] = [];
   for (let i = 0; i < 4; i++) lines.push((await a.ask('x', { document: doc() })).error);
   svc.close();
   assert.deepEqual(lines, ['This month’s asks are used up: the built-in helper can still help.', 'This build can’t use the hosted assistant. Use your own key.',
     'The Endless Cues assistant isn’t answering. Your show isn’t affected.', 'Signed out. Sign in again in Settings ▸ Assistant.']);
   assert.equal(out, 1);
-  assert.equal(a.status().cloud.usage.tier, 'used_up');
+  assert.equal((a.status().cloud!.usage as CloudUsage).tier, 'used_up');
   // no network at all
   const off = createAssistant({ config: { provider: 'cloud' }, provider: cloudProvider({ endpoint: 'http://127.0.0.1:9', token: 'ecd_t' }) });
   assert.equal((await off.ask('x', { document: doc() })).error, 'The Endless Cues assistant isn’t answering. Your show isn’t affected.');
@@ -133,7 +141,7 @@ test('the cloud provider’s errors are one line each, and a 401 signs this comp
 test('chosen and not signed in: no provider, a line, and the sign-in’s own line while it runs', () => {
   assert.equal(providerFor({ provider: 'cloud' }, {}), null);
   assert.equal(missingFor({ provider: 'cloud' }, {}), 'Sign in first.');
-  assert.equal(providerFor({ provider: 'cloud', token: 'ecd_t' }, {}).name, 'cloud');
+  assert.equal(providerFor({ provider: 'cloud', token: 'ecd_t' }, {})!.name, 'cloud');
   const a = createAssistant({ config: { provider: 'cloud' } });
   assert.equal(a.status().missing, 'Sign in first.');
   a.setAccount({ step: 'code', code: 'QXRM-7KPD' });

@@ -9,9 +9,9 @@ import { wavPeaks } from '../core/engine/waveform';
 import * as watch from '../core/audio/device-watch';
 
 /** 80-bit extended, for an AIFF's sample rate. */
-function ext(rate) { const b = Buffer.alloc(10); let e = 16383 + 63, m = BigInt(Math.round(rate)); while (m < (1n << 63n)) { m <<= 1n; e--; } b.writeUInt16BE(e, 0); b.writeBigUInt64BE(m, 2); return b; }
-function chunk(id, body) { const h = Buffer.alloc(8); h.write(id, 0, 'latin1'); h.writeUInt32BE(body.length, 4); return Buffer.concat([h, body, Buffer.alloc(body.length % 2)]); }
-function aiff(samples, { rate = 22050, channels = 1, kind = null } = {}) {
+function ext(rate: number) { const b = Buffer.alloc(10); let e = 16383 + 63, m = BigInt(Math.round(rate)); while (m < (1n << 63n)) { m <<= 1n; e--; } b.writeUInt16BE(e, 0); b.writeBigUInt64BE(m, 2); return b; }
+function chunk(id: string, body: Buffer) { const h = Buffer.alloc(8); h.write(id, 0, 'latin1'); h.writeUInt32BE(body.length, 4); return Buffer.concat([h, body, Buffer.alloc(body.length % 2)]); }
+function aiff(samples: number[], { rate = 22050, channels = 1, kind = null as string | null } = {}) {
   const data = Buffer.alloc(8 + samples.length * 2);
   samples.forEach((v, i) => (kind === 'sowt' ? data.writeInt16LE(v, 8 + i * 2) : data.writeInt16BE(v, 8 + i * 2)));
   const comm = Buffer.alloc(8); comm.writeUInt16BE(channels, 0); comm.writeUInt32BE(samples.length / channels, 2); comm.writeUInt16BE(16, 6);
@@ -19,19 +19,19 @@ function aiff(samples, { rate = 22050, channels = 1, kind = null } = {}) {
   const h = Buffer.alloc(8); h.write('FORM', 0, 'latin1'); h.writeUInt32BE(body.length, 4);
   return Buffer.concat([h, body]);
 }
-function caf(samples, { rate = 22050, flags = 2, format = 'lpcm' } = {}) {
-  const c = (id, body) => { const h = Buffer.alloc(12); h.write(id, 0, 'latin1'); h.writeBigInt64BE(BigInt(body.length), 4); return Buffer.concat([h, body]); };
+function caf(samples: number[], { rate = 22050, flags = 2, format = 'lpcm' } = {}) {
+  const c = (id: string, body: Buffer) => { const h = Buffer.alloc(12); h.write(id, 0, 'latin1'); h.writeBigInt64BE(BigInt(body.length), 4); return Buffer.concat([h, body]); };
   const desc = Buffer.alloc(32); desc.writeDoubleBE(rate, 0); desc.write(format, 8, 'latin1'); desc.writeUInt32BE(flags, 12); desc.writeUInt32BE(2, 16); desc.writeUInt32BE(1, 20); desc.writeUInt32BE(1, 24); desc.writeUInt32BE(16, 28);
   const data = Buffer.alloc(4 + samples.length * 2);
   samples.forEach((v, i) => (flags & 2 ? data.writeInt16LE(v, 4 + i * 2) : data.writeInt16BE(v, 4 + i * 2)));
   const head = Buffer.alloc(8); head.write('caff', 0, 'latin1'); head.writeUInt16BE(1, 4);
   return Buffer.concat([head, c('desc', desc), c('data', data)]);
 }
-const pcmOf = (wav) => { const n = wav.readUInt32LE(40) / 2; return Array.from({ length: n }, (_, i) => wav.readInt16LE(44 + i * 2)); };
+const pcmOf = (wav: Buffer | null) => { const n = wav!.readUInt32LE(40) / 2; return Array.from({ length: n }, (_, i) => wav!.readInt16LE(44 + i * 2)); };
 const tone = Array.from({ length: 2000 }, (_, i) => Math.round(12000 * Math.sin(i / 8)));
 
 test('an AIFF becomes a WAV of the same samples, at the same rate', () => {
-  const wav = toWav(aiff(tone, { rate: 44100 }));
+  const wav = toWav(aiff(tone, { rate: 44100 }))!;
   assert.equal(wav.toString('latin1', 0, 4), 'RIFF');
   assert.equal(wav.readUInt32LE(24), 44100);
   assert.equal(wav.readUInt16LE(22), 1);
@@ -42,7 +42,7 @@ test('an AIFF becomes a WAV of the same samples, at the same rate', () => {
 test('a CAF of plain PCM becomes a WAV, whichever way round its bytes are', () => {
   assert.deepEqual(pcmOf(toWav(caf(tone))), tone);
   assert.deepEqual(pcmOf(toWav(caf(tone, { flags: 0 }))), tone);
-  assert.equal(toWav(caf(tone, { rate: 48000 })).readUInt32LE(24), 48000);
+  assert.equal(toWav(caf(tone, { rate: 48000 }))!.readUInt32LE(24), 48000);
 });
 
 test('a compressed one is refused with a reason, and anything else is not this module’s business', () => {
@@ -86,17 +86,17 @@ test('a device that comes back under a new id is known by its name', () => {
   let r = watch.step(chosen(), { type: 'devices', list: [built] });
   r = watch.step(r.state, { type: 'devices', list: [built, { id: 'xyz', label: 'Interface 8' }] });
   assert.deepEqual(r.action, { do: 'return', id: 'xyz', label: 'Interface 8' });
-  assert.equal(r.state.wanted.id, 'xyz');
+  assert.equal(r.state.wanted!.id, 'xyz');
 });
 
 test('an output that fails while still plugged in is left alone until it has been away', () => {
   let r = watch.step(chosen(), { type: 'failed' });
-  assert.equal(r.action.do, 'fallback');
+  assert.equal(r.action!.do, 'fallback');
   r = watch.step(r.state, { type: 'devices', list: [built, iface] });
   assert.equal(r.action, null, 'still listed: going back to it would only fail again');
   r = watch.step(r.state, { type: 'devices', list: [built] });
   r = watch.step(r.state, { type: 'devices', list: [built, iface] });
-  assert.equal(r.action.do, 'return');
+  assert.equal(r.action!.do, 'return');
 });
 
 test('on the system default there is nothing to fall back to: a failure opens the output again', () => {
@@ -108,9 +108,9 @@ test('on the system default there is nothing to fall back to: a failure opens th
 
 test('a device not there when the app starts is waited for; choosing another ends the wait', () => {
   let r = watch.step(chosen(), { type: 'refused' });
-  assert.equal(r.action.do, 'fallback');
+  assert.equal(r.action!.do, 'fallback');
   r = watch.step(r.state, { type: 'devices', list: [built, iface] });
-  assert.equal(r.action.do, 'return');
+  assert.equal(r.action!.do, 'return');
   r = watch.step(watch.step(chosen(), { type: 'refused' }).state, { type: 'chosen', id: 'default' });
   assert.equal(watch.step(r.state, { type: 'devices', list: [built, iface] }).action, null);
 });

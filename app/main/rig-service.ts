@@ -25,34 +25,75 @@ import * as folder from '../../core/rig/folder';
 import * as script from '../../core/rig/script';
 import * as osc from '../../core/net/osc';
 import { DEVICES as MODELS } from '../../core/net/devices';
+import type { createHub } from '../../core/net/hub';
+import type { CueEngine } from '../../core/engine/cue-engine';
+import type { ShowDocument } from '../../core/show/document';
+import type { DeviceArgs, ShowDoc } from '../../core/show/types';
+import type { LiveState } from '../../core/rig/liveness';
+import type { HostCommand } from './host';
 
-const OPS = ['device-try', 'device-ask', 'rig-check', 'rig-scan', 'rig-tick', 'rig-ticks-clear'];
+const OPS = ['device-try', 'device-ask', 'rig-check', 'rig-scan', 'rig-tick', 'rig-ticks-clear'] as const;
+
+/** The Rig page's commands, through the host's `cmd`. */
+export type RigCommand =
+  | { op: 'device-try'; device: string; command: string; args?: DeviceArgs }
+  | { op: 'device-ask'; device: string }
+  | { op: 'rig-check' }
+  | { op: 'rig-scan' }
+  | { op: 'rig-tick'; id: string; on?: boolean }
+  | { op: 'rig-ticks-clear' };
+type Hub = ReturnType<typeof createHub>;
+/** A message as the hub records it (its monitor's entry): what came back from a send. */
+type Sent = ReturnType<Hub['send']>;
+export interface RigOptions {
+  hub: Hub;
+  /** The host's own state: Show mode, and the MIDI outputs there are. */
+  state: { mode: string; midi: { outputs: string[] } };
+  engine: CueEngine;
+  overrides: Record<string, boolean>;
+  HELD: (what: string) => string;
+  held?: (() => string) | null;
+  away?: () => string;
+  smoke?: boolean;
+  net?: boolean;
+  log?: (line: string) => void;
+  notice?: (text: string, ms?: number) => void;
+  changed?: () => void;
+  document: () => ShowDocument;
+  facts?: () => Record<string, unknown>;
+  sendMidi?: ((text: string, o: { label?: string }) => Sent) | null;
+  /** the host's own `cmd` */
+  cmd?: (c: HostCommand) => unknown;
+}
+/** An "are you there?" to a device or an address: what came back. */
+export interface Asked { ok: boolean; held: boolean; answered: boolean; ms: number; text: string; why: string }
 const TICK_MS = 250;
 const SHOW_MODE = 'Show mode: an assistant sends nothing to the equipment';
 
 /** An address on a private network, written as numbers (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8): the only kind an assistant may ask. */
-function isPrivate(host) {
+function isPrivate(host: unknown) {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(host || '').trim());
   if (!m || m.slice(1).some((n) => Number(n) > 255)) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
   return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
 }
 
-function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, away = () => '', smoke = false, net = false, log = () => {}, notice = () => {}, changed = () => {}, document, facts = () => ({}), sendMidi = null }) {
-  const doc = () => document().doc;
+function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, away = () => '', smoke = false, net = false, log = () => {}, notice = () => {}, changed = () => {}, document, facts = () => ({}), sendMidi = null }: RigOptions) {
+  const doc = (): ShowDoc => document().doc;
   // (why nothing goes to the equipment: OSC out held back for a rehearsal, or the host's own reason. `away`: why the
   // network is off altogether, for a show from another computer: then nothing is looked for either)
   const held = heldBy || (() => (overrides.osc ? HELD('OSC out') : ''));
-  let ticks = {};                   // the checklist's ticks: this sitting's, never the show's
-  let found = null, scanning = false;
+  let ticks: Record<string, boolean> = {};      // the checklist's ticks: this sitting's, never the show's
+  let found: Awaited<ReturnType<typeof scan>> | null = null, scanning = false;
   let checkedAt = Date.now();
-  let timer = null;
-  let built = null;                 // { doc, at, items, summary, facts }: the rows, worked out at most once a second and when something changes
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let built: Built | null = null;   // the rows, worked out at most once a second and when something changes
   let stale = true;
-  let files = null, marks = null;   // the folder and the script as last read: { key, at, … }
+  let files: { key: string; at: number; doc: ShowDoc; counts: ReturnType<typeof folder.counts> } | null = null;    // the folder and the script as last read
+  let marks: { key: string; file: string; found: boolean; why: string; lines: number; marks: Mark[] } | null = null;
   let heldWas = '';
-  let needed = new Set();           // devices a cue uses (and that are not marked "the show goes on without it")
-  let again = null;                 // a push owed to the page, because it was last sent rows that were a moment old
+  let needed = new Set<string>();   // devices a cue uses (and that are not marked "the show goes on without it")
+  let again: ReturnType<typeof setTimeout> | null = null;                 // a push owed to the page, because it was last sent rows that were a moment old
 
   const live = createLiveness({
     send: (d, text) => hub.send(d.id, text, { format: rigDevices.viaOf(d), quiet: true, ask: true, label: 'are you there?' }),
@@ -65,9 +106,13 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
   hub.onHeard((msg, _from, patch, how) => { if (patch && patch.isDevice) live.heard(patch.id, msg, how.at); });
 
   const devices = () => rigDevices.list(doc());
-  function timerFor(list) {
+  type Device = ReturnType<typeof devices>[number];
+  type Mark = ReturnType<typeof script.read>['marks'][number];
+  type Facts = Record<string, any> & { liveness: ReturnType<typeof live.states>; script: ReturnType<typeof scriptFact>; ticks: Record<string, boolean> };
+  interface Built { doc: ShowDoc; at: number; items: ReturnType<typeof check.items>; summary: ReturnType<typeof check.summary>; facts: Facts }
+  function timerFor(list: Device[]) {
     const want = list.length > 0;
-    if (want && !timer) { timer = setInterval(() => { try { live.tick(); } catch (err) { log(`liveness: ${err.stack || err}`); } }, TICK_MS); if (timer.unref) timer.unref(); }
+    if (want && !timer) { timer = setInterval(() => { try { live.tick(); } catch (err) { log(`liveness: ${(err as Error).stack || err}`); } }, TICK_MS); if (timer.unref) timer.unref(); }
     if (!want && timer) { clearInterval(timer); timer = null; }
   }
 
@@ -76,8 +121,8 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     const key = `${d.showDir || ''}`;
     if (!force && files && files.key === key && files.doc === d.doc) return;
     if (!force && files && files.key === key && Date.now() - files.at < 2000) return;       // (a run of edits does not read the folder for each)
-    let list = [];
-    try { list = folder.listing(d.showDir, d.doc, { durations: Object.fromEntries(engine.durations || []) }); } catch (err) { log(`folder: ${err.message}`); }
+    let list: ReturnType<typeof folder.listing> = [];
+    try { list = folder.listing(d.showDir, d.doc, { durations: Object.fromEntries(engine.durations || []) }); } catch (err) { log(`folder: ${(err as Error).message}`); }
     files = { key, at: Date.now(), doc: d.doc, counts: folder.counts(list) };
   }
   function readScript(force = false) {
@@ -89,9 +134,9 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     const r = d.showDir ? script.read(d.showDir, file) : { ok: false, why: folder.NO_FOLDER, lines: 0, marks: [] };
     marks = { key, file, found: r.ok, why: r.why, lines: r.lines, marks: r.marks };
   }
-  const scriptFact = () => ({ file: marks.file, found: marks.found, why: marks.why, lines: marks.lines, marks: marks.marks.length, missing: marks.found ? script.compare(doc(), marks.marks).missing : [] });
+  const scriptFact = () => ({ file: marks!.file, found: marks!.found, why: marks!.why, lines: marks!.lines, marks: marks!.marks.length, missing: marks!.found ? script.compare(doc(), marks!.marks).missing : [] });
 
-  function build() {
+  function build(): Built {
     const d = doc(), now = Date.now();
     if (held() !== heldWas) { heldWas = held(); live.configure(devices(), { held: heldWas }); stale = true; }
     if (built && built.doc === d && !stale && now - built.at < 1000) {
@@ -100,9 +145,9 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
       return built;
     }
     readFolder(); readScript();
-    const f = { ...facts(), liveness: live.states(), script: scriptFact(), ticks };
+    const f: Facts = { ...facts(), liveness: live.states(), script: scriptFact(), ticks };
     const items = check.items(d, f);
-    needed = new Set(items.filter((i) => i.device && i.needed).map((i) => i.device));
+    needed = new Set(items.filter((i) => i.device && i.needed).map((i) => i.device!));
     built = { doc: d, at: now, items, summary: check.summary(items, checkedAt), facts: f };
     stale = false;
     return built;
@@ -111,9 +156,9 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
   function snapshot() {
     const b = build();
     const net2 = b.facts.network || hub.status();
-    const out = {};
+    const out: Record<string, Partial<LiveState> & { state: string; text: string; lastOut: string; lastIn: string }> = {};
     for (const dev of devices()) {
-      const l = b.facts.liveness[dev.id] || {}, item = b.items.find((i) => i.device === dev.id);
+      const l: Partial<LiveState> = b.facts.liveness[dev.id] || {}, item = b.items.find((i) => i.device === dev.id);
       const st = net2.patches ? net2.patches[dev.id] : null;
       // (the row's state: a fault on a device the show does not need is "to look at" there, and so it is here)
       out[dev.id] = { ...l, state: item ? item.state : l.state || 'unknown', text: item ? item.text : l.text || '', lastOut: (st && st.lastOut) || midiOut.get(dev.id) || '', lastIn: l.lastIn || (st && st.lastIn) || '' };
@@ -128,10 +173,10 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
   }
 
   // ── sending: a device's commands go out as a patch's messages do, and a device may ask for each to be sent again ──
-  const midiOut = new Map();        // a MIDI device -> the last message sent to it (the hub keeps this for the others)
+  const midiOut = new Map<string, string>();        // a MIDI device -> the last message sent to it (the hub keeps this for the others)
   /** One message to a patch or a device. A device with `resend` gets it that many times, 40 ms apart, with one id on the
    *  end, so a prop that acts once on each id is covered against a lost datagram; a faded value is never sent again. */
-  function send(id, message, { label = '', format = 'osc', faded = false } = {}) {
+  function send(id: string | null, message: string, { label = '', format = 'osc', faded = false }: { label?: string; format?: string; faded?: boolean } = {}): Sent {
     const d = id ? rigDevices.find(doc(), id) : null;
     const again = d && format === 'osc' && !faded ? Math.min(rigDevices.MAX_RESEND, Number(d.resend) || 0) : 0;
     if (again < 1) return hub.send(id, message, { label, format });
@@ -143,7 +188,7 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
   }
 
   /** A device's command, sent once by a person's hand (the Rig's Try). */
-  function tryCommand(c) {
+  function tryCommand(c: Extract<RigCommand, { op: 'device-try' }>) {
     const d = rigDevices.find(doc(), c.device);
     if (!d) return { error: `no device with the id ${c.device}` };
     if (state.mode === 'show') {
@@ -155,7 +200,7 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     if (!r.ok) return { error: r.why };
     const cmdOf = d.commands.find((x) => x.id === c.command);
     const label = `try: ${rigDevices.cueName(d, { command: c.command, args: c.args || {} })}`;
-    let entry;
+    let entry: Sent;
     if (rigDevices.isNetwork(d)) {
       if (!d.host || !(Number(d.port) > 0)) return { error: `${d.name} has no address yet` };
       entry = send(d.id, r.message, { label, format: rigDevices.viaOf(d) });
@@ -166,7 +211,7 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     }
     stale = true;
     if (entry.held) return { sent: entry, held: true, message: r.message, text: away() && rigDevices.isNetwork(d) ? 'Held back: nothing was sent (this show came from another computer: turn on its network features first)' : `Held back: nothing was sent (${rigDevices.isNetwork(d) ? 'OSC' : 'MIDI'} out is off for rehearsal)` };
-    if (!entry.ok) return { error: `${cmdOf.label} was not sent: ${entry.why}`, sent: entry };
+    if (!entry.ok) return { error: `${cmdOf!.label} was not sent: ${entry.why}`, sent: entry };
     return { sent: entry, held: false, message: r.message };
   }
 
@@ -174,10 +219,10 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     scanning = true; changed();
     // a test run opens no socket and sends nothing: nothing answers
     const going = smoke && !net ? Promise.resolve([]) : scan({ devices: devices() });
-    return going.catch((err) => { log(`scan: ${err.message}`); return []; }).then((list) => { scanning = false; found = list; changed(); return list; });
+    return going.catch((err: Error) => { log(`scan: ${err.message}`); return []; }).then((list) => { scanning = false; found = list; changed(); return list; });
   }
 
-  function cmd(c) {
+  function cmd(c: RigCommand) {
     switch (c.op) {
       case 'device-try': return tryCommand(c);
       case 'device-ask': {
@@ -204,7 +249,7 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
         return { ticks: { ...ticks } };
       }
       case 'rig-ticks-clear': ticks = {}; stale = true; return { ticks: {} };
-      default: return { error: `unknown command ${c.op}` };
+      default: return { error: `unknown command ${(c as { op: string }).op}` };
     }
   }
 
@@ -215,20 +260,20 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
     senders: () => senders(hub.monitor(), { devices: devices(), patches: doc().settings.network.patches }),
     /** One "are you there?": to a device of the show (its id), or, before it is one, to { host, port, probe } with a
      *  model's own test message. → Promise<{ ok, held, answered, ms, text, why }> */
-    ask(target) {
-      const no = (why, more = {}) => Promise.resolve({ ok: false, held: false, answered: false, ms: 0, text: '', why, ...more });
+    ask(target: string | { host?: string; port?: number | string; probe?: string } | null): Promise<Asked> {
+      const no = (why: string, more = {}) => Promise.resolve({ ok: false, held: false, answered: false, ms: 0, text: '', why, ...more });
       if (state.mode === 'show') return no(SHOW_MODE);
       if (typeof target === 'string') return live.ask(target).then((r) => { stale = true; return r; });
       const t = target || {};
-      const model = MODELS[t.probe];
+      const model = MODELS[t.probe!];
       if (!model || !model.test) return no(`“${t.probe}” is not a model with a test message (those are: ${Object.keys(MODELS).filter((k) => MODELS[k].test).join(', ')})`);
       if (!isPrivate(t.host)) return no(`${t.host} is not an address on a private network (10.x, 172.16–31.x, 192.168.x, 169.254.x, 127.x): only those are asked`);
       if (!(Number.isInteger(Number(t.port)) && Number(t.port) > 0 && Number(t.port) < 65536)) return no('the port is a number, 1–65535');
       if (held()) return no(held(), { held: true });
       return new Promise((resolve) => {
         const started = Date.now();
-        let off = () => {}, timer2 = null;
-        const done = (msg) => { off(); clearTimeout(timer2); resolve(msg ? { ok: true, held: false, answered: true, ms: Math.max(1, Date.now() - started), text: osc.toText(msg), why: '' } : { ok: true, held: false, answered: false, ms: Date.now() - started, text: '', why: `No answer in ${ASK_WAIT_MS / 1000} s.` }); };
+        let off = () => {}, timer2: ReturnType<typeof setTimeout> | undefined;
+        const done = (msg: Parameters<typeof osc.toText>[0] | null) => { off(); clearTimeout(timer2); resolve(msg ? { ok: true, held: false, answered: true, ms: Math.max(1, Date.now() - started), text: osc.toText(msg), why: '' } : { ok: true, held: false, answered: false, ms: Date.now() - started, text: '', why: `No answer in ${ASK_WAIT_MS / 1000} s.` }); };
         off = hub.onHeard((msg, from) => { if (from.address === String(t.host)) done(msg); });
         timer2 = setTimeout(() => done(null), ASK_WAIT_MS);
         const e = hub.sendTo({ host: String(t.host), port: Number(t.port) }, model.test, { label: 'are you there?' });
@@ -242,15 +287,18 @@ function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, a
 
   return {
     service, snapshot, send,
-    handles: (op) => OPS.includes(op),
+    handles: (op: string) => (OPS as readonly string[]).includes(op),
     cmd,
     /** The show changed: its devices to the liveness, and the rows are worked out again. */
     configure() { const list = devices(); heldWas = held(); live.configure(list, { held: heldWas }); timerFor(list); stale = true; },
     /** A show was opened: the ticks, what a scan found and what was read of the folder belonged to the last one. */
     opened() { ticks = {}; found = null; files = null; marks = null; checkedAt = Date.now(); stale = true; midiOut.clear(); },
     wantsInput: () => devices().some((d) => (d.alive || {}).how === 'heartbeat'),
-    close() { if (timer) clearInterval(timer); timer = null; clearTimeout(again); live.close(); },
+    close() { if (timer) clearInterval(timer); timer = null; clearTimeout(again ?? undefined); live.close(); },
   };
 }
+
+/** The rig as the host has it. */
+export type Rig = ReturnType<typeof createRig>;
 
 export { createRig, OPS, isPrivate };

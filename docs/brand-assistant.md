@@ -65,7 +65,7 @@ Always with words as well: colour and movement never carry a meaning alone here.
 
 ## The drawing
 
-`app/renderer/Qirx.js`: `Qirx` (the eye with a state), `QirxSign` (the plain sign), `Resident`, and `qirxState`
+`app/renderer/Qirx.ts`: `Qirx` (the eye with a state), `QirxSign` (the plain sign), `Resident`, and `qirxState`
 (the state and its words, from what the host pushes). The pentagon is one line of five points (`EYE`), traced
 from a photograph of the real eye's window; the colours are four custom properties at the top of the QIRX block
 in `styles.css`. There are no image files.

@@ -27,14 +27,17 @@ const CHAIN_SHARE = 0.6;
 /** Past this many cells, the middle of a diff is not searched for lines in common: it is all changed. */
 const MAX_CELLS = 4e6;
 
-const whole = (now) => `<show_outline>\n${now}\n</show_outline>`;
+/** What was last sent: the outline, and how much of it the diffs since then add up to. */
+export interface Sent { outline: string; chain: number }
+
+const whole = (now: string) => `<show_outline>\n${now}\n</show_outline>`;
 
 /**
  * The lines of `b` against `a`, as unified-diff hunks (with as little context as places them), or '' when they are
  * the same. The common start and end are taken off first (an edit is nearly always in one place), and what is left
  * is matched line by line (longest common subsequence).
  */
-function diffLines(a, b) {
+function diffLines(a: string, b: string) {
   const A = a.split('\n'), B = b.split('\n');
   let s = 0;
   while (s < A.length && s < B.length && A[s] === B[s]) s++;
@@ -43,9 +46,9 @@ function diffLines(a, b) {
   const a1 = A.slice(s, A.length - e), b1 = B.slice(s, B.length - e);
   if (!a1.length && !b1.length) return '';
   // ops over the middle: ' ' kept, '-' gone, '+' new
-  let ops = [];
+  let ops: [string, string][] = [];
   if (!a1.length || !b1.length || a1.length * b1.length > MAX_CELLS) {
-    ops = [...a1.map((l) => ['-', l]), ...b1.map((l) => ['+', l])];
+    ops = [...a1.map((l): [string, string] => ['-', l]), ...b1.map((l): [string, string] => ['+', l])];
   } else {
     const n = a1.length, m = b1.length;
     const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
@@ -56,24 +59,24 @@ function diffLines(a, b) {
     }
   }
   // with the line before the middle, so a change at its start can say where it is
-  const all = [...(s ? [[' ', A[s - 1]]] : []), ...ops];
+  const all: [string, string][] = [...(s ? [[' ', A[s - 1]] as [string, string]] : []), ...ops];
   // hunks: changes no more than two kept lines apart are one hunk. A hunk that starts by taking a line away is found
   // by that line (each outline line names its cue, so it is unique); one that starts with a new line, or whose first
   // line is not unique, has the kept line before it to say where it goes. Nothing after: a diff is what a request
   // carries, so it says no more than it must.
-  const count = new Map(); for (const l of A) count.set(l, (count.get(l) || 0) + 1);
+  const count = new Map<string, number>(); for (const l of A) count.set(l, (count.get(l) || 0) + 1);
   const changed = all.map((x, i) => (x[0] === ' ' ? -1 : i)).filter((i) => i >= 0);
-  const groups = [];
+  const groups: [number, number][] = [];
   for (const i of changed) { const g = groups.at(-1); if (g && i - g[1] <= 3) g[1] = i; else groups.push([i, i]); }
-  const out = [];
+  const out: string[] = [];
   for (const [first, last] of groups) {
-    const before = first > 0 && (all[first][0] === '+' || count.get(all[first][1]) > 1);
+    const before = first > 0 && (all[first][0] === '+' || count.get(all[first][1])! > 1);
     out.push('@@', ...all.slice(before ? first - 1 : first, last + 1).map(([o, l]) => `${o}${l}`));
   }
   return out.join('\n');
 }
 
-function note(last, now) {
+function note(last: Sent | null | undefined, now: string): { text: string; state: Sent } {
   now = String(now);
   if (!last) return { text: whole(now), state: { outline: now, chain: 0 } };
   if (last.outline === now) return { text: '<show_unchanged>The show is as last sent.</show_unchanged>', state: last };
@@ -87,9 +90,9 @@ function note(last, now) {
 }
 
 /** Applies diffLines' output to `a`: what the model is expected to do in its head. For the tests. */
-function applyDiff(a, diff) {
+function applyDiff(a: string, diff: string) {
   if (!diff) return a;
-  const A = a.split('\n'), out = [];
+  const A = a.split('\n'), out: string[] = [];
   let at = 0;
   const hunks = diff.split(/^@@$/m).map((h) => h.split('\n').filter((l) => l !== '')).filter((h) => h.length);
   for (const h of hunks) {

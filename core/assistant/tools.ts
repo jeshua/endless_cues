@@ -49,6 +49,120 @@ import * as showFiles from '../show/files';
 import * as kit from '../kit/kit';
 import * as appGuide from './app-guide';
 import * as places from '../ui/places';
+import type { Bus, Cue, CueIndex, CueType, Patch, ShowDoc } from '../show/types';
+import type { Field } from '../show/cue-types';
+import type { Op } from '../show/ops';
+import type { Change } from '../show/diff';
+import type { ShowDocument } from '../show/document';
+import type { Logged } from '../net/hub';
+
+/** A tool's input, as a JSON schema: what the model is told it may send. */
+export interface JsonSchema {
+  type?: string;
+  description?: string;
+  enum?: readonly string[];
+  items?: JsonSchema;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+export interface Tool { name: string; description: string; input_schema: JsonSchema }
+
+/** A tool call's arguments as the model sent them: each tool takes some of these (its schema in TOOLS says which). */
+export interface ToolInput {
+  cue?: string; device?: string; from?: string | number; count?: number;     // read_show (from: also simulate, read_file, read_monitor)
+  about?: string | string[];                                                    // read_reference
+  target?: string; say?: string;                                                // show_in_app
+  text?: string; type?: string;                                                 // find_cues
+  path?: string; lines?: number;                                                // list_folder, read_file
+  ops?: Op[]; summary?: string;                                                 // edit_show, propose_changes
+  gos?: number; gap?: number | null;                                            // simulate
+  last?: number;                                                                // read_monitor
+  host?: string; port?: number; probe?: string;                                 // ask_device
+  sketch?: string; board?: string; pin?: number; order?: string; output?: string; ssid?: string; address?: string;
+  look?: { r?: number; g?: number; b?: number; level?: number; effect?: string };   // make_prop_files
+  why?: string;                                                                 // hand_off
+  /** the provider's mark on arguments that were not JSON */
+  __invalid_json?: unknown;
+}
+
+/** What a tool call answers: the tool_result's text, and what it staged or pointed at. */
+export interface ToolResult {
+  content: string;
+  is_error?: boolean;
+  /** the id of the proposal propose_changes staged */
+  proposal?: string;
+  /** the place show_in_app rang */
+  point?: { target: string; say: string; cue: string | null };
+}
+
+/** As much of the cue engine as the tools read: how long each sound is, what is playing, the playhead. */
+export interface EngineView { durations: Map<string, number>; running: { size: number }; playhead: string | null }
+
+type RigItem = ReturnType<typeof rigCheck.items>[number];
+/** A prop that answered Look for props. */
+export interface FoundProp { name: string; kind?: string; fw?: string; host: string; port: number; known?: string | null; moved?: boolean }
+/** One device's state as the running app has it. */
+interface DeviceState { state: string; text?: string; heardAt?: number; ageMs?: number | null; lastIn?: string; reports?: { label: string; value: unknown; unit?: string; warn?: boolean }[] }
+/** What the running app says of the Rig: the check's rows, each device, what the last look found, this computer. */
+export interface RigStatus {
+  items?: RigItem[];
+  summary?: { text?: string; ready: number; total: number; at?: number };
+  devices?: Record<string, DeviceState>;
+  found?: FoundProp[] | null;
+  computer?: {
+    audio?: { device?: string; outputs?: number; devices?: string[] };
+    displays?: string[];
+    midi?: { inputs?: string[]; outputs?: string[] };
+    interfaces?: { name: string; address: string }[];
+  };
+}
+/** A line of the monitor: a message sent (out) or heard (in). */
+type MonitorEntry = Logged;
+/** An address sending here that is not the show's. */
+interface Sender { address: string; port: number; messages?: { address: string; count: number; every?: number | null }[] }
+/** What an "are you there?" heard. */
+interface AskAnswer { ok?: boolean; held?: boolean; answered?: boolean; ms?: number; text?: string; why?: string }
+export type AskTarget = string | { host: string; port: number; probe: string };
+/** The host's rig service (app/main/rig-service.js): the one door to the equipment the tools have. */
+export interface RigService {
+  status(): RigStatus | null;
+  monitor(last: number): MonitorEntry[] | null;
+  senders(): Sender[] | null;
+  locked(): boolean;
+  scan(): FoundProp[] | { error?: string } | Promise<FoundProp[] | { error?: string }>;
+  ask(target: AskTarget): AskAnswer | null | Promise<AskAnswer | null>;
+}
+/** A place show_in_app asks the window to ring, and the window's answer. */
+export interface PointerService {
+  locked(): boolean;
+  point(place: Record<string, unknown>): { ok?: boolean; why?: string; instead?: string } | null | Promise<{ ok?: boolean; why?: string; instead?: string } | null>;
+}
+
+/**
+ * A turn's state, which execute() reads and replaces: the show, the draft and how it was made, what is staged for
+ * the folder, and the services of the running app (absent with a show folder alone).
+ */
+export interface ToolContext {
+  document: ShowDocument;
+  engine?: EngineView | null;
+  draft?: ShowDoc | null;
+  base?: ShowDoc | null;
+  log?: { ops: Op[]; made: string[] }[] | null;
+  files?: Map<string, string> | [string, string][] | null;
+  rig?: RigService | null;
+  ui?: PointerService | null;
+  asks?: { n: number; at: number };
+  found?: FoundProp[];
+  bin?: string;
+}
+
+/** A field of the devices table (core/rig/devices.js). */
+interface DeviceField {
+  key: string; kind: string; help?: string; options?: readonly string[]; labels?: Record<string, string>;
+  required?: boolean; default?: unknown; min?: number; max?: number; when?: string; network?: boolean;
+}
+const isType = (t: string): t is CueType => !!(TYPES as Record<string, unknown>)[t];
 
 /** How many "are you there?" messages one turn may send. */
 const MAX_ASKS = 30;
@@ -57,12 +171,12 @@ const ASKS_FORGET_MS = 5 * 60 * 1000;
 /** More devices than this and the outline names them only: read_show {"device": …} has each in full. */
 const MANY_DEVICES = 12;
 
-const obj =(properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+const obj =(properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema => ({ type: 'object', properties, required, additionalProperties: false });
 /** A show with more cues than this gets the short outline (top-level cues only): the whole of it is too much to send with every question. */
 const LONG_SHOW = 250;
 /** The kinds of field whose value is words someone might search for. */
 const TEXT_KINDS = new Set(['text', 'longtext', 'file', 'patch', 'bus', 'input', 'enum']);
-const TOOLS = [
+const TOOLS: Tool[] = [
   {
     name: 'read_show',
     description: `Read the show as your draft has it. No arguments: the outline (every list and cue with its id, number, type, name and settings; buses, patches, devices, settings, modules). The outline sent with the request is the show before your edits: read again after editing for new ids. A show of more than ${LONG_SHOW} cues gets a short outline (top-level cues only): use \`from\` for a run in full, or find_cues.`,
@@ -167,41 +281,41 @@ const TOOLS = [
 ];
 
 /** A cue's settings on one line, read from the cue-type table: every field it has a value for, the common ones included. */
-function cueBits(c, byId) {
-  const bits = [];
+function cueBits(c: Cue, byId: CueIndex) {
+  const bits: string[] = [];
   for (const f of TYPES[c.type].fields) {
-    if (f.hidden || c[f.key] === undefined) continue;
-    const v = c[f.key];
-    if (f.kind === 'cue') { const t = byId.get(v); bits.push(`${f.key}→${t ? (t.number ? `#${t.number}` : t.id) : 'MISSING'}`); }
+    const v = c[f.key as keyof Cue];
+    if (f.hidden || v === undefined) continue;
+    if (f.kind === 'cue') { const t = byId.get(v as string); bits.push(`${f.key}→${t ? (t.number ? `#${t.number}` : t.id) : 'MISSING'}`); }
     else if (typeof v === 'object') bits.push(`${f.key}:${JSON.stringify(v)}`);
     else if (f.kind === 'seconds') bits.push(`${f.key}=${v}s`);
     else bits.push(`${f.key}=${v}`);
   }
   for (const f of COMMON) {
-    const v = c[f.key];
+    const v = c[f.key as keyof Cue];
     if (TYPES[c.type].fields.some((x) => x.key === f.key)) continue;      // (a type's own field of the same name is said above)
     if (f.key === 'number' || f.key === 'name' || v === undefined || v === '' || v === f.default) continue;
-    if (f.key === 'continue') bits.push(v);
+    if (f.key === 'continue') bits.push(v as string);
     else if (f.key === 'armed') bits.push('DISARMED');
     else if (f.key === 'flagged') bits.push('flagged');
-    else if (f.kind === 'longtext') bits.push(`${f.key}=${JSON.stringify(v.length > 80 ? v.slice(0, 80) + '…' : v)}`);
+    else if (f.kind === 'longtext') { const s = v as string; bits.push(`${f.key}=${JSON.stringify(s.length > 80 ? s.slice(0, 80) + '…' : s)}`); }
     else if (f.kind === 'seconds') bits.push(`${f.key}=${v}s`);
     else bits.push(`${f.key}=${v}`);
   }
   return bits.join(' ');
 }
-const cueRef = (c) => (c.number ? `#${c.number}` : c.id);
-const cueHead = (c, byId, bare = null) => `${bare && bare.has(c.id) ? '' : `[${c.id}] `}${c.number ? `#${c.number} ` : ''}${TYPES[c.type].label}: ${c.name || defaultName(c, byId)}`;
+const cueRef = (c: Cue) => (c.number ? `#${c.number}` : c.id);
+const cueHead = (c: Cue, byId: CueIndex, bare: Set<string> | null = null) => `${bare && bare.has(c.id) ? '' : `[${c.id}] `}${c.number ? `#${c.number} ` : ''}${TYPES[c.type].label}: ${c.name || defaultName(c, byId)}`;
 /** The cues the outline names by number alone: "#12" finds each of them, so its id would be sent for nothing (a long show is mostly ids). */
-function byNumberAlone(doc) {
-  const seen = new Map();
+function byNumberAlone(doc: ShowDoc) {
+  const seen = new Map<string, string | null>();
   show.walk(doc, (c) => { if (c.number) seen.set(String(c.number), seen.has(String(c.number)) ? null : c.id); });
-  return new Set([...seen.values()].filter(Boolean));
+  return new Set([...seen.values()].filter((id): id is string => !!id));
 }
 
 /** Settings as `path=value`, every one there is (so a new setting is in the outline the day it exists). A passcode is never sent: only whether one is set. */
-const secret = (k, prefix) => /pass|token|secret/i.test(k) || (/key/i.test(k) && !/duck\.$/.test(prefix));      // (a duck's key is the bus that ducks: not a secret)
-function flatSettings(node, prefix = '', out = []) {
+const secret = (k: string, prefix: string) => /pass|token|secret/i.test(k) || (/key/i.test(k) && !/duck\.$/.test(prefix));      // (a duck's key is the bus that ducks: not a secret)
+function flatSettings(node: object | null | undefined, prefix = '', out: string[] = []) {
   for (const [k, v] of Object.entries(node || {})) {
     if (v && typeof v === 'object' && !Array.isArray(v)) flatSettings(v, `${prefix}${k}.`, out);
     else out.push(`${prefix}${k}=${secret(k, prefix) ? (v ? '(set)' : '(none)') : JSON.stringify(v)}`);
@@ -209,21 +323,21 @@ function flatSettings(node, prefix = '', out = []) {
   return out;
 }
 /** The same, leaving out what is as a new show has it: most of a show's settings are, and the outline goes with every request. */
-const changedSettings = (node, defaults) => { const was = new Set(flatSettings(defaults)); return flatSettings(node).filter((l) => !was.has(l)); };
-const extras = (o, known) => Object.entries(o).filter(([k, v]) => !known.includes(k) && v !== undefined && v !== '').map(([k, v]) => `, ${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join('');
-function settingsLines(doc) {
+const changedSettings = (node: object, defaults: object) => { const was = new Set(flatSettings(defaults)); return flatSettings(node).filter((l) => !was.has(l)); };
+const extras = (o: object, known: string[]) => Object.entries(o).filter(([k, v]) => !known.includes(k) && v !== undefined && v !== '').map(([k, v]) => `, ${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join('');
+function settingsLines(doc: ShowDoc) {
   const s = doc.settings;
-  const bus = (b) => (b && typeof b === 'object' ? `${b.id} (${b.name}, ${b.db} dB${Number(b.out) > 1 ? `, outputs ${b.out}–${Number(b.out) + 1}` : ''}${extras(b, ['id', 'name', 'db', 'out'])})` : '(not a bus)');
-  const patch = (p) => (p && typeof p === 'object' ? `${p.id} = ${p.name} ${p.host}:${p.port}${extras(p, ['id', 'name', 'host', 'port', 'notes'])}` : '(not a patch)');
+  const bus = (b: Bus) => (b && typeof b === 'object' ? `${b.id} (${b.name}, ${b.db} dB${Number(b.out) > 1 ? `, outputs ${b.out}–${Number(b.out) + 1}` : ''}${extras(b, ['id', 'name', 'db', 'out'])})` : '(not a bus)');
+  const patch = (p: Patch) => (p && typeof p === 'object' ? `${p.id} = ${p.name} ${p.host}:${p.port}${extras(p, ['id', 'name', 'host', 'port', 'notes'])}` : '(not a patch)');
   // (the rig is drawn by rigLines: a device is not a setting to flatten)
-  const { audio = {}, network = {}, rig: _rig, ...rest } = s;
+  const { audio = {} as Partial<ShowDoc['settings']['audio']>, network = {} as Partial<ShowDoc['settings']['network']>, rig: _rig, ...rest } = s;
   const { buses = [], ...audioRest } = audio;
   const { patches = [], ...networkRest } = network;
   return [
     `Buses: ${Array.from(buses, bus).join('; ')}`,
     `Network patches: ${Array.from(patches, patch).join('; ') || 'none'}`,
     `Settings not as in a new show (read_reference "settings" has every path): ${changedSettings({ ...rest, audio: audioRest, network: networkRest }, (({ audio: a = {}, network: n = {}, rig: _r, ...r }) => ({ ...r, audio: { ...a, buses: undefined }, network: { ...n, patches: undefined } }))(show.defaultSettings())).join('; ') || 'none'}`,
-    `Modules: ${Object.entries(doc.modules || {}).map(([id, m]) => { const opts = m ? changedSettings(Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'enabled')), show.defaultModules()[id] || {}) : []; return `${id} ${m && m.enabled ? 'ON' : 'off'}${opts.length ? ` (${opts.join(', ')})` : ''}`; }).join('; ')}`,
+    `Modules: ${Object.entries(doc.modules || {}).map(([id, m]) => { const opts = m ? changedSettings(Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'enabled')), show.defaultModules()[id as keyof ShowDoc['modules']] || {}) : []; return `${id} ${m && m.enabled ? 'ON' : 'off'}${opts.length ? ` (${opts.join(', ')})` : ''}`; }).join('; ')}`,
   ];
 }
 
@@ -232,14 +346,14 @@ function settingsLines(doc) {
  * not made longer by anything else). `Rig now` is there only when the app is running, as the Playhead line is.
  * File names are not here: list_folder has them.
  */
-function rigLines(doc, { rig = null, showDir = null } = {}) {
-  const lines = [];
+function rigLines(doc: ShowDoc, { rig = null, showDir = null }: { rig?: RigService | null; showDir?: string | null } = {}) {
+  const lines: string[] = [];
   const devs = rigDevices.list(doc);
   if (devs.length > MANY_DEVICES) lines.push(`Devices (${devs.length}; read_show {"device": "<id>"} for one in full): ${devs.map((d) => `${d.id} = ${d.name}`).join('; ')}`);
   else devs.forEach((d, i) => lines.push(`${i ? '         ' : 'Devices: '}${rigDevices.line(d)}`));
   if (!devs.length) lines.push('Devices: none');
   const r = doc.settings.rig || {};
-  const bits = [];
+  const bits: string[] = [];
   if (r.script) { const sc = showDir ? scriptFile.read(showDir, r.script) : null; bits.push(`script ${r.script}${sc ? (sc.ok ? ` (${sc.lines} lines, ${sc.marks.length} mark${sc.marks.length === 1 ? '' : 's'})` : ' (NOT FOUND in the folder)') : ''}`); }
   if ((r.checks || []).length) bits.push(`checklist ${r.checks.length} line${r.checks.length === 1 ? '' : 's'}`);
   if (showDir) {
@@ -254,11 +368,11 @@ function rigLines(doc, { rig = null, showDir = null } = {}) {
   return lines;
 }
 /** The folder's files without opening each sound to measure it: for a count, the names are enough. */
-const quickListing = (showDir, doc, opts = {}) => folder.listing(showDir, doc, { ...opts, durations: new Proxy({}, { get: () => 1 }) });
+const quickListing = (showDir: string, doc: ShowDoc, opts: { under?: string; depth?: number } = {}) => folder.listing(showDir, doc, { ...opts, durations: new Proxy({}, { get: () => 1 }) });
 const STATE_ORDER = ['problem', 'look', 'unknown', 'ready'];
-const STATE_WORD = { problem: 'problem', look: 'to look at', unknown: 'cannot be told', ready: 'ready' };
+const STATE_WORD: Record<string, string> = { problem: 'problem', look: 'to look at', unknown: 'cannot be told', ready: 'ready' };
 /** The Rig in one line: the summary, then what is not ready, worst first. '' when there is nothing to say. */
-function rigNow(rig) {
+function rigNow(rig: RigService) {
   let st; try { st = rig.status(); } catch { return ''; }
   if (!st || !st.summary || !st.summary.total) return '';
   const not = (st.items || []).filter((i) => i.state === 'problem' || i.state === 'look').sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state));
@@ -270,17 +384,17 @@ function rigNow(rig) {
  * A long show (more than LONG_SHOW cues) is given short unless `full`: its top-level cues by id, number, type and
  * name, with what is inside a group counted rather than listed. read_show's `from` and find_cues give the rest.
  */
-function outline(doc, { engine = null, full = false, rig = null, showDir = null } = {}) {
+function outline(doc: ShowDoc, { engine = null, full = false, rig = null, showDir = null }: { engine?: EngineView | null; full?: boolean; rig?: RigService | null; showDir?: string | null } = {}) {
   const { byId } = show.index(doc);
   const bare = byNumberAlone(doc);
   const lines = [`Show: ${doc.title}`, ...(doc.notes ? [`Notes on the show: ${JSON.stringify(doc.notes.length > 1500 ? doc.notes.slice(0, 1500) + '…' : doc.notes)}`] : []), ...settingsLines(doc), ...rigLines(doc, { rig, showDir })];
   const short = !full && byId.size > LONG_SHOW;
   if (short) lines.push(`This is a long show (${byId.size} cues), so this outline is the short one: top-level cues only, without their settings. For a run of cues in full: read_show {"from": "#<number>", "count": 40}. For one cue as JSON with its children: read_show {"cue": "#<number>"}. To search: find_cues.`);
-  const under = (c) => { let n = 0; show.walk({ lists: [{ cues: c.children || [] }] }, () => { n++; }); return n; };
-  const go = (cues, depth) => {
+  const under = (c: Cue) => { let n = 0; show.walk({ lists: [{ id: '', name: '', cues: c.children || [] }] }, () => { n++; }); return n; };
+  const go = (cues: Cue[], depth: number) => {
     for (const c of cues) {
       if (short) { lines.push(`  - ${cueHead(c, byId, bare)}${c.children ? ` (${under(c)} inside)` : ''}`); continue; }
-      const dur = engine && c.type === 'audio' && engine.durations.get(c.file) ? ` (${formatSeconds(engine.durations.get(c.file), 1)} long)` : '';
+      const dur = engine && c.type === 'audio' && engine.durations.get(c.file!) ? ` (${formatSeconds(engine.durations.get(c.file!)!, 1)} long)` : '';
       const bits = cueBits(c, byId);
       lines.push(`${'  '.repeat(depth + 1)}- ${cueHead(c, byId, bare)}${dur}${bits ? ' · ' + bits : ''}`);
       if (c.children) go(c.children, depth + 1);
@@ -295,15 +409,15 @@ function outline(doc, { engine = null, full = false, rig = null, showDir = null 
 }
 
 /** A run of cues in full: `count` cues from `cue` on, at its level, with their children. */
-function outlineFrom(doc, cue, count, engine) {
+function outlineFrom(doc: ShowDoc, cue: Cue, count: number, engine: EngineView | null) {
   const { byId } = show.index(doc);
   const bare = byNumberAlone(doc);
-  const loc = show.locate(doc, cue.id);
+  const loc = show.locate(doc, cue.id)!;      // (the cue was found in this show)
   const run = loc.siblings.slice(loc.at, loc.at + count);
   const lines = [`${run.length} cue${run.length === 1 ? '' : 's'} from ${cueRef(cue)} in ${loc.parent ? `group ${cueRef(loc.parent)}` : `list "${loc.list.name}"`} (${loc.siblings.length - loc.at - run.length} more after these):`];
-  const go = (cues, depth) => {
+  const go = (cues: Cue[], depth: number) => {
     for (const c of cues) {
-      const dur = engine && c.type === 'audio' && engine.durations.get(c.file) ? ` (${formatSeconds(engine.durations.get(c.file), 1)} long)` : '';
+      const dur = engine && c.type === 'audio' && engine.durations.get(c.file!) ? ` (${formatSeconds(engine.durations.get(c.file!)!, 1)} long)` : '';
       const bits = cueBits(c, byId);
       lines.push(`${'  '.repeat(depth + 1)}- ${cueHead(c, byId, bare)}${dur}${bits ? ' · ' + bits : ''}`);
       if (c.children) go(c.children, depth + 1);
@@ -322,30 +436,30 @@ function outlineFrom(doc, cue, count, engine) {
 // core/net/devices.js, the show's own defaults), so neither can fall behind them; what moved out of the brief is
 // what a model needs on few asks, and the brief says where to read it.
 
-const when = (f) => (f.when ? `, only when ${Object.entries(f.when).map(([k, v]) => `${k} is ${v.join(' or ')}`).join(' and ')}` : '');
-const dflt = (f) => (f.default !== undefined && f.default !== '' ? `, default ${f.default}` : '');
-const options = (f) => f.options.filter(Boolean).map((o) => (f.labels && f.labels[o] ? `${o} (“${f.labels[o]}”)` : o)).join(' | ');
+const when = (f: Field) => (f.when ? `, only when ${Object.entries(f.when).map(([k, v]) => `${k} is ${v.join(' or ')}`).join(' and ')}` : '');
+const dflt = (f: Field) => (f.default !== undefined && f.default !== '' ? `, default ${f.default}` : '');
+const options = (f: Field | DeviceField) => f.options!.filter(Boolean).map((o) => (f.labels && f.labels[o] ? `${o} (“${f.labels[o]}”)` : o)).join(' | ');
 /** One field in full: its kind, its values (the colours named once, as "colour"), required, default, the mode it belongs to, its help. */
-const fieldLine = (f) => `    ${f.key} (${f.kind}${f.options ? ': ' + (f.options === COLORS ? 'a colour' : options(f)) : ''}${f.targets ? `: a ${f.targets.map((t) => TYPES[t].label).join(', ')} cue` : ''}${f.required ? ', required' : ''}${dflt(f)}${when(f)})${f.help ? ' — ' + f.help : ''}`;
+const fieldLine = (f: Field) => `    ${f.key} (${f.kind}${f.options ? ': ' + (f.options === COLORS ? 'a colour' : options(f)) : ''}${f.targets ? `: a ${f.targets.map((t) => TYPES[t].label).join(', ')} cue` : ''}${f.required ? ', required' : ''}${dflt(f)}${when(f)})${f.help ? ' — ' + f.help : ''}`;
 const COLOUR_LINE = `    (a colour is one of: ${COLORS.join(' ')}; or any colour as #rrggbb)`;
 // (a heading has only some of the fields every cue has, and a place of its own: core/show/sections.js)
-const HEADING = (t) => (TYPES[t].heading ? ` Has only ${TYPES[t].common.join(', ')}. A top-level entry of a list, over the cues after it up to the next section; never inside a group; GO and continues pass over it.` : '');
-const typeHead = (t) => `${t} — ${TYPES[t].label}: ${TYPES[t].summary}${TYPES[t].container ? ' Has "children".' : ''}${HEADING(t)}`;
-function typeFull(t) { return [typeHead(t), ...TYPES[t].fields.filter((f) => !f.hidden).map(fieldLine)].join('\n'); }
+const HEADING = (t: CueType) => (TYPES[t].heading ? ` Has only ${TYPES[t].common!.join(', ')}. A top-level entry of a list, over the cues after it up to the next section; never inside a group; GO and continues pass over it.` : '');
+const typeHead = (t: CueType) => `${t} — ${TYPES[t].label}: ${TYPES[t].summary}${TYPES[t].container ? ' Has "children".' : ''}${HEADING(t)}`;
+function typeFull(t: CueType) { return [typeHead(t), ...TYPES[t].fields.filter((f) => !f.hidden).map(fieldLine)].join('\n'); }
 const commonFull = () => ['Every cue has:', ...COMMON.map(fieldLine), COLOUR_LINE].join('\n');
 
 /** One field in brief: key:kind (text is the kind when none is said), * required, =default unless false, 0, empty
  *  or an enum's first value, an enum as a|b|c, and the mode it belongs to. A field the inspector keeps out of the
  *  way (advanced, or on its own tab) is named only. */
-const SHORT_KIND = { text: '', seconds: 's', db: 'dB' };
-const briefKind = (f) => (f.options === COLORS ? 'colour' : f.options ? f.options.filter(Boolean).join('|') : f.targets ? `cue(${f.targets.join('|')})` : SHORT_KIND[f.kind] ?? f.kind);
-const briefField = (f) => {
+const SHORT_KIND: Record<string, string> = { text: '', seconds: 's', db: 'dB' };
+const briefKind = (f: Field) => (f.options === COLORS ? 'colour' : f.options ? f.options.filter(Boolean).join('|') : f.targets ? `cue(${f.targets.join('|')})` : SHORT_KIND[f.kind] ?? f.kind);
+const briefField = (f: Field) => {
   const k = briefKind(f), d = f.default;
   const shown = d !== undefined && d !== '' && d !== false && d !== 0 && !(f.options && d === f.options[0]);
   return `${f.key}${f.required ? '*' : ''}${k ? ':' + k : ''}${shown ? '=' + d : ''}${f.when ? `(${Object.entries(f.when).map(([w, v]) => `${w} ${v.join('|')}`).join(', ')})` : ''}`;
 };
-const asidesOf = (fields) => fields.filter((f) => !f.hidden && (f.advanced || f.tab));
-function briefFields(fields) {
+const asidesOf = (fields: Field[]) => fields.filter((f) => !f.hidden && (f.advanced || f.tab));
+function briefFields(fields: Field[]) {
   const main = fields.filter((f) => !f.hidden && !f.advanced && !f.tab).map(briefField);
   const aside = asidesOf(fields).map((f) => f.key);
   return `${main.join(' ')}${aside.length ? `${main.length ? '; ' : ''}also ${aside.join(' ')}` : ''}`;
@@ -394,7 +508,7 @@ const RIG_SETTINGS = [
 ];
 
 // the equipment: written from core/rig/devices.js's tables, as the cue types are written from theirs
-const dfield = (f) => `    ${f.key} (${f.kind}${f.options ? ': ' + options(f) : ''}${f.required ? ', required' : ''}${f.default !== undefined && f.default !== '' ? `, default ${f.default}` : ''}${f.min !== undefined ? `, ${f.min} to ${f.max}` : ''}${f.when ? `, only when how is ${f.when}` : ''}${f.network ? ', network devices only' : ''})${f.help ? ' — ' + f.help : ''}`;
+const dfield = (f: DeviceField) => `    ${f.key} (${f.kind}${f.options ? ': ' + options(f) : ''}${f.required ? ', required' : ''}${f.default !== undefined && f.default !== '' ? `, default ${f.default}` : ''}${f.min !== undefined ? `, ${f.min} to ${f.max}` : ''}${f.when ? `, only when how is ${f.when}` : ''}${f.network ? ', network devices only' : ''})${f.help ? ' — ' + f.help : ''}`;
 const PATCH_TO_DEVICE = 'Making a network patch a device (so it has a Rig row, a Try button and an "are you there?"), in one batch: device.add with the patch’s own id, name, host and port (and the model its "device" names), and show.set of settings.network.patches to the list without that patch. Cues that named the patch then name the device, unchanged.';
 function devicesFull() {
   return [
@@ -417,8 +531,9 @@ function devicesFull() {
 }
 const FOG = '  FOG: { "op": "device.add", "device": { "name": "Fog machine", "kind": "other", "host": "10.0.0.60", "port": 9000, "commands": [ { "id": "burst", "label": "Burst", "template": "/fog/burst {secs}", "params": [ { "key": "secs", "label": "Seconds", "kind": "number", "default": 2, "min": 0, "max": 10 } ] }, { "id": "off", "label": "Off", "template": "/fog/off" } ] } }';
 const NETWORK_FADE = 'In the typed `message` of a Network cue (for a patch, or for something a device has no command for), "#v#" stands for a value that fades from fadeFrom to fadeTo over the cue\'s duration. A Network cue’s "patch" may be a patch id or a device id.';
-const modelHead = (d) => `${d.id} — ${d.label} (${d.kind}; usually ${d.protocol} port ${d.port}${d.test ? `; test message ${d.test}${d.answers ? ', which it answers' : ''}` : '; no test message: it cannot be asked'})`;
-const modelFull = (d) => [`${modelHead(d)}${d.notes ? `. ${d.notes}` : ''}`, ...d.commands.map((c) => `    ${c.id} — ${c.label}: ${c.template}${c.fade ? `   (fades ${c.fade})` : ''}`)].join('\n');
+type Model = ReturnType<typeof devices.list>[number];
+const modelHead = (d: Model) => `${d.id} — ${d.label} (${d.kind}; usually ${d.protocol} port ${d.port}${d.test ? `; test message ${d.test}${d.answers ? ', which it answers' : ''}` : '; no test message: it cannot be asked'})`;
+const modelFull = (d: Model) => [`${modelHead(d)}${d.notes ? `. ${d.notes}` : ''}`, ...d.commands.map((c) => `    ${c.id} — ${c.label}: ${c.template}${c.fade ? `   (fades ${c.fade})` : ''}`)].join('\n');
 const MODELS_HEAD = 'MODELS (what a device is started from: "model" in device.add. The id is also what ask_device’s "probe" takes, for a model with a test message.)';
 
 /** The whole reference, every part in full: what read_reference {"about": "all"} answers. */
@@ -453,14 +568,14 @@ function reference() {
 
 /** read_reference's answer: the parts asked for, in full. `about` is one or more names, separated by commas. */
 const TOPICS = ['every', 'settings', 'devices', 'models', 'app', 'keys', 'all'];
-function lookup(about) {
+function lookup(about: string | string[] | undefined) {
   const want = (Array.isArray(about) ? about : String(about || '').split(/[,;]+/)).map((w) => String(w).trim().toLowerCase().replace(/^"|"$/g, '')).filter(Boolean);
   if (!want.length) return { ok: false, text: `Say what to read: a cue type (${TYPE_ORDER.join(', ')}), a model id (${devices.list().map((d) => d.id).join(', ')}), or one of ${TOPICS.join(', ')}.` };
   const byLabel = Object.fromEntries(TYPE_ORDER.map((t) => [TYPES[t].label.toLowerCase(), t]));
   const models = Object.fromEntries(devices.list().map((d) => [d.id, d]));
-  const out = [], unknown = [];
+  const out: string[] = [], unknown: string[] = [];
   for (const w of want) {
-    const t = TYPES[w] ? w : byLabel[w] || byLabel[w.replace(/ cue$/, '')];
+    const t = isType(w) ? w : byLabel[w] || byLabel[w.replace(/ cue$/, '')];
     if (t) out.push(typeFull(t));
     else if (w === 'every' || w === 'common') out.push(commonFull());
     else if (w === 'settings' || w === 'lights' || w === 'light settings') out.push(settingsFull());
@@ -521,18 +636,18 @@ Beyond this: you write no code and this app runs none. If what is asked needs it
 Replies: short and plain; the person is usually mid-rehearsal. No preamble, no restating the request, no Markdown (the reply is shown as typed); a few lines beginning "- " are fine. After a proposal: one or two sentences on what it does and what to listen for, not the operations (the review shows those).`;
 
 /** Every sound file in the show folder, with its length where the engine knows it and the cues that use it. */
-function mediaList(doc, { showDir = null, engine = null } = {}) {
-  const used = new Map();
-  show.walk(doc, (c) => { if (c.type === 'audio' && c.file) { if (!used.has(c.file)) used.set(c.file, []); used.get(c.file).push(c.number ? `#${c.number}` : c.id); } });
+function mediaList(doc: ShowDoc, { showDir = null, engine = null }: { showDir?: string | null; engine?: EngineView | null } = {}) {
+  const used = new Map<string, string[]>();
+  show.walk(doc, (c) => { if (c.type === 'audio' && c.file) { if (!used.has(c.file)) used.set(c.file, []); used.get(c.file)!.push(c.number ? `#${c.number}` : c.id); } });
   const files = new Set(used.keys());
   const dir = showDir ? path.join(showDir, 'media') : null;
-  const walk = (d, rel) => { let names = []; try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const n of names) { if (n.name.startsWith('.')) continue; if (n.isDirectory()) walk(path.join(d, n.name), `${rel}${n.name}/`); else if (/\.(wav|aiff?|mp3|m4a|aac|flac|ogg|opus)$/i.test(n.name)) files.add(`${rel}${n.name}`); } };
+  const walk = (d: string, rel: string) => { let names: fs.Dirent[] = []; try { names = fs.readdirSync(d, { withFileTypes: true }); } catch { return; } for (const n of names) { if (n.name.startsWith('.')) continue; if (n.isDirectory()) walk(path.join(d, n.name), `${rel}${n.name}/`); else if (/\.(wav|aiff?|mp3|m4a|aac|flac|ogg|opus)$/i.test(n.name)) files.add(`${rel}${n.name}`); } };
   if (dir) walk(dir, 'media/');
   if (!files.size) return 'No sound files: the show folder\'s media/ is empty and no cue names a file.';
   return [...files].sort().map((f) => {
     const d = engine && engine.durations.get(f);
     const missing = showDir && !path.isAbsolute(f) && !fs.existsSync(path.join(showDir, f));
-    return `${f}${d ? `  (${formatSeconds(d, 1)})` : ''}${missing ? '  MISSING ON DISK' : ''}${used.has(f) ? `  used by ${used.get(f).join(', ')}` : '  not used by any cue'}`;
+    return `${f}${d ? `  (${formatSeconds(d, 1)})` : ''}${missing ? '  MISSING ON DISK' : ''}${used.has(f) ? `  used by ${used.get(f)!.join(', ')}` : '  not used by any cue'}`;
   }).join('\n');
 }
 
@@ -540,14 +655,14 @@ function mediaList(doc, { showDir = null, engine = null } = {}) {
 // applyOps itself (core/show/ops.js), so the inspector and the command line are held to the same rules and a
 // refusal reads the same wherever it came from. "Applied" always means the thing asked for happened.
 
-const refuse = (message) => { const e = new Error(message); e.name = 'OpError'; throw e; };
+const refuse = (message: string): never => { const e = new Error(message); e.name = 'OpError'; throw e; };
 
 /** What check_show reports, one line each: the show's own problems (show.js) and files that are not on disk. */
-function problemLines(doc, document) {
+function problemLines(doc: ShowDoc, document: ShowDocument) {
   const { byId } = show.index(doc);
-  const label = (id) => { const c = byId.get(id); return c ? `${c.number ? `#${c.number} ` : ''}${c.name || defaultName(c, byId)} [${id}]` : id; };
+  const label = (id: string) => { const c = byId.get(id); return c ? `${c.number ? `#${c.number} ` : ''}${c.name || defaultName(c, byId)} [${id}]` : id; };
   const lines = show.problems(doc).map((p) => `${p.level}: ${label(p.id)}: ${p.why}`);
-  if (document.showDir) show.walk(doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file && !fs.existsSync(path.isAbsolute(c.file) ? c.file : path.join(document.showDir, c.file))) lines.push(`error: ${label(c.id)}: its file is not on disk (${c.file})`); });
+  if (document.showDir) show.walk(doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file && !fs.existsSync(path.isAbsolute(c.file) ? c.file : path.join(document.showDir!, c.file))) lines.push(`error: ${label(c.id)}: its file is not on disk (${c.file})`); });
   // the equipment: a device that would not be kept as it is (an edit never leaves one so; a show from elsewhere may)
   for (const d of rigDevices.list(doc)) for (const why of rigDevices.trouble(d, doc)) lines.push(`error: device ${d.name} [${d.id}]: ${why}`);
   // the script: a mark with no cue is something to look at, not a broken show
@@ -560,7 +675,7 @@ function problemLines(doc, document) {
   return lines;
 }
 /** The problems `doc` has that `before` did not (a cue's id is in each line, so the same problem reads the same). */
-function newProblems(before, doc, document) {
+function newProblems(before: ShowDoc, doc: ShowDoc, document: ShowDocument) {
   const had = new Set(problemLines(before, document));
   return problemLines(doc, document).filter((l) => !had.has(l));
 }
@@ -573,40 +688,40 @@ function newProblems(before, doc, document) {
  * added get new ids; ids used by later batches follow). If they no longer fit, the draft is dropped and the
  * agent is told to look again. Returns what to tell the agent ('' when nothing happened).
  */
-function sync(ctx) {
+function sync(ctx: ToolContext): { note: string; lost?: boolean } {
   const { document } = ctx;
   if (!ctx.draft || !ctx.base || ctx.base === document.doc) return { note: '' };
   if (show.hash(ctx.base) === show.hash(document.doc)) { ctx.base = document.doc; return { note: '' }; }
   const log = ctx.log;
   ctx.draft = null; ctx.base = null; ctx.log = null;
-  const lost = (why) => ({ lost: true, note: `NOTE: the person changed the show while you were working, and ${why}, so your draft was thrown away (nothing of it had reached the show). Read the show as it is now (read_show), then make your edits again.` });
+  const lost = (why: string) => ({ lost: true, note: `NOTE: the person changed the show while you were working, and ${why}, so your draft was thrown away (nothing of it had reached the show). Read the show as it is now (read_show), then make your edits again.` });
   if (!log) return lost('your draft cannot be carried over');
   try {
     let doc = document.doc;
-    const ids = new Map(), done = [];
+    const ids = new Map<string, string>(), done: { ops: Op[]; made: string[] }[] = [];
     for (const step of log) {
       let ops = step.ops;
       if (ids.size) { let text = JSON.stringify(ops); for (const [was, now] of ids) text = text.split(was).join(now); ops = JSON.parse(text); }
       const r = applyOps(doc, ops);
       if (r.made.length !== step.made.length) throw new Error('they add different cues now');
-      step.made.forEach((id, i) => ids.set(id, r.made[i]));
+      step.made.forEach((id: string, i: number) => ids.set(id, r.made[i]));
       doc = r.doc; done.push({ ops, made: r.made });
     }
     ctx.draft = doc; ctx.base = document.doc; ctx.log = done;
     return { note: `NOTE: the person changed the show while you were working. Your draft has been rebuilt on the show as it is now, with every edit you made applied again${ids.size ? `. The cues you added have new ids: ${[...ids].map(([was, now]) => `${was} is now ${now}`).join(', ')}` : ''}. Their change is in your draft too; do not undo it.` };
   } catch (err) {
-    return lost(`your edits no longer fit it (${err.message})`);
+    return lost(`your edits no longer fit it (${(err as Error).message})`);
   }
 }
 
 // ── the rig, the monitor and the folder, as text ─────────────────────
 
-const clock = (ms) => { const d = new Date(ms); const two = (n) => String(n).padStart(2, '0'); return Number.isFinite(d.getTime()) ? `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}` : ''; };
-const ago = (ms) => (ms < 1500 ? 'just now' : ms < 90000 ? `${Math.round(ms / 1000)} s ago` : ms < 5400000 ? `${Math.round(ms / 60000)} min ago` : `${Math.round(ms / 3600000)} h ago`);
-const size = (b) => (b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+const clock = (ms: number) => { const d = new Date(ms); const two = (n: number) => String(n).padStart(2, '0'); return Number.isFinite(d.getTime()) ? `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}` : ''; };
+const ago = (ms: number) => (ms < 1500 ? 'just now' : ms < 90000 ? `${Math.round(ms / 1000)} s ago` : ms < 5400000 ? `${Math.round(ms / 60000)} min ago` : `${Math.round(ms / 3600000)} h ago`);
+const size = (b: number) => (b < 1024 ? `${b} B` : b < 1048576 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
 
 /** An address the assistant may ask: on this computer or a private network, written as numbers (a name could be anywhere). */
-function privateAddress(host) {
+function privateAddress(host: unknown) {
   const h = String(host || '').trim().toLowerCase();
   if (h === 'localhost') return '127.0.0.1';
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
@@ -618,11 +733,11 @@ function privateAddress(host) {
 }
 
 /** The Rig as text: the summary, every row worst first, each device, then this computer. `st` is ctx.rig.status(), or null with no app. */
-function rigText(doc, document, st) {
+function rigText(doc: ShowDoc, document: ShowDocument, st: RigStatus | null) {
   const app = !!st;
-  const items = app ? (st.items || []) : rigCheck.items(doc, rigCheck.folderFacts(document.showDir, doc));
-  const sum = app && st.summary ? st.summary : rigCheck.summary(items);
-  const out = [];
+  const items: RigItem[] = st ? (st.items || []) : rigCheck.items(doc, rigCheck.folderFacts(document.showDir, doc));
+  const sum = st && st.summary ? st.summary : rigCheck.summary(items);
+  const out: string[] = [];
   if (!items.length) out.push('The Rig has nothing to report on this show yet.');
   else {
     out.push(`The rig: ${sum.text || `${sum.ready} of ${sum.total} ready`}${app && sum.at ? ` (checked ${clock(sum.at)})` : ''}`);
@@ -632,20 +747,20 @@ function rigText(doc, document, st) {
   const devs = rigDevices.list(doc);
   if (devs.length) {
     out.push('', 'Devices:');
-    const live = (app && st.devices) || {};
+    const live = (st && st.devices) || {};
     for (const d of devs) {
       const l = live[d.id];
       if (!l) { out.push(`  ${d.id} = ${d.name}: ${app ? 'no state yet' : 'whether it is answering needs the app'}`); continue; }
       const reports = (l.reports || []).map((r) => `${r.label} ${r.value}${r.unit ? ` ${r.unit}` : ''}${r.warn ? ' (LOW: look at it)' : ''}`);
-      out.push(`  ${d.id} = ${d.name}: ${STATE_WORD[l.state] || l.state}${l.text ? `, ${l.text}` : ''}${l.heardAt ? `; last heard ${ago(Number.isFinite(l.ageMs) ? l.ageMs : Date.now() - l.heardAt)}` : (d.alive && d.alive.how !== 'none' ? '; never heard' : '')}${reports.length ? `; ${reports.join(', ')}` : ''}${l.lastIn ? `; it last said: ${l.lastIn}` : ''}`);
+      out.push(`  ${d.id} = ${d.name}: ${STATE_WORD[l.state] || l.state}${l.text ? `, ${l.text}` : ''}${l.heardAt ? `; last heard ${ago(Number.isFinite(l.ageMs) ? l.ageMs! : Date.now() - l.heardAt)}` : (d.alive && d.alive.how !== 'none' ? '; never heard' : '')}${reports.length ? `; ${reports.join(', ')}` : ''}${l.lastIn ? `; it last said: ${l.lastIn}` : ''}`);
     }
   }
-  if (app && st.found && st.found.length) { out.push('', 'The last Look for props found:'); for (const f of st.found) out.push(`  ${foundLine(f)}`); }
-  const c = app && st.computer;
+  if (st && st.found && st.found.length) { out.push('', 'The last Look for props found:'); for (const f of st.found) out.push(`  ${foundLine(f)}`); }
+  const c = st && st.computer;
   if (c) {
     out.push('', 'This computer:');
     const a = c.audio || {};
-    out.push(`  Sound output: ${a.device || 'the system default'}${a.outputs ? ` (${a.outputs} output${a.outputs === 1 ? '' : 's'})` : ''}${(a.devices || []).length ? `. Others: ${a.devices.join('; ')}` : ''}`);
+    out.push(`  Sound output: ${a.device || 'the system default'}${a.outputs ? ` (${a.outputs} output${a.outputs === 1 ? '' : 's'})` : ''}${(a.devices || []).length ? `. Others: ${a.devices!.join('; ')}` : ''}`);
     out.push(`  Displays: ${(c.displays || []).join('; ') || 'none reported'}`);
     const m = c.midi || {};
     out.push(`  MIDI in: ${(m.inputs || []).join('; ') || 'none'} · MIDI out: ${(m.outputs || []).join('; ') || 'none'}`);
@@ -653,23 +768,23 @@ function rigText(doc, document, st) {
   } else if (!app) out.push('', 'This is the show folder alone, with no app running: whether each device is answering, the sound output, the displays and the MIDI ports need the app.');
   return out.join('\n');
 }
-const foundLine = (f) => `${f.name} (${f.kind || 'a prop'}${f.fw ? `, firmware ${f.fw}` : ''}) at ${f.host}:${f.port}: ${f.known ? (f.moved ? `the show’s device ${f.known}, which the show has at another address (correct it: device.set "${f.known}" host "${f.host}")` : `already the show’s device ${f.known}`) : 'not a device of the show yet'}`;
+const foundLine = (f: FoundProp) => `${f.name} (${f.kind || 'a prop'}${f.fw ? `, firmware ${f.fw}` : ''}) at ${f.host}:${f.port}: ${f.known ? (f.moved ? `the show’s device ${f.known}, which the show has at another address (correct it: device.set "${f.known}" host "${f.host}")` : `already the show’s device ${f.known}`) : 'not a device of the show yet'}`;
 
 /** The monitor as text, oldest first, and who else is sending. */
-function monitorText(doc, rig, { last = 40, from = '' } = {}) {
+function monitorText(doc: ShowDoc, rig: RigService, { last = 40, from = '' }: { last?: number; from?: string | number } = {}) {
   const n = Math.max(1, Math.min(200, Math.round(Number(last)) || 40));
   const want = String(from || '').trim().toLowerCase();
   // (asked for more than is wanted when filtering, so that a quiet device's last words are still found)
   let entries = rig.monitor(want ? 400 : n) || [];
   if (want) entries = entries.filter((e) => String(e.patch || '').toLowerCase() === want || String(e.who || '').toLowerCase().includes(want) || (e.from && String(e.from.address || '').toLowerCase() === want));
   entries = entries.slice(-n);
-  const out = [];
+  const out: string[] = [];
   if (!entries.length) out.push(want ? `Nothing to or from ${from} in the monitor.` : 'The monitor is empty: nothing has been sent or heard since the app started (or since it was cleared).');
   for (const e of entries) {
     const why = e.dir === 'out' ? [e.label, e.ok === false ? `NOT SENT: ${e.why || 'it failed'}` : ''].filter(Boolean).join('; ') : [e.learned ? 'learned' : '', e.unused ? 'nothing here acted on it' : ''].filter(Boolean).join('; ');
     out.push(`${clock(e.at)}  ${e.dir === 'out' ? '→' : '←'}  ${e.who || '(nobody)'}  ${e.text}${why ? `  (${why})` : ''}`);
   }
-  let unknown = []; try { unknown = rig.senders() || []; } catch { unknown = []; }
+  let unknown: Sender[] = []; try { unknown = rig.senders() || []; } catch { unknown = []; }
   if (unknown.length) {
     out.push('', 'Unknown senders (not one of the show’s devices or patches):');
     for (const u of unknown.slice(0, 20)) for (const m of (u.messages || []).slice(0, 4)) out.push(`  ${u.address}:${u.port} sent ${m.address} ${m.count} time${m.count === 1 ? '' : 's'}${m.every ? `, about every ${Number(m.every).toFixed(1)} s` : ''}`);
@@ -688,20 +803,24 @@ function monitorText(doc, rig, { last = 40, from = '' } = {}) {
  * (what the last find_devices heard). ask_device and find_devices wait for an answer and so return a PROMISE of
  * the result; everything else answers at once. Every caller awaits.
  */
-const filesOf = (ctx) => { if (!(ctx.files instanceof Map)) ctx.files = new Map(ctx.files || []); return [...ctx.files].map(([p, text]) => ({ path: p, text })); };
+const filesOf = (ctx: ToolContext) => { if (!(ctx.files instanceof Map)) ctx.files = new Map(ctx.files || []); return [...ctx.files].map(([p, text]) => ({ path: p, text })); };
 
-function execute(name, input, ctx) {
+/** The tools that answer at once (the rest wait for a device or the window, and may return a promise). */
+export type AtOnce = 'read_show' | 'read_reference' | 'find_cues' | 'list_media' | 'list_folder' | 'read_file' | 'edit_show' | 'check_show' | 'simulate' | 'rig_status' | 'read_monitor' | 'make_prop_files' | 'hand_off' | 'propose_changes';
+function execute(name: AtOnce, input: ToolInput, ctx: ToolContext): ToolResult;
+function execute(name: string, input: ToolInput, ctx: ToolContext): ToolResult | Promise<ToolResult>;
+function execute(name: string, input: ToolInput, ctx: ToolContext): ToolResult | Promise<ToolResult> {
   const { document, engine = null } = ctx;
   const current = () => ctx.draft || document.doc;
   let note = '';
-  const answer = (r) => (note ? { ...r, content: `${note}\n\n${r.content}` } : r);
+  const answer = (r: ToolResult): ToolResult => (note ? { ...r, content: `${note}\n\n${r.content}` } : r);
   try {
     if (input && input.__invalid_json !== undefined) return { content: 'The arguments of that tool call were not valid JSON. Call it again with a JSON object.', is_error: true };
     input = input || {};
     const synced = sync(ctx);
     note = synced.note;
-    const find = (want) => { const s = String(want).trim(); return s.startsWith('#') ? show.findByNumber(current(), s.slice(1)) : (show.index(current()).byId.get(s) || show.findByNumber(current(), s)); };
-    const edit = (ops) => {
+    const find = (want: unknown): Cue | null => { const s = String(want).trim(); return s.startsWith('#') ? show.findByNumber(current(), s.slice(1)) : (show.index(current()).byId.get(s) || show.findByNumber(current(), s)); };
+    const edit = (ops: Op[]) => {
       const before = current();
       if (!Array.isArray(ops)) refuse('"ops" is a list of operations');
       const r = applyOps(before, ops);
@@ -711,12 +830,12 @@ function execute(name, input, ctx) {
       const changes = diffShows(before, r.doc);
       const n = summary(changes);
       const { byId } = show.index(r.doc);
-      const made = r.made.map((id) => { const c = byId.get(id); return c ? cueHead(c, byId) : null; }).filter(Boolean);
+      const made = r.made.map((id: string) => { const c = byId.get(id); return c ? cueHead(c, byId) : null; }).filter(Boolean);
       const lists = changes.filter((c) => c.kind.startsWith('list-')).length;
       const probs = newProblems(before, r.doc, document);
       const dv = r.devices || { added: [], changed: [], removed: [] };
       const devLine = [dv.added.length && `added ${dv.added.join(', ')}`, dv.changed.length && `changed ${dv.changed.join(', ')}`, dv.removed.length && `removed ${dv.removed.join(', ')}`].filter(Boolean).join('; ');
-      const devText = devLine ? `\nDevices: ${devLine}.${dv.added.length ? ` (${dv.added.map((id) => { const d = rigDevices.find(r.doc, id); return d ? `${id}: ${rigDevices.describe(d)}; commands ${(d.commands || []).map((c) => c.id).join(', ') || 'none'}` : id; }).join(' · ')})` : ''}` : '';
+      const devText = devLine ? `\nDevices: ${devLine}.${dv.added.length ? ` (${dv.added.map((id: string) => { const d = rigDevices.find(r.doc, id); return d ? `${id}: ${rigDevices.describe(d)}; commands ${(d.commands || []).map((c) => c.id).join(', ') || 'none'}` : id; }).join(' · ')})` : ''}` : '';
       return (n.total ? `Applied to the draft: ${n.added} added, ${n.changed} changed, ${n.removed} removed, ${n.moved} moved, ${n.settings} settings${lists ? `, ${lists} lists` : ''}.` : 'Applied, but it changed nothing: the draft already was as these operations leave it.')
         + (made.length ? `\nNew cues:\n  ${made.slice(0, 60).join('\n  ')}${made.length > 60 ? `\n  … and ${made.length - 60} more` : ''}` : '')
         + devText
@@ -744,14 +863,14 @@ function execute(name, input, ctx) {
         return answer({ content: outline(current(), { engine: ctx.draft ? null : engine, rig: ctx.rig || null, showDir: document.showDir }) });
       }
       case 'find_cues': {
-        if (input.type && !TYPES[input.type]) return answer({ content: `There is no cue type “${input.type}”. The types: ${TYPE_ORDER.join(', ')}.`, is_error: true });
+        if (input.type && !isType(input.type)) return answer({ content: `There is no cue type “${input.type}”. The types: ${TYPE_ORDER.join(', ')}.`, is_error: true });
         const words = String(input.text || '').toLowerCase().split(/\s+/).filter(Boolean);
-        const hits = [];
+        const hits: string[] = [];
         const { byId } = show.index(current());
         show.walk(current(), (c, parent, list) => {
           if (input.type && c.type !== input.type) return;
           // everything written on the cue, by the table: a field added there is searchable here
-          const hay = [TYPES[c.type].label, defaultName(c, byId), ...fieldsOf(c.type).filter((f) => TEXT_KINDS.has(f.kind)).map((f) => c[f.key])].filter(Boolean).join(' ').toLowerCase();
+          const hay = [TYPES[c.type].label, defaultName(c, byId), ...fieldsOf(c.type).filter((f) => TEXT_KINDS.has(f.kind)).map((f) => c[f.key as keyof Cue])].filter(Boolean).join(' ').toLowerCase();
           if (!words.every((w) => hay.includes(w))) return;
           const bits = cueBits(c, byId);
           hits.push(`${cueHead(c, byId)}${bits ? ' · ' + bits : ''}  — in ${parent ? `group ${cueRef(parent)}` : `list "${list.name}"`}`);
@@ -770,7 +889,7 @@ function execute(name, input, ctx) {
         return answer({ content: `${lines.join('\n')}${list.length > 300 ? `\n… and ${list.length - 300} more files: list one sub-folder ({"path": …}).` : ''}\n\n${list.length} file${list.length === 1 ? '' : 's'}: ${n.sounds} sound${n.sounds === 1 ? '' : 's'}, ${n.videos} video${n.videos === 1 ? '' : 's'}, ${n.texts} text; ${n.unused} sound or video file${n.unused === 1 ? '' : 's'} no cue uses.` });
       }
       case 'read_file': {
-        const r = folder.readText(document.showDir, input.path, { from: input.from, lines: input.lines });
+        const r = folder.readText(document.showDir, input.path, { from: input.from as number | undefined, lines: input.lines });
         if (!r.ok) return answer({ content: r.why, is_error: true });
         if (!r.to) return answer({ content: `${input.path} has ${r.total} line${r.total === 1 ? '' : 's'}: there is nothing from line ${input.from}.` });
         // in the show's script, each mark is noted beside its line: what it asks for, and whether a cue has that number
@@ -794,7 +913,7 @@ function execute(name, input, ctx) {
         const t = Date.now();
         if (!ctx.asks || t - ctx.asks.at > ASKS_FORGET_MS) ctx.asks = { n: 0, at: t };
         if (ctx.asks.n >= MAX_ASKS) return answer({ content: `That is ${MAX_ASKS} asks already: no more are sent this turn. Tell the person what you found so far.`, is_error: true });
-        let target, who;
+        let target: AskTarget | undefined, who: string | undefined;
         if (name === 'ask_device') {
           if (input.device) {
             const id = String(input.device).trim();
@@ -823,19 +942,19 @@ function execute(name, input, ctx) {
           if (engine && engine.running && engine.running.size) return answer({ content: 'A cue is running: props are looked for only when nothing is playing. Ask again when it has stopped.', is_error: true });
           ctx.asks.n++; ctx.asks.at = t;
           return Promise.resolve(ctx.rig.scan()).then((found) => {
-            if (found && found.error) return answer({ content: String(found.error), is_error: true });
+            if (found && 'error' in found && found.error) return answer({ content: String(found.error), is_error: true });
             ctx.found = Array.isArray(found) ? found : [];
             return answer({ content: ctx.found.length ? `${ctx.found.length} prop${ctx.found.length === 1 ? '' : 's'} answered:\n${ctx.found.map((f) => `  ${foundLine(f)}`).join('\n')}` : 'Nothing answered. Props must be powered, on this network, and running the kit’s firmware.' });
-          }).catch((err) => answer({ content: `Could not look: ${err.message}`, is_error: true }));
+          }).catch((err: Error) => answer({ content: `Could not look: ${err.message}`, is_error: true }));
         }
         ctx.asks.n++; ctx.asks.at = t;
-        return Promise.resolve(ctx.rig.ask(target)).then((r) => {
+        return Promise.resolve(ctx.rig.ask(target!)).then((r) => {
           r = r || {};
           if (r.held) return answer({ content: `Held back: ${r.why || 'OSC out is switched off for rehearsal'}. Nothing was sent.` });
           if (r.answered) return answer({ content: `${who} answered in ${Math.max(0, Math.round(r.ms || 0))} ms${r.text ? `: ${r.text}` : '.'}` });
           if (r.ok === false && r.why) return answer({ content: `${who} could not be asked: ${r.why}`, is_error: true });
           return answer({ content: `No answer from ${who} in 1.5 s.${typeof target === 'string' ? '' : ' Nothing there speaks that model’s protocol on that port, or it is off, or on another network.'}` });
-        }).catch((err) => answer({ content: `Could not ask: ${err.message}`, is_error: true }));
+        }).catch((err: Error) => answer({ content: `Could not ask: ${err.message}`, is_error: true }));
       }
       case 'make_prop_files': {
         if (!document.showDir) return answer({ content: showFiles.NO_FOLDER, is_error: true });
@@ -846,21 +965,21 @@ function execute(name, input, ctx) {
         const made = kit.files(d, options);
         const o = kit.settle(d, options);
         // (the person's secrets.h, once it is there, is theirs: it is left out here, and files.js would leave it out too)
-        const kept = made.filter((f) => /\/secrets\.h$/.test(f.path) && fs.existsSync(path.join(document.showDir, ...f.path.split('/'))));
+        const kept = made.filter((f) => /\/secrets\.h$/.test(f.path) && fs.existsSync(path.join(document.showDir!, ...f.path.split('/'))));
         const staged = made.filter((f) => !kept.includes(f));
         const r = showFiles.check(document.showDir, [...filesOf(ctx).filter((f) => !staged.some((x) => x.path === f.path)), ...staged]);
         if (!r.ok) return answer({ content: `Refused, nothing staged. ${r.why}`, is_error: true });
-        for (const f of staged) ctx.files.set(f.path, f.text);
-        const board = kit.BOARDS[o.board];
+        for (const f of staged) (ctx.files as Map<string, string>).set(f.path, f.text);
+        const board = kit.BOARDS[o.board as keyof typeof kit.BOARDS];
         return answer({ content: `Staged ${staged.length} files for ${d.name} (${o.sketch === 'light' ? `a light: ${o.count} LEDs, ${o.order}, data on GPIO ${o.pin}` : `a switch: a ${o.output} on GPIO ${o.pin}`}; board ${board.label}${o.address ? `; fixed address ${o.address}` : ''}):\n${staged.map((f) => `  ${f.path}`).join('\n')}${kept.length ? `\n(${kept.map((f) => f.path).join(', ')} is already there and is left as it is: it holds their Wi-Fi password.)` : ''}`
           + `\nThey are written into the show folder when the person accepts: call propose_changes now.\nThen the person: types the Wi-Fi name and password into props/${d.id}/secrets.h, opens props/${d.id}/${d.id}.ino in the Arduino IDE, chooses the board “${board.name}”, uploads, and presses Look for props on the Rig page (the steps are in props/${d.id}/README.md).\n${kit.STATUS}` });
       }
       case 'hand_off': {
         if (!document.showDir) return answer({ content: showFiles.NO_FOLDER, is_error: true });
-        const made = require('./guide').agentGuide(current(), { showDir: document.showDir, bin: ctx.bin || path.join(__dirname, '../../bin') });
+        const made = (require('./guide') as typeof import('./guide')).agentGuide(current(), { showDir: document.showDir, bin: ctx.bin || path.join(__dirname, '../../bin') });
         const r = showFiles.check(document.showDir, [...filesOf(ctx).filter((f) => !made.some((x) => x.path === f.path)), ...made]);
         if (!r.ok) return answer({ content: `Refused, nothing staged. ${r.why}`, is_error: true });
-        for (const f of made) ctx.files.set(f.path, f.text);
+        for (const f of made) (ctx.files as Map<string, string>).set(f.path, f.text);
         return answer({ content: `Staged the guide for a coding agent: AGENTS.md (what this show is, its rules, the tools and command lines, every device, the prop protocol) and CLAUDE.md (which points at it). They are written when the person accepts: call propose_changes now.\nThen tell the person, in a terminal:\n  cd ${JSON.stringify(document.showDir)}\n  claude        (or: codex)\nand to say there what they want. The agent reads AGENTS.md by itself.` });
       }
       case 'show_in_app': {
@@ -877,7 +996,7 @@ function execute(name, input, ctx) {
           done = done || {};
           if (!done.ok) return answer({ content: `Could not show ${p.label}: ${done.why || 'the window did not answer'}. Say where it is in words.`, is_error: true });
           return { ...answer({ content: `Shown: ${p.label}${done.instead ? ` (${done.instead})` : ''}, ringed for a few seconds${say ? ` with “${say}”` : ''}. The person can show it again from your reply.` }), point: { target: p.target, say, cue: point.cue } };
-        }).catch((err) => answer({ content: `Could not show it: ${err.message}`, is_error: true }));
+        }).catch((err: Error) => answer({ content: `Could not show it: ${err.message}`, is_error: true }));
       }
       case 'edit_show': {
         if (!Array.isArray(input.ops) || !input.ops.length) return answer({ content: 'ops: a non-empty list of operations is required.', is_error: true });
@@ -888,13 +1007,13 @@ function execute(name, input, ctx) {
         return answer({ content: lines.length ? lines.join('\n') : 'Nothing wrong: every target, file, patch and number checks out.' });
       }
       case 'simulate': {
-        let from = null;
+        let from: string | null = null;
         if (input.from != null && String(input.from).trim() !== '') {
           const cue = find(input.from);
           if (!cue) return answer({ content: `No cue ${input.from}.`, is_error: true });
           const { byId, parentOf } = show.index(current());
           let top = cue;
-          while (parentOf.get(top.id)) top = byId.get(parentOf.get(top.id));
+          while (parentOf.get(top.id)) top = byId.get(parentOf.get(top.id)!)!;
           if (top !== cue) return answer({ content: `${cueRef(cue)} is inside the group ${cueRef(top)}. A GO fires a top-level cue (a group fires its children), so simulate from "${cueRef(top)}".`, is_error: true });
           from = cue.id;
         }
@@ -912,25 +1031,26 @@ function execute(name, input, ctx) {
         const draft = ctx.draft || document.doc;
         if (!files.length && !diffShows(document.doc, draft).length) return answer({ content: 'The draft is the same as the show: nothing to propose.', is_error: true });
         const probs = newProblems(document.doc, draft, document);
-        let p;
+        let p: ReturnType<ShowDocument['proposeDocument']>;
         // (a file that may not be written is said as a refusal, and nothing is staged)
-        try { p = document.proposeDocument(draft, { summary: String(input.summary || '').trim().slice(0, 200), author: 'assistant', files: files.length ? files : null }); } catch (err) { return answer({ content: `Refused, nothing handed over. ${err.message}`, is_error: true }); }
+        try { p = document.proposeDocument(draft, { summary: String(input.summary || '').trim().slice(0, 200), author: 'assistant', files: files.length ? files : null }); } catch (err) { return answer({ content: `Refused, nothing handed over. ${(err as Error).message}`, is_error: true }); }
         const lists = p.changes.filter((c) => c.kind.startsWith('list-')).length;
-        const devs = p.changes.filter((c) => c.kind.startsWith('device-'));
+        const devs = p.changes.filter((c): c is Extract<Change, { kind: `device-${string}` }> => c.kind.startsWith('device-'));
         const carried = p.files || [];
         return answer({ content: `Handed over for review as ${p.id}: ${p.counts.added} added, ${p.counts.changed} changed, ${p.counts.removed} removed, ${p.counts.moved} moved, ${p.counts.settings} settings${lists ? `, ${lists} lists` : ''}${devs.length ? `, ${devs.length} device${devs.length === 1 ? '' : 's'} (${devs.map((c) => `${c.kind.slice(7)} ${c.label || c.id}`).join(', ')})` : ''}${carried.length ? `, ${carried.length} file${carried.length === 1 ? '' : 's'} for the show folder (${carried.map((f) => f.path).join(', ')}), written when they accept` : ''}. The person now sees the difference and decides.`
           + (probs.length ? `\nIt has ${probs.length} problem${probs.length === 1 ? '' : 's'} the show did not have. Tell the person, or fix the draft and propose again:\n  ${probs.slice(0, 20).join('\n  ')}` : ''), proposal: p.id });
       }
       default: return { content: `No tool named ${name}. The tools: ${TOOLS.map((t) => t.name).join(', ')}.`, is_error: true };
     }
-  } catch (err) {
+  } catch (e) {
+    const err = e as Error;
     const hint = /no cue was added with ref/.test(err.message) ? ' ("@ref" names work only inside the batch that added the cue. Use the id edit_show gave back for it, or its "#number".)' : '';
     return answer({ content: err.name === 'OpError' ? `Refused, nothing applied. ${err.message}${hint}` : `Failed: ${err.message}`, is_error: true });
   }
 }
 
 /** What a tool call was, in a few words, for the person watching the agent work. */
-function describeCall(name, input = {}) {
+function describeCall(name: string, input: ToolInput = {}) {
   switch (name) {
     case 'read_show': return input.device ? `reading the device ${input.device}` : input.cue ? `reading cue ${input.cue}` : input.from ? `reading from cue ${input.from}` : 'reading the show';
     case 'list_folder': return input.path ? `looking in ${input.path}/` : 'looking at the folder';

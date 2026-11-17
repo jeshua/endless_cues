@@ -9,9 +9,13 @@
  * These are obeyed whether or not the OSC control module is on, and need no passcode (as in QLab 5).
  */
 import * as osc from './osc';
+import type { ShowCommands } from '../show/types';
+
+/** A show command: its label, and the host `cmd` it sends. */
+export interface ShowCommand { label: string; cmd: { op: string; step?: number } }
 
 // what each command is to the host (app/main/host.js `cmd`)
-const COMMANDS = {
+const COMMANDS: Record<string, ShowCommand> = {
   go: { label: 'GO', cmd: { op: 'go' } },
   panic: { label: 'Panic', cmd: { op: 'panic' } },
   pause: { label: 'Pause all', cmd: { op: 'pause' } },
@@ -21,7 +25,7 @@ const COMMANDS = {
 };
 
 /** "/address 1 two" as a thing to match: { address, args } ('' for args: any), or null if it is not an address. */
-function parse(text) {
+function parse(text: unknown): { address: string; args: string } | null {
   const t = String(text || '').trim();
   if (!t.startsWith('/')) return null;
   const [address, ...rest] = t.split(/\s+/);
@@ -29,9 +33,9 @@ function parse(text) {
 }
 
 /** The commands a message is set to: [{ what, cmd }] (none: []). */
-function commandsFor(commands, msg) {
+function commandsFor(commands: Partial<ShowCommands> | null | undefined, msg: { address: string; args?: unknown[] }): { what: string; cmd: ShowCommand['cmd'] }[] {
   const said = (msg.args || []).map(String).join(' ');
-  const out = [];
+  const out: { what: string; cmd: ShowCommand['cmd'] }[] = [];
   for (const [what, text] of Object.entries(commands || {})) {
     const want = COMMANDS[what] && parse(text);
     if (!want || !osc.matches(want.address, msg.address) || (want.args && want.args !== said)) continue;

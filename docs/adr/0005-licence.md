@@ -21,5 +21,5 @@ Vendored code (`app/renderer/vendor/preact-htm.js`: Preact, MIT; htm, Apache-2.0
 
 ## Before going public, regardless of licence
 
-- Check the history: this repository has never contained the private snapshot it was ported from (`reference/` is gitignored), and the ported files' comments were rewritten. A final read of `core/engine/cue-engine.js` and `app/audio/audio.html` for anything show-specific is still worth doing.
+- Check the history: this repository has never contained the private snapshot it was ported from (`reference/` is gitignored), and the ported files' comments were rewritten. A final read of `core/engine/cue-engine.ts` and `app/audio/audio.html` for anything show-specific is still worth doing.
 - Have the contributor agreement in `CONTRIBUTING.md` looked at by someone qualified before accepting outside code; it is plain language, not a lawyer's text.

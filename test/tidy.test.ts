@@ -9,7 +9,7 @@ import { COLORS, PALETTE, cleanColor, COMMON, coerce, TYPES, TYPE_ORDER } from '
 import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 
-const colorField = COMMON.find((f) => f.key === 'color');
+const colorField = COMMON.find((f) => f.key === 'color')!;
 
 test('the inspector offers six colours, each a name the show already knew', () => {
   assert.deepEqual(PALETTE, ['none', 'red', 'orange', 'yellow', 'green', 'blue']);
@@ -35,7 +35,7 @@ test('a cue takes a chosen colour through an edit, and keeps it through a save a
   const b = made.refs.b;
   const after = applyOps(made.doc, [{ op: 'cue.set', id: b, props: { color: '#12AB9C', color2: '#000000' } }]).doc;
   const again = show.normalise(JSON.parse(show.stringify(after))).doc;
-  const cue = again.lists[0].cues.find((c) => c.id === b);
+  const cue = again.lists[0].cues.find((c) => c.id === b)!;
   assert.equal(cue.color, '#12ab9c');
   assert.equal(cue.color2, '#000000');
   assert.equal(again.lists[0].cues[0].color, 'purple');
@@ -55,10 +55,10 @@ test('a colour is drawn as its theme token by name, as chosen by value, and neve
 });
 
 test('a column nothing in the list fills is left out, and comes back for one cue with a value (inside a group too)', () => {
-  const dur = (c) => (c.type === 'fade' ? '0:05.0' : '');
-  const plain = [{ type: 'memo', name: 'A' }, { type: 'memo', name: 'B', preWait: 0 }];
+  const dur = (c: Tidy.CueLike) => (c.type === 'fade' ? '0:05.0' : '');
+  const plain: Tidy.CueLike[] = [{ type: 'memo', name: 'A' }, { type: 'memo', name: 'B', preWait: 0 }];
   assert.deepEqual(Tidy.usedColumns(plain, dur), { target: false, preWait: false, duration: false, postWait: false });
-  const nested = [{ type: 'group', children: [{ type: 'memo', postWait: 2 }, { type: 'fade', target: 'x' }] }, { type: 'section', name: 'Act', preWait: 4 }];
+  const nested: Tidy.CueLike[] = [{ type: 'group', children: [{ type: 'memo', postWait: 2 }, { type: 'fade', target: 'x' }] }, { type: 'section', name: 'Act', preWait: 4 }];
   assert.deepEqual(Tidy.usedColumns(nested, dur), { target: true, preWait: false, duration: true, postWait: true });
   // a sound shows its file there only once it has a name of its own (otherwise the name is the file), or a bus
   assert.equal(Tidy.usedColumns([{ type: 'audio', file: 'a.wav' }]).target, false);

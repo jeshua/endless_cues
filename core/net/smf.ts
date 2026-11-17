@@ -11,7 +11,10 @@
  * signatures. Written from the Standard MIDI Files 1.0 specification.
  */
 
-function parse(buffer) {
+/** One message of a file, at the second it falls on. */
+export interface MidiFileEvent { at: number; bytes: number[] }
+
+function parse(buffer: Buffer | ArrayLike<number> | null | undefined) {
   const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
   if (b.length < 14 || b.toString('latin1', 0, 4) !== 'MThd') throw new Error('not a MIDI file (it does not start with MThd)');
   const headLen = b.readUInt32BE(4), format = b.readUInt16BE(8), ntrks = b.readUInt16BE(10), division = b.readUInt16BE(12);
@@ -20,7 +23,7 @@ function parse(buffer) {
   const smpte = division & 0x8000 ? { fps: 256 - (division >> 8), ticks: division & 0xff } : null;
   const ppq = smpte ? 0 : division;
   if (!smpte && !ppq) throw new Error('a MIDI file with no time division');
-  const raw = [], tempoMap = [];
+  const raw: { tick: number; bytes: number[]; order: number }[] = [], tempoMap: { tick: number; us: number; order: number }[] = [];
   let at = 8 + headLen, order = 0, name = '', lastTick = 0, tracks = 0;
   for (let t = 0; t < ntrks && at + 8 <= b.length; t++) {
     const id = b.toString('latin1', at, at + 4), len = b.readUInt32BE(at + 4), end = Math.min(b.length, at + 8 + len);
@@ -70,15 +73,15 @@ function parse(buffer) {
     if (t.tick === m.tick) m.us = t.us; else marks.push({ tick: t.tick, at: here, us: t.us });
   }
   let k = 0;
-  const secondsAt = (tick) => {
+  const secondsAt = (tick: number) => {
     if (smpte) return tick / ((smpte.fps === 29 ? 30000 / 1001 : smpte.fps) * smpte.ticks);
     if (marks[k].tick > tick) k = 0;
     while (k + 1 < marks.length && marks[k + 1].tick <= tick) k++;
     return marks[k].at + ((tick - marks[k].tick) * marks[k].us) / (ppq * 1e6);
   };
   raw.sort((x, y) => x.tick - y.tick || x.order - y.order);
-  const events = raw.map((e) => ({ at: secondsAt(e.tick), bytes: e.bytes }));
-  const r1 = (n) => Math.round(n * 10) / 10;
+  const events: MidiFileEvent[] = raw.map((e) => ({ at: secondsAt(e.tick), bytes: e.bytes }));
+  const r1 = (n: number) => Math.round(n * 10) / 10;
   return {
     format, tracks, ...(smpte ? { smpte } : { ppq }), events, name,
     seconds: secondsAt(lastTick),
@@ -93,13 +96,20 @@ function parse(buffer) {
  * can end them when the cue is stopped or paused part way; `locate(t)`, for a cue started or resumed part way in,
  * is the programs, controllers and bends the file had set by then, so the instrument is as it would have been.
  */
+export type MidiFile = ReturnType<typeof parse>;
+
 class MidiFileStream {
-  constructor(file, { rate = 1 } = {}) {
+  events: MidiFileEvent[];
+  rate: number;
+  total: number;
+  i: number;
+  on: Set<number>;
+  constructor(file: { events: MidiFileEvent[]; seconds: number }, { rate = 1 }: { rate?: unknown } = {}) {
     this.events = file.events; this.rate = Number(rate) > 0 ? Number(rate) : 1;
     this.total = file.seconds / this.rate; this.i = 0; this.on = new Set();
   }
-  between(t0, t1) {
-    const ev = this.events, a = t0 * this.rate, b = t1 * this.rate, out = [];
+  between(t0: number, t1: number): MidiFileEvent[] {
+    const ev = this.events, a = t0 * this.rate, b = t1 * this.rate, out: MidiFileEvent[] = [];
     if (this.i > 0 && ev[this.i - 1].at >= a) this.i = 0;      // asked for an earlier stretch than the last: look again
     while (this.i < ev.length && ev[this.i].at < a - 1e-9) this.i++;
     for (; this.i < ev.length && ev[this.i].at < b - 1e-9; this.i++) {
@@ -109,8 +119,8 @@ class MidiFileStream {
     }
     return out;
   }
-  locate(t) {
-    const last = new Map();
+  locate(t: number): number[][] {
+    const last = new Map<number, number[]>();
     if (!(t > 0)) return [];
     for (const e of this.events) {
       if (e.at >= t * this.rate - 1e-9) break;

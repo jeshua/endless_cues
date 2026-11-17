@@ -1,6 +1,6 @@
 # 06 · Control surfaces
 
-This document covers everything that can drive the show other than a person clicking in the window: the host's command door and pushed state (`app/main/host.js`), the bridge the window uses (`app/main/preload.js`, and the `ec-app` handler in `app/main/main.js`), the keyboard (`app/renderer/app.js`), and the three modules that ship: OSC control (`app/main/modules/osc-control.js`), the web remote (`app/main/modules/web-remote.js` and `remote.html`) and the lighting desk (`app/main/modules/lighting-desk.js`). It ends with the module interface and how to write one. OSC encoding and decoding is `core/net/osc.js`.
+This document covers everything that can drive the show other than a person clicking in the window: the host's command door and pushed state (`app/main/host.ts`), the bridge the window uses (`app/main/preload.ts`, and the `ec-app` handler in `app/main/main.ts`), the keyboard (`app/renderer/app.ts`), and the three modules that ship: OSC control (`app/main/modules/osc-control.ts`), the web remote (`app/main/modules/web-remote.ts` and `remote.html`) and the lighting desk (`app/main/modules/lighting-desk.ts`). It ends with the module interface and how to write one. OSC encoding and decoding is `core/net/osc.ts`.
 
 ## 1. One door
 
@@ -45,15 +45,15 @@ A `pause`, `resume`, `toggle`, `stop` or `fire` that names a cue (`id` or `numbe
 
 | Op | Arguments | Does | Result |
 |---|---|---|---|
-| `edit` | `ops: [...]`, `label?` | One undoable edit: the ops in `core/show/ops.js`, applied whole or not at all, written to `show.json` at once. | `{ made: [ids], refs, changed: true }`, or `{ made, changed: false }`, or `{ error }` |
+| `edit` | `ops: [...]`, `label?` | One undoable edit: the ops in `core/show/ops.ts`, applied whole or not at all, written to `show.json` at once. | `{ made: [ids], refs, changed: true }`, or `{ made, changed: false }`, or `{ error }` |
 | `undo`, `redo` | — | | `{ error: 'nothing to undo' }` / `'nothing to redo'` |
 | `import` | `paths: [...]`, `after?`, `parent?`, `copy?` (true) | One Audio cue per sound file (wav, aif/aiff, mp3, m4a, aac, flac, ogg, opus). Files outside the show folder are copied into `media/` unless `copy` is false or the show is untitled. Lands after `after`, else in `parent`, else at the end of the current list. | As `edit`; `{ error }` if no path is a sound file |
-| `clip-copy` | `ids: [...]`, `cut?` | Takes those cues (the topmost of them, in list order) onto the cue clipboard. The clipboard is the host's, not the show's and not the window's: it is still there when another show is opened (`core/show/clipboard.js`). | `{ count, cut }` |
+| `clip-copy` | `ids: [...]`, `cut?` | Takes those cues (the topmost of them, in list order) onto the cue clipboard. The clipboard is the host's, not the show's and not the window's: it is still there when another show is opened (`core/show/clipboard.ts`). | `{ count, cut }` |
 | `clip-info` | — | What is on the clipboard. | `{ clip: { count, cut, same, cue, properties: [{ key, label, set }] } \| null }` |
 | `clip-paste` | `after?` \| `before?` \| `parent?` | One edit. Cut and pasted into the show it came from: a move. Otherwise the cues are made again: targets inside the clip follow the copy, a target that is not in this show is dropped, a number in use is not pasted, and in another show each sound is found from the first show's folder and copied into this one's `media/`. With no place named: the end of the list shown. | `{ made: [ids], moved, count, fromAnotherShow }` |
 | `clip-props` | `ids: [...]`, `keys: [...]` | Paste Cue Properties: those fields of the first cue on the clipboard, onto each cue named that has them. One edit. | `{ count }` |
 | `retarget` | `id`, `path` | An Audio cue plays this sound file from now on (copied into `media/` as `import` does). | as `edit` |
-| `template` | `id` \| `type`, `clear?` | New cues of that cue's type start with its settings (`settings.templates.<type>`, `core/show/templates.js`); `clear` removes the type's template. | as `edit` |
+| `template` | `id` \| `type`, `clear?` | New cues of that cue's type start with its settings (`settings.templates.<type>`, `core/show/templates.ts`); `clear` removes the type's template. | as `edit` |
 
 The window adds to the operations of `edit`: `cue.unnumber { ids }`, and `cue.renumber` passes over numbers held by cues it is not renumbering. A cue added from the toolbar or by a dropped sound starts from its type's template; a paste, a duplicate and the assistant's cues do not.
 
@@ -115,7 +115,7 @@ The host pushes state to every registered view on the `ec-state` channel: after 
 
 ## 4. The window's bridge
 
-`app/main/preload.js` exposes `window.ec` and nothing else:
+`app/main/preload.ts` exposes `window.ec` and nothing else:
 
 | Call | Does |
 |---|---|
@@ -125,11 +125,11 @@ The host pushes state to every registered view on the `ec-state` channel: after 
 | `ec.onState(fn)`, `ec.onMenu(fn)` | Pushed state; menu actions (`settings`, `assistant`, `versions`, `toggle-mode`, `save-version`, `save-version-named`). |
 | `ec.pathFor(file)` | The disk path of a dropped `File`. |
 
-`ec.app` ops (`main.js`): `open` (folder dialog), `open-path { path }`, `new`, `demo`, `save-as` (dialog), `import { after? }` (file dialog, then the host's `import`), `pick-sound` (→ `{ file }`, adopted into the show's `media/`), `recent` (→ `{ recent: [{ path, name }] }`), `reveal`, `log` (→ `{ lines }`, the last 300), `theme { theme }` (one of `lab`, `ocean`, `graphite`; saved per computer), `assistant-config { config }`. These are not reachable from modules.
+`ec.app` ops (`main.ts`): `open` (folder dialog), `open-path { path }`, `new`, `demo`, `save-as` (dialog), `import { after? }` (file dialog, then the host's `import`), `pick-sound` (→ `{ file }`, adopted into the show's `media/`), `recent` (→ `{ recent: [{ path, name }] }`), `reveal`, `log` (→ `{ lines }`, the last 300), `theme { theme }` (one of `lab`, `ocean`, `graphite`; saved per computer), `assistant-config { config }`. These are not reachable from modules.
 
 ## 5. Keyboard
 
-One `keydown` listener on `window`, in the capture phase, so a focused button or slider never takes a key for itself. "Typing" means the focus is in a text input, a textarea or a contenteditable (`typingIn` in `app/renderer/lib.js`; checkboxes, radios, ranges and buttons do not count). ⌘ is Ctrl on Windows and Linux.
+One `keydown` listener on `window`, in the capture phase, so a focused button or slider never takes a key for itself. "Typing" means the focus is in a text input, a textarea or a contenteditable (`typingIn` in `app/renderer/lib.ts`; checkboxes, radios, ranges and buttons do not count). ⌘ is Ctrl on Windows and Linux.
 
 | Key | Action | Edit mode only | Notes |
 |---|---|---|---|
@@ -151,7 +151,7 @@ One `keydown` listener on `window`, in the capture phase, so a focused button or
 | ⌘1 … ⌘0 | Add a cue of the 1st … 10th type in toolbar order (Group, Audio, Fade, Stop, Start, Pause, Devamp, Load, GoTo, Arm) | yes | ⌘2 adds an empty Audio cue; the toolbar's Audio button opens the file dialog instead. |
 | ⌘, | Settings | | Works while typing. Also a menu item. |
 
-Everything but Esc and ⌘, is ignored while typing or while Settings is open. Menu accelerators (`main.js`): ⌘N new show, ⌘O open, ⌘S save version, ⇧⌘S open the Versions drawer, ⇧⌘O add sounds, ⇧⌘M Show mode, ⌘L the Live view, ⌘K assistant, ⇧⌘V versions, ⌘T Load to Time, ⌘J Jump to cue, ⌘R Renumber. Also ⌥⌘V Paste Cue Properties, ⌘E go to the selected cue's target, ⇧⌘F the flagged cues and problems.
+Everything but Esc and ⌘, is ignored while typing or while Settings is open. Menu accelerators (`main.ts`): ⌘N new show, ⌘O open, ⌘S save version, ⇧⌘S open the Versions drawer, ⇧⌘O add sounds, ⇧⌘M Show mode, ⌘L the Live view, ⌘K assistant, ⇧⌘V versions, ⌘T Load to Time, ⌘J Jump to cue, ⌘R Renumber. Also ⌥⌘V Paste Cue Properties, ⌘E go to the selected cue's target, ⇧⌘F the flagged cues and problems.
 
 ## 6. Module: OSC control
 
@@ -192,7 +192,7 @@ A leading `/workspace/<id>` is stripped and ignored (there is one show). An addr
 
 `/playbackPosition…` is accepted wherever `/playhead…` is. **There is no selection in the host: "selected" means the cue standing by (the playhead)**, in `/select…`, `/cue/selected/…`, `/delete/selected` and `/selectedCues`. `none`, `active` and `selected` are never taken for a cue number.
 
-**Ops the host may not have yet.** Three addresses need a host op that is being added elsewhere: `load { id, secs }` (load a cue that is not standing by), `reset { id }` (one cue) and `playhead { id: null }`. The module asks `host.supports('load-id' | 'reset-id' | 'playhead-none')` before sending any of them, and answers with an error saying so when the host has not; it never sends the old host an op it would misread (`reset` with an id it ignores would reset the whole show). The names are listed in `SUPPORTS` beside `api` in `host.js`: add a name there when its op exists.
+**Ops the host may not have yet.** Three addresses need a host op that is being added elsewhere: `load { id, secs }` (load a cue that is not standing by), `reset { id }` (one cue) and `playhead { id: null }`. The module asks `host.supports('load-id' | 'reset-id' | 'playhead-none')` before sending any of them, and answers with an error saying so when the host has not; it never sends the old host an op it would misread (`reset` with an id it ignores would reset the whole show). The names are listed in `SUPPORTS` beside `api` in `host.ts`: add a name there when its op exists.
 
 ### 6.2 One cue
 
@@ -229,7 +229,7 @@ Properties. With no argument it is a read (of exactly one cue: an address matchi
 | `continueMode` | 0 none, 1 auto-continue, 2 auto-follow | 0, 1, 2; `/+` and `/-` roll over |
 | `armed` | whether the engine has it armed | boolean, `toggle`, `/toggle`. Written to the cue; if the engine still disagrees (the operator armed or disarmed it live), an `arm { id }` follows. |
 | `flagged` | boolean | boolean, `toggle`, `/toggle` |
-| `colorName` | the cue's `color` (`none` when unset) | one of the show's colours (`core/show/cue-types.js`) |
+| `colorName` | the cue's `color` (`none` when unset) | one of the show's colours (`core/show/cue-types.ts`) |
 | `uniqueID` | the cue's id | |
 | `type` | the type's label (`Audio`, `Group`, `GoTo`, `MIDI`…); a list is `Cue List` | |
 | `displayName`, `listName` | the name the list shows (the default name when it has none) | |
@@ -294,7 +294,7 @@ They are worked out after each push of the host's state by comparing with what w
 
 ### 6.5 Show control broadcast (`/listen`)
 
-QLab's own form of "what is the show doing", beside this app's Show feedback module (which sends to a patch, in its own words). The wording is in `core/net/qlab-events.js`; it is written from QLab 5's manual and has not been compared with QLab on a network.
+QLab's own form of "what is the show doing", beside this app's Show feedback module (which sends to a patch, in its own words). The wording is in `core/net/qlab-events.ts`; it is written from QLab 5's manual and has not been compared with QLab on a network.
 
 | Message | Does |
 |---|---|
@@ -353,7 +353,7 @@ None of the three has been run. Each script below is what to set, what to press 
 4. If the list shows: tap GO (**expect** GO); swipe a cue to move the playhead; open a cue and change its name (**expect** the name to change in the window; Undo takes it back); Pause all / Resume all / Panic all; *Load to time*.
 5. Leave it connected for two minutes without touching it, then press GO. **Expect:** it still works (a TCP connection is not forgotten).
 
-**D. Device descriptions (tracker O12).** For each device in `core/net/devices.js` that is on the bench: make a patch of that kind with the device's address, press Test and expect the patch to read "answering" within a second (for a device listed with `answers`); then make a Network cue for each command in its list with a harmless value, fire it, and tick the command off only when the device visibly did it. A command that does nothing is corrected in `devices.js` from the monitor and the device's own OSC log.
+**D. Device descriptions (tracker O12).** For each device in `core/net/devices.ts` that is on the bench: make a patch of that kind with the device's address, press Test and expect the patch to read "answering" within a second (for a device listed with `answers`); then make a Network cue for each command in its list with a harmless value, fire it, and tick the command off only when the device visibly did it. A command that does nothing is corrected in `devices.ts` from the monitor and the device's own OSC log.
 
 **Not covered.** `/replyFormat`; `/live` values; the `/shallow` and `/uniqueIDs` forms of the list queries; `/panicInTime` on one cue, `/loadActionAt`, `/loadAndSetPlayhead`, `/soloCueInTime`; targets, levels and every type-specific property; a cart's row and column on `/new`; `/auditionGo`; `/settings/…`, `/overrides/…`, the light dashboard; per-list playheads (`/cue/<list>/playhead/…`); MSC broadcast; Bonjour, and the encrypted connection QLab Remote uses with QLab 5; QLab's "duplicate message interval" (here two identical messages within the double-GO time are one: a GO, or the same cue started the same way, the second ignored and said in the show log); the plain-text command port (53535).
 
@@ -401,7 +401,7 @@ Other desks (sound desks, video servers) are reached with Network cues and a net
 
 ## 9. The module interface
 
-A module is a plain object exported from a file and listed in `MODULES` at the top of `app/main/host.js`:
+A module is a plain object exported from a file and listed in `MODULES` at the top of `app/main/host.ts`:
 
 ```js
 module.exports = {
@@ -430,7 +430,7 @@ module.exports = {
 
 **Smoke runs.** In a smoke run (`electron . --smoke`) no module starts, whatever the show says, unless the environment variable `EC_SMOKE_MODULES` is set: the end-to-end check opens no network ports (it also opens no audio device and sends no Network cue datagrams).
 
-**Config.** Lives in the show file under `modules.<id>`, edited with `show.set` (`modules.<id>.<key>`), so it is versioned and undoable. Defaults for the three shipped modules are in `defaultModules()` in `core/show/show.js`; a new module's config is `{}` until its fields are set.
+**Config.** Lives in the show file under `modules.<id>`, edited with `show.set` (`modules.<id>.<key>`), so it is versioned and undoable. Defaults for the three shipped modules are in `defaultModules()` in `core/show/show.ts`; a new module's config is `{}` until its fields are set.
 
 **What a module may do.** Call `host.cmd` with any op (it is not restricted the way the web remote restricts its clients; restrict what you expose). Read `host.snapshot()`. It has no direct access to the engine, the document or the audio window.
 
@@ -485,9 +485,9 @@ module.exports = {
 
 Then:
 
-1. Add `require('./modules/udp-on-go')` to `MODULES` in `app/main/host.js`.
-2. Optionally add defaults to `defaultModules()` in `core/show/show.js` (`'udp-on-go': { enabled: false, host: '', port: 9000, text: 'GO {number}' }`).
-3. Test it the way `test/modules.test.js` tests the others: call `create` with a fake `host` (`{ cmd, snapshot }`), `start` it on a free port, and assert on what arrives.
+1. Add `require('./modules/udp-on-go')` to `MODULES` in `app/main/host.ts`.
+2. Optionally add defaults to `defaultModules()` in `core/show/show.ts` (`'udp-on-go': { enabled: false, host: '', port: 9000, text: 'GO {number}' }`).
+3. Test it the way `test/modules.test.ts` tests the others: call `create` with a fake `host` (`{ cmd, snapshot }`), `start` it on a free port, and assert on what arrives.
 
 Rules the shipped modules follow, worth keeping: bind nothing until `start`; release everything in `stop`; never throw out of a socket callback (set an error, `log`, `changed()`); `unref()` sockets and timers so they do not hold the app open; report a state the operator can act on in `status().text`; do not call `changed()` from `onState` unconditionally (each push calls `onState` again).
 
@@ -515,21 +515,21 @@ Rules the shipped modules follow, worth keeping: bind nothing until `start`; rel
 
 ## The network hub (replaces the per-module sockets described above)
 
-All OSC, in and out, goes through one hub (`core/net/hub.js`); the host owns it.
+All OSC, in and out, goes through one hub (`core/net/hub.ts`); the host owns it.
 
 - **Patches** (`settings.network.patches`): `{ id, name, host, port, protocol: 'udp' | 'tcp', framing: 'slip' | 'length', device, listenPort?, notes?, iface?, destinations?: [{ host, port, protocol?, framing?, iface? }] }`. UDP patches share one socket; a TCP patch keeps a connection and reconnects every 2 s. `listenPort` is for equipment that answers to a fixed port rather than to the sender.
 - **Several destinations.** A message to a patch goes to the patch's own address and to each of `destinations` (which take the patch's protocol, framing and interface unless they have their own). The send is `ok` only if every destination took it; `why` names the one that did not, and the others are still sent.
 - **Interface.** `iface` is the name of one of this computer's network interfaces (`en0`), as listed in `network.interfaces` (`[{ name, address }]`); the message leaves from that interface's IPv4 address (a UDP socket bound to it, `localAddress` for TCP). An interface that is not there when the cue fires is a failed send that says so. It is stored by name, so it is a property of the show on this computer: on another computer the name may differ and the patch says "not on this computer now".
-- **Text and bytes.** `hub.send(patch, message, { format })`: `'osc'` (default), `'text'` (sent as UTF-8, with `\n \r \t \0 \e \\` and `\xNN` escapes, nothing appended) or `'hex'` (pairs of hex digits; spaces, commas, colons and `0x` ignored). On TCP an OSC message is framed; text and bytes are written as they are. A Network cue's `format` field chooses (`core/net/raw.js`).
+- **Text and bytes.** `hub.send(patch, message, { format })`: `'osc'` (default), `'text'` (sent as UTF-8, with `\n \r \t \0 \e \\` and `\xNN` escapes, nothing appended) or `'hex'` (pairs of hex digits; spaces, commas, colons and `0x` ignored). On TCP an OSC message is framed; text and bytes are written as they are. A Network cue's `format` field chooses (`core/net/raw.ts`).
 - **Status** per patch: `idle`, `sent`, `connecting`, `connected`, `answering` (heard from within 6 s) or `error` with the reason. Pushed as `network.patches`.
 - **One input port** (`settings.network.inputPort`, default 53000), over UDP and, on the same number, TCP. It opens when something needs it: the OSC control module, any cue with an `oscTrigger`, a show command set in `settings.network.commands`, `settings.network.listen`, or a Learn in progress. A TCP remote frames its messages with SLIP (OSC 1.1) or a 4-byte length (OSC 1.0); which is read off the connection's first byte (a length starts with 0). If the TCP port cannot be bound and the UDP one can, UDP goes on working and the status says so (`network.input.tcpError`).
 - **Listeners** get `fn(msg, from, reply)`: `from` is `{ address, port, tcp? }`; `reply(address, args, { port }?)` answers on the connection, or over UDP to the sender's port or to `port`. `hub.onGone(fn)` is told when a TCP remote hangs up. A listener returns `true` when it acted on the message: an input message no listener acted on is marked `unused` on its monitor entry ("did nothing" in the monitor).
 - **Learn.** The next message to arrive resolves `osc-learn` and is **not** passed to the listeners: capturing a desk's GO button does not GO the show.
 - **The monitor**: the last 400 messages, both directions, with time, who, text and (for a failure) why.
-- **Devices** (`core/net/devices.js`): a table of equipment with its usual port and a list of commands; a patch names its device and Network cues aimed at it offer the commands. Written from published OSC documentation and not yet checked against hardware.
+- **Devices** (`core/net/devices.ts`): a table of equipment with its usual port and a list of commands; a patch names its device and Network cues aimed at it offer the commands. Written from published OSC documentation and not yet checked against hardware.
 
-- **A device of the show's rig is also a patch to the hub** ([15](15-assistant-and-rig.md)): the host gives the hub `devices` beside `patches` (`hub.configure({ patches, devices, … })`), and anything that sends to a patch id may name a device id, so a raw Network cue's `patch` may be a device. One thing differs on purpose: a cue with no patch chosen goes to "the only patch" counting **patches only**, so adding a device never re-aims an old cue. For a device the hub also: sends its "are you there?" quietly (`send(…, { quiet, ask })`: not in the monitor, and not "the last thing sent to it"); keeps its answers, or its heartbeat, out of the monitor, the first after a silence excepted, while still counting them; and credits what arrives on the input port from a device's address to that device (a patch is still not credited there). A heartbeat is not passed to the listeners: a device saying it is there is not a command, a trigger or a message to learn. `hub.onHeard(fn)` is told of everything that arrives (`fn(msg, from, patch | null, { via, alive, at })`), which is how `core/rig/liveness.js` keeps count; every incoming monitor entry carries `from: { address, port }`; `hub.sendTo({ host, port }, text)` sends one message to an address that is in no show (the assistant asking a model's test message of a private address); and in a test run, where nothing is sent or heard, `hub.pretendHeard(id, text)` stands in for an answer.
-- **`resend`** is the host's (`app/main/rig-service.js`, which `sendNetwork` calls): a command going to a device with `resend` > 0 gets one more argument, `#<6 hex digits>`, and is sent that many times 40 ms apart; the repeats are not written in the monitor, and a faded value is never sent again.
+- **A device of the show's rig is also a patch to the hub** ([15](15-assistant-and-rig.md)): the host gives the hub `devices` beside `patches` (`hub.configure({ patches, devices, … })`), and anything that sends to a patch id may name a device id, so a raw Network cue's `patch` may be a device. One thing differs on purpose: a cue with no patch chosen goes to "the only patch" counting **patches only**, so adding a device never re-aims an old cue. For a device the hub also: sends its "are you there?" quietly (`send(…, { quiet, ask })`: not in the monitor, and not "the last thing sent to it"); keeps its answers, or its heartbeat, out of the monitor, the first after a silence excepted, while still counting them; and credits what arrives on the input port from a device's address to that device (a patch is still not credited there). A heartbeat is not passed to the listeners: a device saying it is there is not a command, a trigger or a message to learn. `hub.onHeard(fn)` is told of everything that arrives (`fn(msg, from, patch | null, { via, alive, at })`), which is how `core/rig/liveness.ts` keeps count; every incoming monitor entry carries `from: { address, port }`; `hub.sendTo({ host, port }, text)` sends one message to an address that is in no show (the assistant asking a model's test message of a private address); and in a test run, where nothing is sent or heard, `hub.pretendHeard(id, text)` stands in for an answer.
+- **`resend`** is the host's (`app/main/rig-service.ts`, which `sendNetwork` calls): a command going to a device with `resend` > 0 gets one more argument, `#<6 hex digits>`, and is sent that many times 40 ms apart; the repeats are not written in the monitor, and a faded value is never sent again.
 
 **The Rig's commands** (through `host.cmd`; the page and its readiness rows are [15](15-assistant-and-rig.md), sections 3.7 and 5):
 
@@ -541,8 +541,8 @@ All OSC, in and out, goes through one hub (`core/net/hub.js`); the host owns it.
 | `rig-scan` | | Look for props: resolves `{ found: [{ name, kind, fw, host, port, state, known, moved }] }`, also pushed as `rig.found`. | Refused; also refused in Edit while a cue runs. |
 | `rig-tick` | `id`, `on?` | A tick on one of the operator's own lines. This sitting's: kept by the host, never in the show. | Allowed. |
 | `rig-ticks-clear` | | *Start again*. | Allowed. |
-| `prop-files` | `device`, `options` | Stages a files-only proposal from `core/kit/kit.js`. `{ proposal, files }`. | Refused (an edit). |
-| `agent-guide` | | Stages a files-only proposal from `core/assistant/guide.js`. `{ proposal, files }`. | Refused (an edit). |
+| `prop-files` | `device`, `options` | Stages a files-only proposal from `core/kit/kit.ts`. `{ proposal, files }`. | Refused (an edit). |
+| `agent-guide` | | Stages a files-only proposal from `core/assistant/guide.ts`. `{ proposal, files }`. | Refused (an edit). |
 
 Pushed with every state as `rig`: `{ summary: { ready, total, look, problems, unknown, at, text }, items, devices: { id: { state, text, heardAt, ageMs, reports, lastOut, lastIn } }, ticks, found, scanning, senders, script: { file, found, lines, marks, missing }, folder: { sounds, videos, texts, unused } }`. Each of `items` is `{ id, group, groupLabel, label, state, text, fix, needed, actions }`; `group` is one of `show`, `sound`, `picture`, `lights`, `equipment`, `connections`, `held`, `before`; an action is `{ id, label, cmd? }`, and where it has a `cmd` that is the host command that does it (`save`, `device-ask`, `device-try`, `override`, `stage-open`, `stage-pattern`, `rig-tick`, or the `edit` that makes a patch a device). A pending proposal's `files` are pushed as `[{ path, lines, replaces, text }]`.
 
@@ -556,11 +556,11 @@ Pushed with every state as `rig`: `{ summary: { ready, total, look, problems, un
 
 **Cue triggers.** Any cue's `oscTrigger` is an address (OSC patterns allowed), optionally followed by arguments that must match; a matching message fires the cue without moving the playhead.
 
-**Triggers, as one table.** `core/show/triggers.js` lists every trigger in a show (`triggersOf(doc)`: hotkey, OSC, MIDI, clock, timecode, and the MIDI messages set to run the show) with what each shares with another; the state pushed to the window carries it as `triggers`. A cue's trigger fields are marked `tab: 'triggers'` in the cue-type table, which is what puts them on the inspector's Triggers tab.
+**Triggers, as one table.** `core/show/triggers.ts` lists every trigger in a show (`triggersOf(doc)`: hotkey, OSC, MIDI, clock, timecode, and the MIDI messages set to run the show) with what each shares with another; the state pushed to the window carries it as `triggers`. A cue's trigger fields are marked `tab: 'triggers'` in the cue-type table, which is what puts them on the inspector's Triggers tab.
 
-**Show commands from any message** (`settings.network.commands`: `{ go, panic, pause, resume, next, previous }`, each `''` or an OSC message written as a trigger is; `core/net/commands.js`). It mirrors `settings.midi.commands` key for key. A matching message does `go`, `panic`, `pause`, `resume`, `move { step: 1 }` or `move { step: -1 }` through `host.cmd` (so GO has its double-GO protection). The host listens for these itself: they work with OSC control off and need no passcode, as QLab 5's do. Settings ▸ Integrations ▸ Network ▸ Incoming OSC has a field and a Capture button (an `osc-learn`) for each. QLab's own list of assignable commands is a screenshot in its manual and could not be read; this is the list MIDI has.
+**Show commands from any message** (`settings.network.commands`: `{ go, panic, pause, resume, next, previous }`, each `''` or an OSC message written as a trigger is; `core/net/commands.ts`). It mirrors `settings.midi.commands` key for key. A matching message does `go`, `panic`, `pause`, `resume`, `move { step: 1 }` or `move { step: -1 }` through `host.cmd` (so GO has its double-GO protection). The host listens for these itself: they work with OSC control off and need no passcode, as QLab 5's do. Settings ▸ Integrations ▸ Network ▸ Incoming OSC has a field and a Capture button (an `osc-learn`) for each. QLab's own list of assignable commands is a screenshot in its manual and could not be read; this is the list MIDI has.
 
-**A Network cue over time** (`core/net/network-cue.js`; the engine asks it what to send at each tick).
+**A Network cue over time** (`core/net/network-cue.ts`; the engine asks it what to send at each tick).
 
 | The cue has | It sends |
 |---|---|
@@ -575,28 +575,28 @@ Pushed with every state as `rig`: `{ summary: { ready, total, look, problems, un
 
 ## Timecode and MIDI files
 
-**The engine owns the time, the host plays to it.** A `timecode` or `midifile` cue fires the engine's `run` hook (`run(cue, offset)` answers with the cue's length in seconds, 0 for "until stopped"). The engine files the cue with its fades, marked `run`, so it is in Active Cues, pauses, resumes, stops, is followed by an auto-follow, and can be loaded to a time. `core/timecode/transport.js` (the host's part, with the clock and the ports handed in, so it is tested on a fake clock) looks at that entry every 20 ms and plays to match: it never keeps a position of its own.
+**The engine owns the time, the host plays to it.** A `timecode` or `midifile` cue fires the engine's `run` hook (`run(cue, offset)` answers with the cue's length in seconds, 0 for "until stopped"). The engine files the cue with its fades, marked `run`, so it is in Active Cues, pauses, resumes, stops, is followed by an auto-follow, and can be loaded to a time. `core/timecode/transport.ts` (the host's part, with the clock and the ports handed in, so it is tested on a fake clock) looks at that entry every 20 ms and plays to match: it never keeps a position of its own.
 
-**MIDI that must leave on time is stamped, not timed.** A timer in either process wakes late: measured on one Mac (`test/manual/timer-jitter.js`, a 10 ms timer aimed at fixed times, ten seconds), about 1.3 ms late on average, 2.5 to 5 ms at the 99th percentile and up to 6 ms at worst, in the main process and in the hidden window alike. An MTC quarter frame is 8.3 ms long at 30 frames a second, so sending "when the timer fires" would move each message by a large part of its own period. Instead `core/net/playout.js` hands over everything due in the next 100 ms, each message with the time it is due on the engine's clock; the host turns that into milliseconds since 1970 (`performance.timeOrigin + performance.now()`, which the two processes agree on to within about 0.3 ms, measured, the message's own travel included) and the audio window passes it to Web MIDI as the send timestamp. What decides the moment on the wire is then the computer's MIDI system: on macOS Chromium hands the timestamp to CoreMIDI; on Windows and Linux how exactly a stamped message is sent has not been examined. **None of this has been measured at a MIDI port.** The cost: a stop or a pause takes up to 120 ms to reach the wire (the lookahead and a tick), and a message cannot be recalled once handed over.
+**MIDI that must leave on time is stamped, not timed.** A timer in either process wakes late: measured on one Mac (`test/manual/timer-jitter.ts`, a 10 ms timer aimed at fixed times, ten seconds), about 1.3 ms late on average, 2.5 to 5 ms at the 99th percentile and up to 6 ms at worst, in the main process and in the hidden window alike. An MTC quarter frame is 8.3 ms long at 30 frames a second, so sending "when the timer fires" would move each message by a large part of its own period. Instead `core/net/playout.ts` hands over everything due in the next 100 ms, each message with the time it is due on the engine's clock; the host turns that into milliseconds since 1970 (`performance.timeOrigin + performance.now()`, which the two processes agree on to within about 0.3 ms, measured, the message's own travel included) and the audio window passes it to Web MIDI as the send timestamp. What decides the moment on the wire is then the computer's MIDI system: on macOS Chromium hands the timestamp to CoreMIDI; on Windows and Linux how exactly a stamped message is sent has not been examined. **None of this has been measured at a MIDI port.** The cost: a stop or a pause takes up to 120 ms to reach the wire (the lookahead and a tick), and a message cannot be recalled once handed over.
 
-**MTC** (`core/timecode/timecode.js`): a full-frame message (`F0 7F 7F 01 01 hr mn sc fr F7`, the rate in bits 5–6 of the hours) where a stream starts or resumes, then quarter frames (`F1 0nnn dddd`), four to the frame, each run of eight naming the frame its first piece began on. Rates: 24, 25, 29.97 drop, 30. Incoming: a full frame is the time outright and starts nothing (a parked transport sends one); eight quarter frames in order are a time, known a frame and three quarters after it.
+**MTC** (`core/timecode/timecode.ts`): a full-frame message (`F0 7F 7F 01 01 hr mn sc fr F7`, the rate in bits 5–6 of the hours) where a stream starts or resumes, then quarter frames (`F1 0nnn dddd`), four to the frame, each run of eight naming the frame its first piece began on. Rates: 24, 25, 29.97 drop, 30. Incoming: a full frame is the time outright and starts nothing (a parked transport sends one); eight quarter frames in order are a time, known a frame and three quarters after it.
 
 **LTC** is made and read in the audio window by AudioWorklets running that same file (its own text is pasted into the worklet, so the code the tests check is the code that runs). Out: 80 bits a frame, biphase mark, written to the sample on one device output of the cue's choosing, connected after the limiter. It runs on the audio device's clock, not the computer's: over an hour the two drift apart by whatever the device's crystal is off by, and LTC and MTC started together will show it. In: an input and a channel (Settings ▸ Integrations ▸ Network ▸ Timecode); each frame is reported with the time its last bit ended. The test run opens no input and listens to its own LTC output instead, which is how the smoke test checks the path end to end.
 
-**Chase** (`core/timecode/chase.js`, `settings.timecode`): `source` (`off` / `mtc` / `ltc`), `rate` (what triggers are written at), `input`, `channel`, `catchUp`, `follow`. While the time runs on, a cue starts as its `timecodeTrigger` is passed. When the time appears or jumps (more than a quarter of a second from where it should be), nothing skipped is fired; a cue within three frames behind starts from its top, and with `catchUp` a cue that would be part way through starts that far in (`engine.fire(id, offset)`: sounds, groups of them, Timecode and MIDI File cues honour the offset; a Wait or a Fade starts from its top). A quarter of a second without a frame is "stopped". Not done: stopping or pausing cues when the timecode stops, a freewheel setting, chase per list, and capturing a trigger from the incoming time.
+**Chase** (`core/timecode/chase.ts`, `settings.timecode`): `source` (`off` / `mtc` / `ltc`), `rate` (what triggers are written at), `input`, `channel`, `catchUp`, `follow`. While the time runs on, a cue starts as its `timecodeTrigger` is passed. When the time appears or jumps (more than a quarter of a second from where it should be), nothing skipped is fired; a cue within three frames behind starts from its top, and with `catchUp` a cue that would be part way through starts that far in (`engine.fire(id, offset)`: sounds, groups of them, Timecode and MIDI File cues honour the offset; a Wait or a Fade starts from its top). A quarter of a second without a frame is "stopped". Not done: stopping or pausing cues when the timecode stops, a freewheel setting, chase per list, and capturing a trigger from the incoming time.
 
-**MIDI files** (`core/net/smf.js`): formats 0, 1 and 2 (2 played as 1), tempo changes, files timed in frames, running status, SysEx. Stopped or paused, the notes it started are ended; started or resumed part way in, the programs, controllers and bends the file had set by then are sent first.
+**MIDI files** (`core/net/smf.ts`): formats 0, 1 and 2 (2 played as 1), tempo changes, files timed in frames, running status, SysEx. Stopped or paused, the notes it started are ended; started or resumed part way in, the programs, controllers and bends the file had set by then are sent first.
 
 ## More windows, carts and overrides
 
-- **Views.** `host.addView(webContents)` is all a window is to the host. `main.js` `openOwnWindow` opens the same page with `?list=<id>` (one list or cart) or `?inspector=1`, adds it as a view, and removes it when it closes. Selection is each window's own; the main window tells the others what is selected over `ec-relay` (preload `relay` / `onRelay`), which is all an inspector in its own window needs. Menu actions still go to the main window.
+- **Views.** `host.addView(webContents)` is all a window is to the host. `main.ts` `openOwnWindow` opens the same page with `?list=<id>` (one list or cart) or `?inspector=1`, adds it as a view, and removes it when it closes. Selection is each window's own; the main window tells the others what is selected over `ec-relay` (preload `relay` / `onRelay`), which is all an inspector in its own window needs. Menu actions still go to the main window.
 - **Carts.** Pushed state carries `carts: { <list id>: { rows, columns, cells: [cue id | null], extra } }` with every full push. A button is `{ op: 'start', id }`. `{ op: 'import', paths, list, cell }` adds sounds to a cart (the first on that button).
-- **Overrides.** `{ op: 'override', what: 'osc' | 'midi' | 'timecode' | 'dmx', on? }` holds an output back or lets it go (`on` left out: the other way). Held, `hub.send` and `sendMidi` record the message in the monitor with `ok: false, held: true` and the reason, and send nothing; a Light cue is called and not sent to the desk. The state is this computer's (`config.json` `overrides`), survives a restart, and is in every push as `overrides: [{ id, label, on }]`: the window shows a red chip per held output. The table of outputs is `OVERRIDES` in `host.js`. **MIDI out** holds everything on its way to the MIDI port (MIDI cues, a MIDI file's messages, MTC); **Timecode out** holds MTC alone and stops LTC (which starts again, where it would have got to, when it is let go); **DMX out** makes every Art-Net and sACN packet and sends none (`core/light/output.js` `hold`), so the dashboard still shows the levels.
+- **Overrides.** `{ op: 'override', what: 'osc' | 'midi' | 'timecode' | 'dmx', on? }` holds an output back or lets it go (`on` left out: the other way). Held, `hub.send` and `sendMidi` record the message in the monitor with `ok: false, held: true` and the reason, and send nothing; a Light cue is called and not sent to the desk. The state is this computer's (`config.json` `overrides`), survives a restart, and is in every push as `overrides: [{ id, label, on }]`: the window shows a red chip per held output. The table of outputs is `OVERRIDES` in `host.ts`. **MIDI out** holds everything on its way to the MIDI port (MIDI cues, a MIDI file's messages, MTC); **Timecode out** holds MTC alone and stops LTC (which starts again, where it would have got to, when it is let go); **DMX out** makes every Art-Net and sACN packet and sends none (`core/light/output.ts` `hold`), so the dashboard still shows the levels.
 - **Keeping.** `backups`, `backup-now`, `restore-backup { name }`; `playlog { last }`; `settings-import { file }`. The file dialogs for templates, settings files and the playback log are `ec-app` ops (`template-save`, `template-new`, `settings-export`, `settings-import`, `playlog-export`), each taking a `path` so a test run needs no dialog.
 
 ## Module: Main and backup
 
-`app/main/modules/backup-link.js`, with the mapping in `core/net/mirror.js`. A module may now have `onCommand(c, result, before, after)`: the host calls it after each command it has carried out, with the playhead before and after.
+`app/main/modules/backup-link.ts`, with the mapping in `core/net/mirror.ts`. A module may now have `onCommand(c, result, before, after)`: the host calls it after each command it has carried out, with the playhead before and after.
 
 On the **main** (role `main`), each transport command becomes OSC control messages to a patch that is the backup:
 
@@ -614,7 +614,7 @@ plus `/connect <passcode>` at the start and every half minute, and `/thump` ever
 
 1. **A decision, and a hand.** Nothing switches by itself. The backup's operator lets its outputs go (overrides off) and brings its sound up. An automatic switch needs a rule for a split network (both alive, neither hearing the other) that does not put two computers on the desk at once.
 2. **One sound output.** The two computers' audio must meet in a switch or a mixer; the app does not mute or unmute itself as it changes role. A `role` that drives the master and the overrides together is the next step.
-3. **The same show, kept the same.** Edits are not mirrored and media is not synced: the backup has what was last copied to it. Mirroring edits means sending the operations (`core/show/ops.js` batches are already the wire format) and comparing `show.hash` in the heartbeat; the heartbeat does not carry the hash yet, so a backup on an older show is not detected.
+3. **The same show, kept the same.** Edits are not mirrored and media is not synced: the backup has what was last copied to it. Mirroring edits means sending the operations (`core/show/ops.ts` batches are already the wire format) and comparing `show.hash` in the heartbeat; the heartbeat does not carry the hash yet, so a backup on an older show is not detected.
 4. **State that is not a command.** A backup started mid-show does not learn what is already playing (there is no "catch up" message; `/runningCues` could seed one). Triggers that fire cues inside the main (OSC, MIDI, clock) are not commands and are not mirrored. The mixer, a seek, a loop held by hand and Show mode are not mirrored.
 5. **Clocks.** Each engine runs its own waits and follows from the moment it hears the command. Network delay (a millisecond on a wire) is the offset between them; nothing measures or corrects it, and a mirrored GO that arrives early by more than the slack in double-GO protection would be dropped by the backup (the next GO re-aims the playhead, so it is one cue behind, not adrift). An exemption for mirrored commands needs an authenticated sender.
-6. **Proof.** Tested with two engines in one process (`test/backup-link.test.js`), including a lost message. Never run on two computers.
+6. **Proof.** Tested with two engines in one process (`test/backup-link.test.ts`), including a lost message. Never run on two computers.

@@ -10,10 +10,11 @@ import * as templates from '../core/show/show-templates';
 import { applyOps } from '../core/show/ops';
 import { ShowDocument } from '../core/show/document';
 import { PlayLog, toCsv, CSV_HEAD } from '../core/engine/playlog';
+import type { PlayEntry } from '../core/engine/playlog';
 import { createHub } from '../core/net/hub';
 import { build } from './helpers';
 
-const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `ec-${name}-`));
+const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `ec-${name}-`));
 const sample = () => build([
   { op: 'cue.add', ref: 'a', cue: { type: 'audio', number: '1', name: 'Rain', file: 'media/rain.wav' } },
   { op: 'cue.add', cue: { type: 'fade', number: '2', target: '@a' } },
@@ -23,11 +24,11 @@ test('a backup is the working document at a moment; an unchanged show makes no s
   const dir = tmp('backups');
   const doc = sample();
   const t0 = new Date(2026, 2, 14, 19, 5, 9).getTime();
-  const first = backups.write(dir, doc, { now: t0 });
+  const first = backups.write(dir, doc, { now: t0 })!;
   assert.equal(first.name, '2026-03-14 19.05.09.json');
   assert.equal(backups.write(dir, doc, { now: t0 + 300000 }), null, 'nothing changed: nothing written');
   const changed = applyOps(doc, [{ op: 'cue.set', id: '#1', props: { gainDb: -6 } }]).doc;
-  const second = backups.write(dir, changed, { now: t0 + 600000 });
+  const second = backups.write(dir, changed, { now: t0 + 600000 })!;
   assert.deepEqual(backups.list(dir).map((b) => b.name), [second.name, first.name], 'newest first');
   assert.equal(backups.read(dir, first.name).lists[0].cues[0].gainDb, undefined);
   assert.equal(backups.read(dir, second.name).lists[0].cues[0].gainDb, -6);
@@ -53,7 +54,7 @@ test('going back to a backup is an edit: undoable, and not kept until saved', ()
   const dir = path.join(tmp('restore'), 'T.ecshow');
   const d = ShowDocument.open(dir);
   d.edit([{ op: 'cue.add', cue: { type: 'memo', number: '1', name: 'Before' } }]); d.save();
-  const b = backups.write(backups.dirOf(dir), d.doc);
+  const b = backups.write(backups.dirOf(dir), d.doc)!;
   d.edit([{ op: 'cue.set', id: '#1', props: { name: 'After' } }]); d.save();
   assert.equal(d.replace(backups.read(backups.dirOf(dir), b.name), { label: 'backup' }), true);
   assert.equal(d.doc.lists[0].cues[0].name, 'Before');
@@ -107,7 +108,7 @@ test('settings travel as a file: imported as one checked edit, and the show keep
 
 test('the playback log: what played, when, and for how long it was heard', () => {
   let t = new Date(2026, 2, 14, 19, 30, 0).getTime();
-  const written = [];
+  const written: PlayEntry[] = [];
   const log = new PlayLog({ now: () => t, onEntry: (e) => written.push(e) });
   log.started('a', { file: 'media/rain.wav', number: '1', name: 'Rain, "heavy"', mode: 'show' });
   t += 10000; log.paused('a');
@@ -115,7 +116,7 @@ test('the playback log: what played, when, and for how long it was heard', () =>
   t += 2500;
   log.started('b', { file: 'media/bell.wav', number: '2', name: 'Bell', mode: 'show' });
   t += 1000;
-  assert.equal(log.ended('a').secs, 13.5);
+  assert.equal(log.ended('a')!.secs, 13.5);
   assert.equal(log.ended('a'), null, 'ended once');
   log.started('b', { file: 'media/bell.wav', number: '2', name: 'Bell', mode: 'show' });       // fired again while it plays: two plays
   t += 61000; log.endAll();
@@ -130,7 +131,7 @@ test('an output held back sends nothing and says so in the monitor', () => {
   hub.hold('held back: OSC out is switched off for rehearsal');
   const e = hub.send('desk', '/cue/2/fire');
   assert.deepEqual([e.ok, e.held, e.why], [false, true, 'held back: OSC out is switched off for rehearsal']);
-  assert.equal(hub.status().patches.desk.error || '', '', 'it is not the patch that is at fault');
+  assert.equal((hub.status().patches.desk as { error?: string }).error || '', '', 'it is not the patch that is at fault');
   hub.hold('');
   assert.equal(hub.send('desk', '/cue/3/fire').ok, true);
   assert.deepEqual(hub.monitor().filter((x) => x.dir === 'out').map((x) => [x.text, x.ok]), [['/cue/1/fire', true], ['/cue/2/fire', false], ['/cue/3/fire', true]]);

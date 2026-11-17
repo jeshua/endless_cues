@@ -1,16 +1,18 @@
 // A newer version, in one line in the title bar (a pill in the accent, its one action a primary button) (app/main/updates.js decides when there is one). Never in
 // Show mode or while anything plays: the line is not drawn, and the app does nothing about updates meanwhile.
 import { html, useState, useEffect, ec } from './lib.js';
+import type { State } from './lib.js';
+import type { UpdateView } from '../../core/update/updates';
 
 export function useUpdate() {
-  const [u, setU] = useState(null);
-  useEffect(() => { ec.app({ op: 'update-state' }).then((x) => setU(x)); ec.onUpdate((x) => setU((was) => ({ ...(was || {}), ...x }))); }, []);
+  const [u, setU] = useState<UpdateView | null>(null);
+  useEffect(() => { ec.app({ op: 'update-state' }).then((x) => setU(x as UpdateView)); ec.onUpdate((x) => setU((was) => ({ ...(was || {}), ...x }))); }, []);
   return u;
 }
 
-export function UpdateLine({ u, s, say }) {
+export function UpdateLine({ u, s, say }: { u: UpdateView | null; s: State; say: (text: string, bad?: boolean) => void }) {
   if (!u || !u.visible || s.mode === 'show' || (s.engine && s.engine.active && s.engine.active.length)) return null;
-  const act = (op) => ec.app({ op }).then((r) => { if (r && r.error) say(r.error, true); });
+  const act = (op: 'update-download' | 'update-later' | 'update-restart') => ec.app({ op }).then((r) => { if (r && r.error) say(r.error, true); });
   const v = u.version;
   return html`<span class="update-line" data-update=${u.step}>
     ${u.step === 'available' ? html`<span>Version ${v} is ready to download.</span>

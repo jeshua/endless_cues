@@ -12,17 +12,18 @@ Endless Cues is show control for live theatre and events, in the manner of QLab:
 
 ## Run it from source
 
-Node 22 or newer. Nothing is built or bundled: the app runs from these sources.
+Node 22 or newer. The code is TypeScript; `npm ci` builds it (`build/compile.mjs`, under a second), and `npm start` builds again before it starts.
 
 ```bash
 npm ci
 npm start                 # the app; File ▸ Open the Demo Show to look around
+npm run watch             # while editing: rebuilds on every save (reload the window to see it)
 ```
 
 ## Tests
 
 ```bash
-npm test                  # the engine, the show file, the assistant, the modules (node --test, no Electron)
+npm test                  # builds, checks the types, then the engine, the show file, the assistant, the modules (node --test, no Electron)
 npm run smoke             # the real app end to end: offscreen, silent, never takes focus
 npm run pack              # an unpacked app for this platform in dist.noindex/
 ```
@@ -67,10 +68,10 @@ node bin/ec-mcp.js --show My.ecshow                                          # o
 | [`app/main/`](app/main) | The Electron main process: the show host (document + engine + mixer + modules) and the app shell. |
 | [`app/audio/`](app/audio) | The hidden window that makes the sound (Web Audio). It holds no show state. |
 | [`app/stage/`](app/stage) | The stage: the output window Video, Text and Camera cues are drawn in ([`core/video/`](core/video) is its arithmetic). It holds no show state. |
-| [`app/renderer/`](app/renderer) | The window: a view of the host. Preact + htm, vendored, no build step. |
+| [`app/renderer/`](app/renderer) | The window: a view of the host. Preact + htm, vendored; bundled into one file by `build/compile.mjs`. |
 | [`app/main/modules/`](app/main/modules) | OSC control, Lighting desk, Web remote, Show feedback, Main and backup. Off until a show turns them on. |
-| [`bin/ec.js`](bin/ec.js) | Validate, outline and diff shows from a terminal or CI. |
-| [`examples/`](examples) | `make-demo.js` writes the demo show, synthesising its sounds. |
+| [`bin/ec.ts`](bin/ec.ts) | Validate, outline and diff shows from a terminal or CI. |
+| [`examples/`](examples) | `make-demo.ts` writes the demo show, synthesising its sounds. |
 | (not here) | endlesscues.com, the account site and the hosted service live in a separate private repository, `endless_cues_service`; the app talks to them only through [`docs/specs/17-service-protocol.md`](docs/specs/17-service-protocol.md). |
 | [`docs/specs/`](docs/specs) | How it is meant to work, and why. Start at [`docs/specs/README.md`](docs/specs/README.md). |
 

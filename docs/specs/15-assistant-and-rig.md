@@ -5,7 +5,7 @@ built-in helper and again with Claude Code: [`docs/try-the-assistant.md`](../try
 here has met real equipment**: section 9 and `CLAUDE.md` say what that leaves unproven. Where the build departs
 from the design, an "As built" note says so in place. This was the document three people built from at once;
 section 8 says who built what. Where it says "decided", it is decided: build that, and put a disagreement in the hand-back, not in
-the code. Sources read for it: `core/assistant/`, `core/show/`, `core/net/`, `app/main/host.js`,
+the code. Sources read for it: `core/assistant/`, `core/show/`, `core/net/`, `app/main/host.ts`,
 `app/renderer/{Drawers,Settings,app}.js`, `bin/`, specs 00 to 08, and (read only) the show app this project grew
 from.
 
@@ -102,7 +102,7 @@ repeated here).
 The request was "a device as a small readable file in the show folder". **Devices live in `show.json`, under
 `settings.rig`**, and not in files of their own. The reasons:
 
-- A show changes only through `core/show/ops.js`. Undo, the unsaved journal, versions, compare, restore, timed
+- A show changes only through `core/show/ops.ts`. Undo, the unsaved journal, versions, compare, restore, timed
   backups, templates, the assistant's draft and its review all work on one document. A device in a file of its
   own would need every one of those again, and the review would become two reviews.
 - An untitled show has no folder yet, and must be able to have a device.
@@ -132,7 +132,7 @@ older app would misread.
   "id": "lantern_a",              // for life: cues name it. Lower-case letters, digits and _ ; unique among devices AND network patches
   "name": "Lantern A",
   "kind": "prop",                 // a label only: desk | prop | media | sound | computer | instrument | other
-  "model": "ec-prop-light",       // optional: the description in core/net/devices.js it was started from
+  "model": "ec-prop-light",       // optional: the description in core/net/devices.ts it was started from
   "via": "osc",                   // how it is spoken to: osc | text | hex | midi
   "host": "10.0.0.42", "port": 53100, "protocol": "udp",
   // also, exactly as a network patch has them: framing, listenPort, iface, destinations
@@ -179,9 +179,9 @@ A MIDI instrument (it uses the show's MIDI output, `settings.midi.output`; it ha
   "alive": { "how": "none" } }
 ```
 
-**Fields**, as one table in `core/rig/devices.js` (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`,
+**Fields**, as one table in `core/rig/devices.ts` (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`,
 `REPORT_FIELDS`), which validation, the device editor and the assistant's reference all read, as
-`core/show/cue-types.js` is read for cues:
+`core/show/cue-types.ts` is read for cues:
 
 | Field | Rule |
 |---|---|
@@ -208,7 +208,7 @@ both have the id desk".
 `{ ok: true, message }` or `{ ok: false, why }`. Each `{key}` in the template is replaced by that argument's
 value, or the param's default; a number is checked against `min` and `max` and rounded when `whole`; an enum
 against its options. With `fade`, the command's `fade` param becomes `#v#`. Values are inserted as written: a
-template that needs quotes has them (`/eos/newcmd "{command}"`), as the templates in `core/net/devices.js` do.
+template that needs quotes has them (`/eos/newcmd "{command}"`), as the templates in `core/net/devices.ts` do.
 This is that file's `compose`, moved to work on a device in a show; the two share one function.
 
 ### 3.3 Devices and what is already there (decided: sit on top; nothing old breaks)
@@ -216,9 +216,9 @@ This is that file's `compose`, moved to work on a device in a show; the two shar
 | Already there | What happens to it |
 |---|---|
 | **Network patches** (`settings.network.patches`) | Stay, unchanged, and old shows open and play as before. A network device is *also a patch to the hub*: the host gives the hub `devices` beside `patches`, and anything that sends to a patch id may name a device id (so a raw Network cue's `patch` may be a device: "a raw Network cue still works"). One thing differs on purpose: a Network cue with no patch chosen goes to "the only patch" counting **patches only**, so adding a device never re-aims an old cue. Settings ▸ Integrations ▸ Network keeps its patches and gains one line pointing at the Rig. A patch can be **made a device** in one edit (same id, so every cue that named the patch still does; its model's commands copied in): `device.add` with the patch's id plus `show.set` removing the patch, in one batch (the rule that a device and a patch may not share an id is checked on the batch as a whole, as `settingsTrouble` is, so the two may come in either order). |
-| **Device templates** (`core/net/devices.js`) | Become **models**: what a new device is started from. The table gains two entries (the kit's props) and each entry gains optional `kind`, `alive` and `reports`. A patch's `device` field and the inspector's "Write the message" keep working as they do. |
+| **Device templates** (`core/net/devices.ts`) | Become **models**: what a new device is started from. The table gains two entries (the kit's props) and each entry gains optional `kind`, `alive` and `reports`. A patch's `device` field and the inspector's "Write the message" keep working as they do. |
 | **The lighting-desk module** and Light cues | Unchanged. It is how an operator *calls* light cues and has the desk follow. A desk may also be a device (for a Rig row, Try, and commands other than "fire"); the module's own status is a Rig row either way. Merging the two is not v1. |
-| **The monitor** | Unchanged, plus: asks and their replies stay out of it (first reply after a silence excepted); an entry keeps who it came from as `from: { address, port }`; `core/rig/senders.js` groups what unknown senders have sent, for "is this your prop?". |
+| **The monitor** | Unchanged, plus: asks and their replies stay out of it (first reply after a silence excepted); an entry keeps who it came from as `from: { address, port }`; `core/rig/senders.ts` groups what unknown senders have sent, for "is this your prop?". |
 | **Hold Back** (`overrides.osc`, `overrides.midi`) | Holds device commands, Try and asks as it holds everything else. A held device's row says "held back", not "not answering". |
 | **Script cues** | Unchanged: still a list of transport commands, still not code. |
 
@@ -232,7 +232,7 @@ inspector is built around typing one, and a MIDI device is not "network". A new 
 { "type": "device", "device": "lantern_a", "command": "level", "args": { "level": 0 }, "fadeTo": 1, "duration": 4 }
 ```
 
-In `core/show/cue-types.js`:
+In `core/show/cue-types.ts`:
 
 | Field | Kind | |
 |---|---|---|
@@ -258,15 +258,15 @@ values in brackets when there are any.
 `show.problems` adds, as errors that make the cue broken (marked and skipped, never thrown): "its device is
 gone", "Lantern A has no command “blink” (it has: look, level, effect, identify)", "level must be between 0 and
 1", "its device has no address yet". And for a Network cue, `patch` may now be a device id. The dry run
-(`core/engine/dry-run.js`) says `⇄ Lantern A ▸ Effect (breathe)  /ec/effect breathe  → Lantern A`.
+(`core/engine/dry-run.ts`) says `⇄ Lantern A ▸ Effect (breathe)  /ec/effect breathe  → Lantern A`.
 
-`resend` is the host's: `sendNetwork` in `app/main/host.js`, for a message going to a device with `resend` > 0
+`resend` is the host's: `sendNetwork` in `app/main/host.ts`, for a message going to a device with `resend` > 0
 and no `#v#` in flight, appends one argument `#<6 hex digits>` and sends it `resend` times 40 ms apart (the
 repeats are not written to the monitor). A faded value is never resent.
 
 ### 3.5 Edit operations
 
-Added to `core/show/ops.js` (and so to `OP_KEYS`, the assistant's reference, `ec apply`, and the checks every
+Added to `core/show/ops.ts` (and so to `OP_KEYS`, the assistant's reference, `ec apply`, and the checks every
 edit gets):
 
 | Operation | |
@@ -278,13 +278,13 @@ edit gets):
 `show.set` on `settings.rig.devices` is refused with a sentence naming these three. `settings.rig.script` and
 `settings.rig.checks` are ordinary `show.set` paths (`checks` is set whole: a list of `{ id, text }`).
 
-`core/show/diff.js` reports devices as an operator reads them, not as a settings path: change kinds
+`core/show/diff.ts` reports devices as an operator reads them, not as a settings path: change kinds
 `device-added`, `device-removed`, `device-changed` (`{ kind, id, label, fields: [{ field, label, from, to }] }`;
 a changed command list is one field, "Commands: 4 → 5 (added Strobe)"), and `summary()` gains `devices`.
 
 ### 3.6 Is it there? (liveness)
 
-`core/rig/liveness.js`, plain Node, driven by the host. For each device:
+`core/rig/liveness.ts`, plain Node, driven by the host. For each device:
 
 | `alive.how` | What the app does | Ready when |
 |---|---|---|
@@ -307,7 +307,7 @@ a device that stops answering is logged **once**, when it stops; nothing here ca
 datagram, and never awaited); asks are held by Hold Back; in a test run the hub records and sends nothing, and
 `hub.pretendHeard(id, text)` stands in for a reply.
 
-**Looking for props** (`core/rig/scan.js`): one `/ec/hello` to UDP 53100 on each network's broadcast address
+**Looking for props** (`core/rig/scan.ts`): one `/ec/hello` to UDP 53100 on each network's broadcast address
 and on 127.0.0.1, then 1.5 s of listening for `/ec/here`. Only when a person presses *Look for props* or the
 assistant calls `find_devices`; never in Show mode, never while a cue is running. Each answer is
 `{ name, kind, fw, host, port, known: <device id> | null, moved: true | false }`: `moved` when a device of that
@@ -315,7 +315,7 @@ name is in the show at another address, which the Rig offers to correct in one c
 
 ### 3.7 The check
 
-`core/rig/check.js` exports one pure function, `items(doc, facts)`, which returns the Rig page. `facts` is what
+`core/rig/check.ts` exports one pure function, `items(doc, facts)`, which returns the Rig page. `facts` is what
 only the running app knows (the output device, which files are on disk, the hub's status, liveness, MIDI ports,
 modules, the stage, overrides, whether the show is saved). The host calls it with real facts; `ec check` calls
 it with the facts a command line can know; a test calls it with invented ones.
@@ -369,7 +369,7 @@ sounds has five.
 - A **mark** is a line that is `@cue <number>` and optionally a name: `@cue 12 Thunder`. It may sit inside a
   comment (`<!-- @cue 12 Thunder -->`), so a Markdown script still reads cleanly. The line of text above it is
   the line it is called on.
-- `core/rig/script.js`: `read(showDir, file)` → `{ ok, why, lines, marks: [{ line, number, name, quote, section }], sections }`
+- `core/rig/script.ts`: `read(showDir, file)` → `{ ok, why, lines, marks: [{ line, number, name, quote, section }], sections }`
   (a section is a Markdown heading, or a line beginning ACT or SCENE); `compare(doc, marks)` →
   `{ missing: [mark…] }`, the marks whose number no cue has.
 - The assistant reads the script with `read_file`, proposes cues numbered and named from the marks with the
@@ -383,7 +383,7 @@ sounds has five.
 
 Two new things touch the folder, both small.
 
-**Reading** (`core/rig/folder.js`): `listing(showDir, doc, { durations })` → every file under the show folder,
+**Reading** (`core/rig/folder.ts`): `listing(showDir, doc, { durations })` → every file under the show folder,
 two levels deep by default, except the show's own (`show.json`, `show.unsaved.json`, `versions/`, `backups/`,
 `logs/`, `recordings/`), each `{ path, kind: sound | video | image | midi | text | other, bytes, secs?, usedBy: [cue refs] }`;
 and `readText(showDir, rel, { from = 1, lines = 400 })` → `{ ok, why, text, from, to, total }` for `.txt`,
@@ -392,7 +392,7 @@ paragraphs as lines: a `.docx` is a zip, read with `zlib` and forty lines of cod
 Anything else, a file over 2 MB, a path that leaves the folder or a link that points out of it is refused with
 a sentence. A PDF's sentence is "Export it as text or .docx and put that in the folder."
 
-**Writing** (`core/show/files.js`, and `proposal.files` in `core/show/document.js`): a proposal may carry
+**Writing** (`core/show/files.ts`, and `proposal.files` in `core/show/document.ts`): a proposal may carry
 files, `[{ path, text }]`, written when it is accepted. `files.check(showDir, files)` allows only: `AGENTS.md`
 and `CLAUDE.md` at the top of the show folder, and anything under `props/`; text, at most 200 KB each and 24 in
 a proposal; never a path that leaves the folder. Each is marked `replaces: true` when a different file is
@@ -445,7 +445,7 @@ outside the app (the bridge): reads work; `propose_changes` stages and cannot be
 Everything a show can be taught is data: a device (messages with typed holes in them, one way of asking "are
 you there?", a list of what to read out of the answers), a checklist line, a script mark, and a Script cue (a
 list of transport commands, which the assistant may write, because it is a cue field checked by
-`core/show/script.js`). **Nothing in v1 runs code from a show or from a model**, and a show file from a
+`core/show/script.ts`). **Nothing in v1 runs code from a show or from a model**, and a show file from a
 stranger stays safe to open.
 
 What that cannot express, and where it goes (rung 7): a device that needs a conversation (a login, a session
@@ -456,8 +456,8 @@ that it is beyond what it does here, and offers the hand-over.
 
 ### 4.3 Tools
 
-One table, `TOOLS` in `core/assistant/tools.js`, for the built-in assistant, the MCP server and the Claude Code
-and Codex providers (`TOOL_NAMES` in `assistant.js` becomes `TOOLS.map((t) => t.name)`, so the allow-list can
+One table, `TOOLS` in `core/assistant/tools.ts`, for the built-in assistant, the MCP server and the Claude Code
+and Codex providers (`TOOL_NAMES` in `assistant.ts` becomes `TOOLS.map((t) => t.name)`, so the allow-list can
 never fall behind). `execute` may now return a promise (two tools wait for an answer); every caller awaits it.
 
 Changed:
@@ -494,15 +494,15 @@ the monitor", "asking Lantern A if it is there", "looking for props", "writing f
 ctx.rig = {
   status(),                 // 5.1's `rig`, plus { computer: { audio: { device, outputs, devices: [label] }, displays: [label], midi: { inputs, outputs }, interfaces: [{ name, address }] } }
   monitor(last),            // the hub's entries
-  senders(),                // core/rig/senders.js over the monitor: [{ address, port, count, messages: [{ address, count, every }], lastAt }]
+  senders(),                // core/rig/senders.ts over the monitor: [{ address, port, count, messages: [{ address, count, every }], lastAt }]
   ask(target),              // → Promise<{ ok, held, answered, ms, text, why }>; target: a device id, or { host, port, probe }
   scan(),                   // → Promise<[{ name, kind, fw, host, port, known, moved }]>
   locked(),                 // true in Show mode
 };
 ```
 
-The folder, the script and the kit need no app: the tools call `core/rig/folder.js`, `core/rig/script.js` and
-`core/kit/kit.js` with `ctx.document.showDir`. The draft's files are `ctx.files` (a `Map` of path → text),
+The folder, the script and the kit need no app: the tools call `core/rig/folder.ts`, `core/rig/script.ts` and
+`core/kit/kit.ts` with `ctx.document.showDir`. The draft's files are `ctx.files` (a `Map` of path → text),
 handed to `document.proposeDocument(draft, { summary, author, files })`.
 
 ### 4.4 The outline and the reference
@@ -520,7 +520,7 @@ Rig now: 7 of 9 ready · problem: Lantern A is not answering · to look at: the 
 More than 12 devices: ids and names only, and `read_show {"device": …}` for one. `Rig now` is there only when
 the app is running (as the Playhead line is). File names are not in the outline: `list_folder` has them.
 
-The generated reference gains a **DEVICES** section, written from `core/rig/devices.js`'s tables as the cue
+The generated reference gains a **DEVICES** section, written from `core/rig/devices.ts`'s tables as the cue
 types are written from theirs: every device field with its rule; the three operations with an example each;
 "making a patch a device"; and **MODELS**, replacing today's "NETWORK DEVICES": each model's id, label, usual
 port, its commands as templates, and its test message if it has one. A test adds a field to `FIELDS` and looks
@@ -564,7 +564,7 @@ Added to `SYSTEM` (kept as short as this; the reference carries the detail):
 
 ### 4.6 The first screen
 
-`core/assistant/starters.js` exports `first({ doc, showDir, folder, rig, imported, provider, installed })`, a
+`core/assistant/starters.ts` exports `first({ doc, showDir, folder, rig, imported, provider, installed })`, a
 pure function. Its answer is pushed as `assistant.first` and is what the drawer shows before the first message.
 Nothing in it is generic: every ask is made from this show, and is offered only when it is true.
 
@@ -624,7 +624,7 @@ person without a model can do). Phrasings are matched loosely; anything else get
 
 ### 4.7 The hand-over (rung 7, small)
 
-`core/assistant/guide.js`: `agentGuide(doc, { showDir, bin })` → `[{ path: 'AGENTS.md', text }, { path: 'CLAUDE.md', text: '@AGENTS.md\n' }]`.
+`core/assistant/guide.ts`: `agentGuide(doc, { showDir, bin })` → `[{ path: 'AGENTS.md', text }, { path: 'CLAUDE.md', text: '@AGENTS.md\n' }]`.
 Generated, never written by a model, and regenerated whole each time (its first line says so). `AGENTS.md`
 holds, for this show:
 
@@ -650,7 +650,7 @@ drawer shows the two command lines to copy.
 source, `node <bin>/ec.js …`; from an installed app, where `bin/` is inside the app's archive and plain Node
 cannot read it, the app's own program run as Node:
 `ELECTRON_RUN_AS_NODE=1 "<the app's program>" "<…/app.asar/bin/ec.js>" …`, and
-`claude mcp add endless-cues --env ELECTRON_RUN_AS_NODE=1 -- "<the app's program>" "<…/ec-mcp.js>"`. Settings ▸
+`claude mcp add endless-cues --env ELECTRON_RUN_AS_NODE=1 -- "<the app's program>" "<…/ec-mcp.ts>"`. Settings ▸
 Assistant's line for coding agents is made the same way. Run once against an unsigned packaged build.
 
 ## 5. The pages
@@ -685,8 +685,8 @@ Host commands (all through `host.cmd`; "Edit" means refused in Show mode):
 | `rig-scan` | | Look for props. | Refused. Also refused in Edit while a cue runs. |
 | `rig-tick` | `id`, `on` | A checklist tick. | Allowed. |
 | `rig-ticks-clear` | | *Start again*. | Allowed. |
-| `prop-files` | `device`, `options` | Stages a files-only proposal from `core/kit/kit.js`. | Refused (Edit). |
-| `agent-guide` | | Stages a files-only proposal from `core/assistant/guide.js`. | Refused (Edit). |
+| `prop-files` | `device`, `options` | Stages a files-only proposal from `core/kit/kit.ts`. | Refused (Edit). |
+| `agent-guide` | | Stages a files-only proposal from `core/assistant/guide.ts`. | Refused (Edit). |
 
 Devices are edited with the existing `edit` command and the operations of 3.5.
 
@@ -745,7 +745,7 @@ looked at together.
   *An empty device*. Each is one `device.add`; the new device is selected, its name ready to type.
 - **The device editor** (right of the list, 400 px, shown while a device is selected; Edit mode only: in Show
   mode the selected device's state, reports and last messages are shown and nothing can be changed). Fields
-  are drawn from `core/rig/devices.js`'s tables as the inspector draws a cue's from its table. Commands are a
+  are drawn from `core/rig/devices.ts`'s tables as the inspector draws a cue's from its table. Commands are a
   small table: label, a control for each param (a number box, a text box, a select), **Try**, and **+cue**
   (adds a Device cue for that command, with the values showing, after the cue selected in the list, and says
   so in a toast). The last message out and the last in are under the commands, in mono; clicking either opens
@@ -782,14 +782,14 @@ looked at together.
   (the show refuses an empty one).
 - Not drawn in v1: editing `reports`, `destinations`, `iface` and `framing` (they are shown or kept as they are; the
   assistant and `device.set` can change them). Under *More*: needed, safe to try, send again, answers on port.
-- A row's action carries the host command that does it (`cmd`, from `core/rig/check.js`: `stage-open`,
+- A row's action carries the host command that does it (`cmd`, from `core/rig/check.ts`: `stage-open`,
   `stage-pattern`, `override … off` for one held output, the `edit` that makes a patch a device), and the page sends
   that. Five need the window and are known to it by id: `ask`, `try`, `save` (an untitled show is asked where
   first), `select` (shows the action's `cue`), `relink` (asks for a folder: `ec.app` `relink`). The row ids are
   `show.saved`, `show.backups`, `show.cues`, `show.script`, `sound.output`, `sound.buses`, `sound.files`,
   `sound.mic`, `picture.stage`, `lights.dmx`, `device.<id>`, `patch.<id>`, `equipment.input`, `equipment.midi`,
   `module.<id>`, `connections.timecode`, `held`, `check.<id>`; each row also carries `groupLabel`.
-  `test/rig-seams.test.js` fails if the check gives a row a button the page has no way to carry out.
+  `test/rig-seams.test.ts` fails if the check gives a row a button the page has no way to carry out.
 - A device's row also shows its firmware and signal when it reports them. What answered the last *Look for props*
   is drawn against the show as it is now: a prop that has since been added is not offered again, and one that is
   already a device at that address is not listed (its own row says how it is). A prop is added under the id it
@@ -870,7 +870,7 @@ sends it, and the drawer says "Answered by the built-in helper (no model)."
   one button; `next` is one short sentence or empty (always empty with nobody answering, and "(That needs a
   model: below.)" is gone); the helper's `note` and "Answered by the built-in helper" are gone (the header's badge
   says who answers). The table in 4.6.1 above is the design as it was, not the words as they are:
-  `core/assistant/starters.js` and its tests hold those.
+  `core/assistant/starters.ts` and its tests hold those.
 - **A chosen answerer that cannot answer says why.** `assistant.chosen` is what was asked for, `assistant.provider`
   what is answering; when they differ, `assistant.missing` is one short line ("Claude Code can’t be used in a
   test window.", "Ollama needs a model name.") and the drawer shows it above the rows.
@@ -922,7 +922,7 @@ Prop → booth, only ever in answer to `/ec/hello`:
 
 `state` is one word a person can read: `look3`, `breathe`, `on`, `off`, `own` (it is running its own look
 because it has not been told anything). The models `ec-prop-light` and `ec-prop-switch` in
-`core/net/devices.js` describe exactly this: the commands above, `alive: { how: 'ask', send: '/ec/hello', reply: '/ec/here', every: 2 }`,
+`core/net/devices.ts` describe exactly this: the commands above, `alive: { how: 'ask', send: '/ec/hello', reply: '/ec/here', every: 2 }`,
 reports for arguments 2, 3, 5 and 6, `resend: 3`, `test: 'identify'`.
 
 ### 6.2 The two sketches
@@ -953,7 +953,7 @@ each must do, as rules a reader of the sketch can check:
 
 ### 6.3 What the assistant tailors, and what is written
 
-`core/kit/kit.js`: `files(device, options)` → `[{ path, text }]`, and `OPTIONS` (the table of what may be
+`core/kit/kit.ts`: `files(device, options)` → `[{ path, text }]`, and `OPTIONS` (the table of what may be
 set, with defaults, which `make_prop_files`'s schema and the Rig's *Write firmware…* form both read):
 
 | Option | Default | |
@@ -998,7 +998,7 @@ For people who use a terminal, the same with `arduino-cli`, as two lines.
 
 ## 7. Simple until asked
 
-Added to [00 · Simple until asked](00-defaults.md), each with a line in `test/defaults.test.js`:
+Added to [00 · Simple until asked](00-defaults.md), each with a line in `test/defaults.test.ts`:
 
 | Behaviour | Default | Switch |
 |---|---|---|
@@ -1028,22 +1028,22 @@ A commits this before anything else, on its branch, with `npm test` green, and r
 start from that commit.** It contains the shapes everyone codes against, real where that is cheap, stubbed
 where it is not:
 
-1. `core/rig/devices.js`: the tables (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`,
+1. `core/rig/devices.ts`: the tables (`FIELDS`, `COMMAND_FIELDS`, `PARAM_FIELDS`, `ALIVE_FIELDS`,
    `REPORT_FIELDS`, `KINDS`, `VIAS`), and **real** `clean`, `trouble`, `compose`, `fromModel(modelId, over)`,
    `patchesOf(doc)`, `line(device)` (the outline's line for one device), `idFrom(name, taken)`.
-2. `core/net/devices.js`: `ec-prop-light` and `ec-prop-switch` (6.1); the optional `kind`, `alive`, `reports`,
-   `resend` on an entry; `compose` here calls the one in `core/rig/devices.js`.
-3. `core/show/show.js`: `settings.rig` in `defaultSettings()`; `normalise` cleaning devices; `problems` and
-   `toEngineDoc` for the Device cue (**real**). `core/show/cue-types.js`: the `device` type and the kinds
-   `device`, `command`, `args` (**real**). `core/show/ops.js`: the three operations (**real**).
-   `core/show/diff.js`: the device change kinds (**real**).
-4. `core/show/files.js` (`check`, `write`) and `proposal.files` in `core/show/document.js`: `proposeDocument`
+2. `core/net/devices.ts`: `ec-prop-light` and `ec-prop-switch` (6.1); the optional `kind`, `alive`, `reports`,
+   `resend` on an entry; `compose` here calls the one in `core/rig/devices.ts`.
+3. `core/show/show.ts`: `settings.rig` in `defaultSettings()`; `normalise` cleaning devices; `problems` and
+   `toEngineDoc` for the Device cue (**real**). `core/show/cue-types.ts`: the `device` type and the kinds
+   `device`, `command`, `args` (**real**). `core/show/ops.ts`: the three operations (**real**).
+   `core/show/diff.ts`: the device change kinds (**real**).
+4. `core/show/files.ts` (`check`, `write`) and `proposal.files` in `core/show/document.ts`: `proposeDocument`
    and `propose` take `files`, a proposal may be files alone, `accept` writes them (**real**).
-5. Stubs with their final signatures, each returning the empty shape this document gives: `core/rig/check.js`
-   (`items`, `summary`), `core/rig/liveness.js` (`createLiveness`), `core/rig/scan.js` (`scan`),
-   `core/rig/senders.js` (`senders`), `core/rig/script.js` (`read`, `compare`), `core/rig/folder.js`
-   (`listing`, `readText`), `core/rig/fake-prop.js` (`createFakeProp`).
-6. `app/main/host.js`, the seams (the only lines in that file that exist for B and C):
+5. Stubs with their final signatures, each returning the empty shape this document gives: `core/rig/check.ts`
+   (`items`, `summary`), `core/rig/liveness.ts` (`createLiveness`), `core/rig/scan.ts` (`scan`),
+   `core/rig/senders.ts` (`senders`), `core/rig/script.ts` (`read`, `compare`), `core/rig/folder.ts`
+   (`listing`, `readText`), `core/rig/fake-prop.ts` (`createFakeProp`).
+6. `app/main/host.ts`, the seams (the only lines in that file that exist for B and C):
    - `const rigService = { status, monitor, senders, ask, scan, locked }` (4.3), stubbed;
    - `snapshot()` gains `rig` (5.1, from the stubs), `proposal.files`, and
      `assistant: assistant.status({ document, engine, rig: rigService, imported: state.imported || null })`;
@@ -1057,7 +1057,7 @@ where it is not:
      `document.proposeDocument(document.doc, { summary: 'Firmware for <name>', author: 'you', files })`;
      `agent-guide` → `require('../../core/assistant/guide').agentGuide(document.doc, { showDir: document.showDir, bin })` likewise;
    - `'device-try'`, `'rig-scan'`, `'prop-files'`, `'agent-guide'` handled for Show mode as 5.1 says.
-7. `app/main/smoke.js`: one loop, after the existing sections, that runs `./smoke-rig`,
+7. `app/main/smoke.ts`: one loop, after the existing sections, that runs `./smoke-rig`,
    `./smoke-assistant-rig` and `./smoke-rig-pages` if each exists (`require` inside `try`; a
    `MODULE_NOT_FOUND` for that very file is skipped, anything else is thrown), each
    `run({ host, win, check, until, page, sleep, shot, dir })`.
@@ -1068,26 +1068,26 @@ where it is not:
 is there, and one function says whether the show is ready. All of it works with no window.
 
 **Owns.**
-- New: `core/rig/{devices,liveness,check,scan,senders,script,folder,fake-prop}.js`, `core/show/files.js`,
-  `bin/ec-fake-prop.js`, `app/main/smoke-rig.js`,
+- New: `core/rig/{devices,liveness,check,scan,senders,script,folder,fake-prop}.js`, `core/show/files.ts`,
+  `bin/ec-fake-prop.ts`, `app/main/smoke-rig.ts`,
   `test/rig-{devices,ops,cue,live,check,folder,files,script}.test.js`.
 - Edits: `core/show/{show,ops,cue-types,diff,document}.js`, `core/net/{hub,devices}.js`,
-  `core/engine/dry-run.js`, `app/main/host.js`, `app/main/smoke.js` (step 0's loop only), `bin/ec.js`,
-  `package.json` (one script, `fake-prop`), `test/defaults.test.js`, and the docs
+  `core/engine/dry-run.ts`, `app/main/host.ts`, `app/main/smoke.ts` (step 0's loop only), `bin/ec.ts`,
+  `package.json` (one script, `fake-prop`), `test/defaults.test.ts`, and the docs
   `docs/specs/{00-defaults,03-show-file,06-control-surfaces}.md`.
 
 **After the seam, builds.**
-- `core/net/hub.js`: `configure({ patches, devices, … })` (a device is found by id as a patch is; "the only
+- `core/net/hub.ts`: `configure({ patches, devices, … })` (a device is found by id as a patch is; "the only
   patch" counts patches); `send(…, { quiet })`; replies and heartbeats that match a device's `alive` kept out
   of the monitor (the first after a silence excepted) and still counted; each entry's `from`;
   `pretendHeard(id, text)` for test runs; what arrives on the input port from a device's address is credited
   to it.
-- `core/rig/liveness.js`, `scan.js`, `senders.js`; `resend` in `sendNetwork`.
-- `core/rig/check.js` (3.7), `script.js` (3.8), `folder.js` (3.9, with `.docx`).
+- `core/rig/liveness.ts`, `scan.ts`, `senders.ts`; `resend` in `sendNetwork`.
+- `core/rig/check.ts` (3.7), `script.ts` (3.8), `folder.ts` (3.9, with `.docx`).
 - The host: `rigService` and the six commands, real; the input port wanted by a heartbeat device; a notice,
   once, when a needed device stops answering; ticks.
-- `core/rig/fake-prop.js` and `bin/ec-fake-prop.js` (below).
-- `bin/ec.js`: `ec devices <show>` (each device, one line, then its commands); `ec check <show> [--ask]` (the
+- `core/rig/fake-prop.ts` and `bin/ec-fake-prop.ts` (below).
+- `bin/ec.ts`: `ec devices <show>` (each device, one line, then its commands); `ec check <show> [--ask]` (the
   rows a folder can answer; with `--ask`, each `ask` device is asked once from here; exit code 1 on a
   `problem`); `ec try <show> <device> <command> [key=value …]` (composes, prints the message, sends it once:
   a person at a terminal is a person); `ec fake-prop [--name n] [--kind light|switch] [--port 53100]`.
@@ -1096,12 +1096,12 @@ is there, and one function says whether the show is ready. All of it works with 
 → `{ start() → Promise<{ port }>, stop(), heard: [{ at, text }], state(), set({ battery, signal }), silent(on) }`.
 It speaks 6.1 to the letter over real UDP: answers `/ec/hello`, obeys every command by changing its `state`,
 drops a repeated `#id`, and with `silent(true)` hears and answers nothing (a prop with a flat battery).
-`bin/ec-fake-prop.js` runs one in the foreground and prints each message as it arrives, so a person can see
+`bin/ec-fake-prop.ts` runs one in the foreground and prints each message as it arrives, so a person can see
 the app working with no hardware. It is the stand-in for the unit tests (loopback sockets, as
-`test/osc-net.test.js` already uses), for the virtual users (a `--net` session), and for the end-to-end check.
+`test/osc-net.test.ts` already uses), for the virtual users (a `--net` session), and for the end-to-end check.
 
-**Must not touch.** `core/assistant/`, `core/kit/`, `core/engine/cue-engine.js` (the engine does not change),
-`app/renderer/`, `app/main/main.js`, `app/audio/`, the importer.
+**Must not touch.** `core/assistant/`, `core/kit/`, `core/engine/cue-engine.ts` (the engine does not change),
+`app/renderer/`, `app/main/main.ts`, `app/audio/`, the importer.
 
 **Tests.** Unit: a device round-trips through `normalise` and `stringify`; an old show (the fixture
 `test/fixtures/before-kinds.ecshow`) opens, plays and saves byte-for-byte as before, with patches untouched;
@@ -1114,9 +1114,9 @@ the fake prop on loopback (ask and answer, reports read, `resend` acted on once,
 monitor); scan finds it; `items` for each row of 3.7 from invented facts, including "unused is never a
 problem" and "unknown is never ready"; `folder.listing` and `readText` (a path that leaves the folder, a link
 out, a `.docx` made in the test); `files.check` (every refusal) and the files written on accept, a replaced one marked;
-`script.read` and `compare`; `test/defaults.test.js`: a new show has no devices, asks nothing, and the
+`script.read` and `compare`; `test/defaults.test.ts`: a new show has no devices, asks nothing, and the
 input port is shut.
-Smoke (`app/main/smoke-rig.js`; the hub sends nothing in a smoke run): add a device by an edit; fire a Device
+Smoke (`app/main/smoke-rig.ts`; the hub sends nothing in a smoke run): add a device by an edit; fire a Device
 cue and find its message in `snap().sent`; `pretendHeard` an answer and see the device's row go ready and the
 summary change; Hold Back on, Try answers "held"; Show mode refuses `device-try` for a command that is not the
 test; a files-only proposal is accepted and the files are on disk in the temp show.
@@ -1132,16 +1132,16 @@ devices and Device cues; ask whether a device is there; stage firmware and the h
 screen true of this show. With no model, the built-in helper does the offline rungs.
 
 **Owns.**
-- New: `core/assistant/starters.js` (`first`, `folderOps`), `core/assistant/guide.js` (`agentGuide`),
-  `core/kit/kit.js` (`files`, `OPTIONS`), `core/kit/firmware/{prop-light/prop-light.ino,prop-switch/prop-switch.ino,ec_osc.h}`,
-  `app/main/smoke-assistant-rig.js`, `test/{assistant-rig,starters,kit,guide}.test.js`,
+- New: `core/assistant/starters.ts` (`first`, `folderOps`), `core/assistant/guide.ts` (`agentGuide`),
+  `core/kit/kit.ts` (`files`, `OPTIONS`), `core/kit/firmware/{prop-light/prop-light.ino,prop-switch/prop-switch.ino,ec_osc.h}`,
+  `app/main/smoke-assistant-rig.ts`, `test/{assistant-rig,starters,kit,guide}.test.js`,
   `test/users/people/june.md` (a puppeteer with two props and a desk; tasks as goals, one per rung).
-- Edits: `core/assistant/{tools,assistant,mcp}.js`, `bin/ec-mcp.js`, `test/{assistant,assistant-tools,mcp}.test.js`,
-  `test/users/materials.js` (june's desk: six sounds, a script with marks, and a line in her `rig.txt` saying
+- Edits: `core/assistant/{tools,assistant,mcp}.js`, `bin/ec-mcp.ts`, `test/{assistant,assistant-tools,mcp}.test.js`,
+  `test/users/materials.ts` (june's desk: six sounds, a script with marks, and a line in her `rig.txt` saying
   how to start the stand-in prop), `docs/specs/08-assistant.md`.
 
 **Builds.** The eight new tools and the changed ones (4.3), on `ctx.rig` and A's modules; `execute`
-awaited everywhere (`assistant.js`'s loop, `mcp.js`'s `fileBackend`, which gives no `ctx.rig`);
+awaited everywhere (`assistant.ts`'s loop, `mcp.ts`'s `fileBackend`, which gives no `ctx.rig`);
 `TOOL_NAMES` from `TOOLS`; the outline's lines and the reference's DEVICES and MODELS sections (4.4), from A's
 tables; the instructions (4.5); `status(ctx)` returning `first` (4.6); the provider rows' facts for 4.6.1
 (`installed`); the built-in helper's turns (4.6.2); `agentGuide` (4.7); the kit: the two sketches to 6.1 and
@@ -1163,7 +1163,7 @@ group, names cleaned, nothing else set); each of the helper's turns end to end a
 present; no file path leaves `props/<id>/`); `agentGuide` names every device and the right paths; the MCP
 server lists every tool in `TOOLS`. The sketches cannot be compiled here: a test checks only that each
 contains every address of 6.1 and the six rules' markers, and the hand-back says they have never been built.
-Smoke (`app/main/smoke-assistant-rig.js`, provider `demo`): "add a device called Lantern at 127.0.0.1" stages
+Smoke (`app/main/smoke-assistant-rig.ts`, provider `demo`): "add a device called Lantern at 127.0.0.1" stages
 a proposal with one device; accepted, "add a cue that sends identify to Lantern" stages a Device cue; "is
 everything ready?" answers with the Rig's summary; "hand the show over" stages two files.
 
@@ -1177,11 +1177,11 @@ fires its cue 12" produces a device from the model and a Device cue, in one prop
 folder, and meet the assistant's first screen, without reading anything.
 
 **Owns.**
-- New: `app/renderer/Rig.js` (the page and the device editor), `app/main/smoke-rig-pages.js`.
+- New: `app/renderer/Rig.ts` (the page and the device editor), `app/main/smoke-rig-pages.ts`.
 - Edits: `app/renderer/{app,Drawers,Inspector,Settings,CueList,lib}.js`, `app/renderer/styles.css`,
-  `app/main/main.js` (the View menu's Rig item, *File ▸ Start from a Folder…* and the `ec.app` op
+  `app/main/main.ts` (the View menu's Rig item, *File ▸ Start from a Folder…* and the `ec.app` op
   `start-in-folder { path? }`, the models and the kit's `OPTIONS` in what `ec.init()` returns),
-  `app/main/preload.js` if a bridge call is needed, `site/docs/index.html` (now in the service repository; the manual: a section "Equipment
+  `app/main/preload.ts` if a bridge call is needed, `site/docs/index.html` (now in the service repository; the manual: a section "Equipment
   and the Rig", a section "Building a prop" with 6.1 and the steps, and the assistant's section brought up to
   date), `docs/specs/07-design-system.md`.
 
@@ -1193,11 +1193,11 @@ welcome panel's button; Settings' new words and button; *Write firmware…* (a f
 `prop-files`). Every colour is one of the four tokens or a neutral; every state mark is one of the four of
 3.7; nothing here holds show state.
 
-**Must not touch.** `core/`, `app/main/host.js`, `bin/`. It draws what the host pushes and sends the commands
+**Must not touch.** `core/`, `app/main/host.ts`, `bin/`. It draws what the host pushes and sends the commands
 of 5.1. Until A and B are merged the stubs push empty shapes: the pages must draw sensibly from them (an empty
 Rig is the plain-show Rig).
 
-**Tests.** Smoke (`app/main/smoke-rig-pages.js`; with `SMOKE_SHOTS`, a picture of each): the view switch shows
+**Tests.** Smoke (`app/main/smoke-rig-pages.ts`; with `SMOKE_SHOTS`, a picture of each): the view switch shows
 Rig and ⇧⌘R goes there; a plain show draws its rows and the "Nothing yet" line; after an edit adding a device
 the row is there and selecting it opens the editor; a Try click reaches the host (`snap().sent`); a tick sets
 and *Start again* clears; Show mode disables the editor's fields; a Device cue's row reads
@@ -1212,12 +1212,12 @@ and GRAPHITE with no colour outside the tokens.
 
 1. **Merge order: A, then B, then C.** B and C began from A's seam, so each merge should be clean in code.
    Expected conflicts are only where two packages were *given* the same file by mistake; there are none in the
-   lists above. If `app/main/smoke.js`, `package.json` or `test/users/materials.js` conflict, keep both sides.
+   lists above. If `app/main/smoke.ts`, `package.json` or `test/users/materials.ts` conflict, keep both sides.
 2. After each merge: `npm test && npm run smoke`.
 3. **The end-to-end check**, by hand or with one virtual-user session started with `--net` (never beside the
    show's own app: `pgrep` first, as `CLAUDE.md` says). The provider is the built-in helper, so it needs no
    model and is the same every time:
-   1. A new empty folder with six WAVs (from `test/users/materials.js`). `node bin/ec.js fake-prop --name lantern` running.
+   1. A new empty folder with six WAVs (from `test/users/materials.ts`). `node bin/ec.js fake-prop --name lantern` running.
    2. *Start from a folder…* → the drawer says "6 sounds not in a cue yet." → **Make cues from
       these 6 sounds** → Accept. Six cues, in order.
    3. "look for props" → a proposal with one device, Lantern, at 127.0.0.1:53100 → Accept.
@@ -1237,7 +1237,7 @@ and GRAPHITE with no colour outside the tokens.
 The walk of step 3 was done in a `--net` test session with the built-in helper, every step as written, and a
 second time through Claude Code in the person's own words (such a session may now use an installed agent
 through a door of its own, `EC_BRIDGE_FILE`). One difference from step 3.7: a row that could not be ready on the
-test machine did not arise ("All 6 are ready"). `test/users/prepare.js` gives `june` a session with network
+test machine did not arise ("All 6 are ready"). `test/users/prepare.ts` gives `june` a session with network
 ports, so the rule about not running `theo` beside a running show covers `june` too.
 
 ## 9. What is left out, what is unproven, what to ask
@@ -1265,7 +1265,7 @@ In `CLAUDE.md`'s list since the merge (as corrected there):
 
 - **The prop kit's firmware has never been flashed or run.** It compiles with arduino-cli for `esp32` and
   `esp32c3`; no board has been flashed with it. Every rule in 6.2 is a rule the sketch was written to, not one
-  that was watched. The protocol has been spoken only by this app and its own stand-in (`bin/ec-fake-prop.js`).
+  that was watched. The protocol has been spoken only by this app and its own stand-in (`bin/ec-fake-prop.ts`).
 - *Look for props* on a real network: whether a broadcast hello reaches a prop through a given router (many
   isolate clients), and on a computer with two networks.
 - A packaged, signed build reaching a prop on macOS (the Local Network permission is judged per signed app; the

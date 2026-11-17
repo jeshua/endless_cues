@@ -14,12 +14,17 @@
  * A GO is sent as "stand by on the cue the main fired, then GO", and every command is followed by where the
  * main's playhead now is when that changed: a message lost on the way costs the backup one cue, never its place.
  */
-const cueAddr = (id, verb) => `/cue_id/${encodeURIComponent(id)}/${verb}`;
-const head = (id) => `/playheadID/${id ? encodeURIComponent(id) : 'none'}`;
+/** A host command, as mirror reads it. */
+export interface MirroredCmd { op?: unknown; id?: string | null; [field: string]: unknown }
+/** What the main's command did: the host's answer. */
+export interface MirroredResult { error?: unknown; ignored?: unknown; loaded?: { at?: unknown } | null }
 
-function mirror(c, { before = {}, after = {}, result = null } = {}) {
+const cueAddr = (id: string, verb: string) => `/cue_id/${encodeURIComponent(id)}/${verb}`;
+const head = (id: string | null | undefined) => `/playheadID/${id ? encodeURIComponent(id) : 'none'}`;
+
+function mirror(c: MirroredCmd | null | undefined, { before = {}, after = {}, result = null }: { before?: { playhead?: string | null }; after?: { playhead?: string | null }; result?: MirroredResult | null } = {}): string[] {
   if (!c || typeof c.op !== 'string' || (result && result.error)) return [];
-  const out = [];
+  const out: string[] = [];
   const id = c.id || null;
   switch (c.op) {
     case 'go':

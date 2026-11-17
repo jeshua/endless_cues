@@ -8,7 +8,12 @@
 /** How a parameter turns: { kind: 'log' | 'sq' | 'lin', min, max, origin, step }.
  *  `origin` is where the coloured arc starts: 0 for a setting that can go either side of it (a gain, a pitch),
  *  else the bottom of the range. `step` is what a coarse turn rounds to (a fine one rounds ten times finer). */
-export function scaleOf(p) {
+/** What a knob needs of a parameter: its range and its unit ('Hz', 'dB', 'ms', 's', 'st', 'ct', ':1', '' …). */
+export interface DialParam { min: number; max: number; unit?: string }
+/** A scale: how a parameter turns. */
+export interface Scale { kind: 'log' | 'sq' | 'lin'; min: number; max: number; origin: number; step: number }
+
+export function scaleOf(p: DialParam): Scale {
   const { min, max } = p;
   const origin = min < 0 && max > 0 ? 0 : min;
   if (min > 0 && max / min >= 20) return { kind: 'log', min, max, origin, step: 0 };
@@ -20,10 +25,10 @@ export function scaleOf(p) {
   return { kind: 'lin', min, max, origin, step };
 }
 
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** Where a value sits on the knob, 0 to 1. */
-export function toPos(p, v) {
+export function toPos(p: DialParam, v: number | string | null | undefined) {
   const s = scaleOf(p), x = clamp(Number(v), s.min, s.max);
   if (!Number.isFinite(x)) return 0;
   if (s.kind === 'log') return Math.log(x / s.min) / Math.log(s.max / s.min);
@@ -32,7 +37,7 @@ export function toPos(p, v) {
 }
 
 /** The value at a position on the knob, rounded as a hand would want it (`fine`: ten times finer). */
-export function fromPos(p, pos, fine = false) {
+export function fromPos(p: DialParam, pos: number, fine = false) {
   const s = scaleOf(p), t = clamp(pos, 0, 1);
   const raw = s.kind === 'log' ? s.min * Math.pow(s.max / s.min, t) : s.kind === 'sq' ? s.min + (s.max - s.min) * t * t : s.min + (s.max - s.min) * t;
   return quantize(p, raw, fine);
@@ -40,9 +45,9 @@ export function fromPos(p, pos, fine = false) {
 
 /** A value rounded to what the knob can land on: three significant figures along a ratio (a frequency to the
  *  nearest hertz above 100 Hz), else the scale's step. Always within the parameter's range. */
-export function quantize(p, v, fine = false) {
+export function quantize(p: DialParam, v: number, fine = false) {
   const s = scaleOf(p);
-  let out;
+  let out: number;
   if (s.kind === 'log') {
     const figs = fine ? 4 : 3;
     const mag = Math.pow(10, Math.floor(Math.log10(Math.abs(v))) - (figs - 1));
@@ -57,11 +62,11 @@ export function quantize(p, v, fine = false) {
   return Math.round(clamp(out, s.min, s.max) * 1000) / 1000;
 }
 
-const trim = (n, places) => String(Number(n.toFixed(places)));
-const signed = (n, text) => (n > 0 ? `+${text}` : n < 0 ? `−${text.replace('-', '')}` : text);
+const trim = (n: number, places: number) => String(Number(n.toFixed(places)));
+const signed = (n: number, text: string) => (n > 0 ? `+${text}` : n < 0 ? `−${text.replace('-', '')}` : text);
 
 /** A value as it is shown under its knob: { text, unit }. */
-export function format(p, v) {
+export function format(p: DialParam, v: number | string | null | undefined): { text: string; unit: string } {
   const n = Number(v);
   if (!Number.isFinite(n)) return { text: '', unit: p.unit || '' };
   if (p.unit === 'Hz') return n >= 1000 ? { text: trim(n / 1000, n >= 10000 ? 1 : 2), unit: 'kHz' } : { text: String(Math.round(n)), unit: 'Hz' };
@@ -74,11 +79,11 @@ export function format(p, v) {
   return { text: trim(n, 3), unit: p.unit || '' };
 }
 /** A setting with no unit that runs from nothing to one or two (a mix, a depth, a feedback, a width): a percentage. */
-export function share(p) { return !p.unit && p.min >= 0 && p.max <= 2; }
+export function share(p: DialParam) { return !p.unit && p.min >= 0 && p.max <= 2; }
 
 /** What was typed into a knob's box, as the parameter's own number, or null when it is not one. Takes the units the
  *  knob shows: "1.8k", "1.8 kHz", "350 ms" for a time in seconds, "30%" for a share; "−6" with the printer's minus. */
-export function parseTyped(p, text) {
+export function parseTyped(p: DialParam, text: string | number) {
   let t = String(text).trim().replace(/−/g, '-').replace(/,/g, '.').toLowerCase();
   if (!t) return null;
   let scale = 1;
@@ -98,12 +103,12 @@ export function parseTyped(p, text) {
 // ── the response curves ─────────────────────────────────────────────────────────────────────────────
 // The level in dB a filter gives at a frequency, from the analogue prototype of each biquad (the shape the
 // browser's filters are drawn from; close enough below a quarter of the sample rate for a picture an inch wide).
-const Q_OF_SLOPE = { 12: [0.7071], 24: [0.5412, 1.3066], 48: [0.5098, 0.6013, 0.9, 2.5629] };
+const Q_OF_SLOPE: Record<number, number[]> = { 12: [0.7071], 24: [0.5412, 1.3066], 48: [0.5098, 0.6013, 0.9, 2.5629] };
 
 /** One second-order section's level in dB at `hz`. `type`: lowpass, highpass, peaking, lowshelf, highshelf. */
-export function sectionDb(type, f0, q, gainDb, hz) {
+export function sectionDb(type: string, f0: number, q: number, gainDb: number, hz: number) {
   const x = hz / f0, x2 = x * x;
-  const mag2 = (re, im) => re * re + im * im;
+  const mag2 = (re: number, im: number) => re * re + im * im;
   if (type === 'lowpass') return -10 * Math.log10(mag2(1 - x2, x / q));
   if (type === 'highpass') return 10 * Math.log10(x2 * x2 / mag2(1 - x2, x / q));
   const A = Math.pow(10, gainDb / 40);
@@ -116,18 +121,18 @@ export function sectionDb(type, f0, q, gainDb, hz) {
 }
 
 /** A high-pass or low-pass of a slope (12, 24, 48 dB/oct) at `hz`: the Butterworth cascade the chain builds. */
-export function filterDb(type, f0, slope, hz) {
+export function filterDb(type: string, f0: number, slope: number, hz: number) {
   return (Q_OF_SLOPE[slope] || Q_OF_SLOPE[12]).reduce((sum, q) => sum + sectionDb(type, f0, q, 0, hz), 0);
 }
 
 /** An eq's bands ([{ type, hz, q, db }]) together at `hz`. */
-export function eqDb(bands, hz) {
+export function eqDb(bands: { type: string; hz: number; q?: number; db?: number }[], hz: number) {
   return bands.reduce((sum, b) => sum + (b.db ? sectionDb(b.type, b.hz, b.q || 0.7071, b.db, hz) : 0), 0);
 }
 
 /** An SVG path for a curve `dbAt(hz)` across 20 Hz to 20 kHz, `w` by `h`, with `top` dB at the top and `bottom` at the foot. */
-export function curvePath(dbAt, w, h, top = 12, bottom = -30, points = 64) {
-  const out = [];
+export function curvePath(dbAt: (hz: number) => number, w: number, h: number, top = 12, bottom = -30, points = 64) {
+  const out: string[] = [];
   for (let i = 0; i <= points; i++) {
     const hz = 20 * Math.pow(1000, i / points);
     const d = clamp(dbAt(hz), bottom, top);

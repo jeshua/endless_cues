@@ -18,12 +18,30 @@
  */
 import { TYPES, TYPE_ORDER, COMMON } from '../show/cue-types';
 import * as show from '../show/show';
+import type { Cue, ShowDoc } from '../show/types';
+
+/** One thing the window does before a place is on screen (`do`: cues | select | tab | more | settings | reveal). */
+export interface PlaceStep { do: string; cue?: string; types?: string[]; tab?: string; section?: string }
+/** A place as the table says it. */
+export interface PlaceDef {
+  label: string;
+  sel: string | null;
+  steps?: PlaceStep[];
+  fallback?: string;
+  absent?: string;
+  menu?: string;
+  words?: string;
+  settings?: boolean;
+}
+/** A place as the window is sent it: its name, its steps, and its fallback resolved. */
+export type Place = Omit<PlaceDef, 'steps' | 'fallback'> & { target: string; steps: PlaceStep[]; fallback?: Place | null };
+export type Resolved = { ok: true; place: Place; why?: undefined } | { ok: false; why: string; place?: undefined };
 
 // name → { label, sel, steps?, fallback?, absent?, menu? }. `absent`: what to say when it is not on screen (it is
 // drawn only some of the time). `menu`: the place is a menu item, which cannot be ringed: the button that opens its
 // menu is pointed at instead (`sel`), with the item named. `sel: null`: there is nothing on screen to point at,
 // only words (a menu bar item).
-const FIXED = {
+const FIXED: Record<string, PlaceDef | undefined> = {
   // the title bar
   save: { label: 'Save', sel: '[data-save]' },
   'more-menu': { label: 'The ⋯ menu', sel: '[data-more-menu]' },
@@ -72,15 +90,15 @@ const FIXED = {
 };
 
 /** Other names for a place (a word a model or a person might use first). */
-const ALIASES = { rig: 'tab:rig', edit: 'tab:edit', 'show-mode': 'tab:show', live: 'tab:live', keys: 'settings:keys', settings: 'settings-button',
+const ALIASES: Record<string, string | undefined> = { rig: 'tab:rig', edit: 'tab:edit', 'show-mode': 'tab:show', live: 'tab:live', keys: 'settings:keys', settings: 'settings-button',
   colour: 'inspector-field:color', color: 'inspector-field:color', triggers: 'inspector-tab:triggers', 'sound-design': 'inspector-tab:design', 'time-and-loops': 'inspector-tab:time' };
 
-const TABS = { edit: 'Edit', rig: 'Rig', show: 'Show', live: 'Live' };
-const INSPECTOR_TABS = { basics: 'Basics', type: 'the cue type’s own tab', time: 'Time & Loops', design: 'Sound design', triggers: 'Triggers' };
+const TABS: Record<string, string | undefined> = { edit: 'Edit', rig: 'Rig', show: 'Show', live: 'Live' };
+const INSPECTOR_TABS: Record<string, string | undefined> = { basics: 'Basics', type: 'the cue type’s own tab', time: 'Time & Loops', design: 'Sound design', triggers: 'Triggers' };
 // Settings: [pane, label, what it is in] — a pane under Integrations is a tab along its top
-const PANES = [['general', 'General'], ['show', 'Show'], ['audio', 'Audio'], ['integrations', 'Integrations'], ['network', 'Network', 'integrations'], ['video', 'Video', 'integrations'],
+const PANES: [pane: string, label: string, within?: string][] = [['general', 'General'], ['show', 'Show'], ['audio', 'Audio'], ['integrations', 'Integrations'], ['network', 'Network', 'integrations'], ['video', 'Video', 'integrations'],
   ['light', 'Light', 'integrations'], ['triggers', 'Triggers', 'integrations'], ['modules', 'Modules', 'integrations'], ['assistant', 'Assistant'], ['keys', 'Keys'], ['about', 'About']];
-const FAMILIES = {
+const FAMILIES: Record<string, string[] | string> = {
   tab: Object.keys(TABS),
   'add-type': TYPE_ORDER.filter((t) => !TYPES[t].heading),
   'inspector-tab': Object.keys(INSPECTOR_TABS),
@@ -91,11 +109,11 @@ const FAMILIES = {
 
 // a field's place in the inspector: which tab, and whether it waits under More (app/renderer/Inspector.js draws them so)
 const TIME_KINDS = new Set(['markers', 'regions', 'numbers', 'envelope', 'automation']);
-function fieldPlace(key) {
+function fieldPlace(key: string) {
   const common = COMMON.find((f) => f.key === key && !f.hidden);
   const types = TYPE_ORDER.filter((t) => TYPES[t].fields.some((f) => f.key === key && !f.hidden));
   if (!common && !types.length) return null;
-  const f = common || TYPES[types[0]].fields.find((x) => x.key === key);
+  const f = common || TYPES[types[0]].fields.find((x) => x.key === key)!;
   const tab = f.tab === 'triggers' ? 'triggers' : f.tab === 'design' || f.kind === 'chain' || f.kind === 'eq' && f.tab ? 'design' : TIME_KINDS.has(f.kind) ? 'time' : common ? 'basics' : 'type';
   // (a common field a type keeps for itself, or one no heading has: any cue but a section)
   const fits = common ? TYPE_ORDER.filter((t) => !TYPES[t].heading && !(TYPES[t].common && !TYPES[t].common.includes(key))) : types;
@@ -103,13 +121,13 @@ function fieldPlace(key) {
 }
 
 /** A cue named by "#12", "12" or its id, in `doc`. */
-function cueIn(doc, want) {
+function cueIn(doc: ShowDoc | null, want: unknown): Cue | null {
   const w = String(want || '').trim();
   if (!doc || !w) return null;
   return w.startsWith('#') ? show.findByNumber(doc, w.slice(1)) : (show.index(doc).byId.get(w) || show.findByNumber(doc, w));
 }
 
-const settingsPlace = (pane) => {
+const settingsPlace = (pane: string): PlaceDef | null => {
   const p = PANES.find((x) => x[0] === pane);
   if (!p) return null;
   return { label: `Settings ▸ ${p[2] ? 'Integrations ▸ ' : ''}${p[1]}`, sel: p[2] ? `.modal .settings-subtabs [data-section="${p[0]}"]` : `.modal nav [data-section="${p[0]}"]`, steps: [{ do: 'settings', section: p[0] }], settings: true };
@@ -123,7 +141,7 @@ function listOfNames() {
  * A name, as the window is to be sent it. `cue` (optional) is a cue the person is talking about: an inspector place
  * is shown on it. Unknown names, fields and cues are refused with what there is, so a model can correct itself.
  */
-function resolve(target, { doc = null, cue = null } = {}) {
+function resolve(target: unknown, { doc = null, cue = null }: { doc?: ShowDoc | null; cue?: unknown } = {}): Resolved {
   let name = String(target || '').trim().toLowerCase().replace(/\s+/g, '-');
   if (!name) return { ok: false, why: `Say which place. The places: ${listOfNames()}.` };
   const raw = ALIASES[name] || String(target).trim();
@@ -132,7 +150,7 @@ function resolve(target, { doc = null, cue = null } = {}) {
   const fam = colon > 0 ? name.slice(0, colon) : null, arg = colon > 0 ? raw.slice(raw.indexOf(':') + 1).trim() : '';
   const named = cue ? cueIn(doc, cue) : null;
   if (cue && doc && !named) return { ok: false, why: `No cue ${cue} in the show.` };
-  const place = (p) => ({ ok: true, place: { target: fam ? `${fam}:${arg}` : name, ...p, steps: p.steps || [], ...(p.fallback ? { fallback: resolve(p.fallback, { doc }).place || null } : {}) } });
+  const place = (p: PlaceDef): Resolved => ({ ok: true, place: { target: fam ? `${fam}:${arg}` : name, ...p, steps: p.steps || [], ...(p.fallback ? { fallback: resolve(p.fallback, { doc }).place || null } : {}) } as Place });
   if (!fam) {
     const p = FIXED[name];
     if (!p) return { ok: false, why: `There is no place called “${target}”. The places: ${listOfNames()}.` };

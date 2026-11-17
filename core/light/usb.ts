@@ -23,7 +23,7 @@ const START = 0x7e, END = 0xe7;
 const LABEL_SEND_DMX = 6;
 
 /** One "send DMX" message for an Enttec DMX USB Pro: the frame it will repeat until told otherwise. */
-function enttecProFrame(levels) {
+function enttecProFrame(levels?: ArrayLike<number> | null): Buffer {
   const src = Buffer.from(levels || []);
   if (src.length > 512) throw new Error(`a DMX universe is up to 512 levels (got ${src.length})`);
   const n = Math.max(24, src.length);              // the widget wants at least 24 levels

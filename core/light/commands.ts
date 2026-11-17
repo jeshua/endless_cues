@@ -22,16 +22,26 @@
  * (core/light/patch.js) and gives the levels, with what it could not understand line by line.
  */
 import { keyOf } from './patch';
+import type { CompiledPatch } from './patch';
 
-const round = (v, bits) => { const q = bits === 16 ? 100 : 10; return Math.round(v * q) / q; };
+/** What a command sets a parameter to. */
+export type LightValue = { kind: 'home' } | { kind: 'pass' } | { kind: 'level'; v: number } | { kind: 'colour'; rgb: number[] };
+/** One line of light commands, read. */
+export interface LightCommand {
+  line: number; text: string; targets: (string | { from: number; to: number })[]; param: string | null; value: LightValue | null; error?: string;
+}
+/** Levels by 'instrument.parameter', 0–100. */
+export type Levels = Map<string, number>;
+
+const round = (v: number, bits: number) => { const q = bits === 16 ? 100 : 10; return Math.round(v * q) / q; };
 
 /** Text → [{ line, text, targets: [name | { from, to }], param, value: { kind, v?, rgb? }, error? }]. */
-function parse(text) {
-  const out = [];
+function parse(text: unknown): LightCommand[] {
+  const out: LightCommand[] = [];
   for (const [i, raw] of String(text == null ? '' : text).split(/\r?\n/).entries()) {
     const src = raw.trim();
     if (!src || src.startsWith('#') || src.startsWith('//')) continue;
-    const cmd = { line: i + 1, text: src, targets: [], param: null, value: null };
+    const cmd: LightCommand = { line: i + 1, text: src, targets: [], param: null, value: null };
     out.push(cmd);
     const eq = src.indexOf('=');
     if (eq < 0) { cmd.error = 'a command is “name = level”'; continue; }
@@ -67,13 +77,13 @@ function parse(text) {
  * errors: [{ line, text, why }] }. A line that cannot be understood is left out and reported; the
  * rest still run (a cue with one bad line must not leave the stage dark).
  */
-function evaluate(text, patch) {
-  const levels = new Map();
-  const errors = [];
-  for (const cmd of Array.isArray(text) ? text : parse(text)) {
-    const fail = (why) => errors.push({ line: cmd.line, text: cmd.text, why });
+function evaluate(text: unknown, patch: CompiledPatch): { levels: Levels; errors: { line: number; text: string; why: string }[] } {
+  const levels: Levels = new Map();
+  const errors: { line: number; text: string; why: string }[] = [];
+  for (const cmd of Array.isArray(text) ? (text as LightCommand[]) : parse(text)) {
+    const fail = (why: string) => errors.push({ line: cmd.line, text: cmd.text, why });
     if (cmd.error) { fail(cmd.error); continue; }
-    const insts = [];
+    const insts: string[] = [];
     let bad = false;
     for (const t of cmd.targets) {
       if (typeof t === 'object') {
@@ -91,16 +101,17 @@ function evaluate(text, patch) {
     if (bad) continue;
     let hit = 0;
     for (const key of new Set(insts)) {
-      const def = patch.instruments.get(key).def;
+      const def = patch.instruments.get(key)!.def;
+      const value = cmd.value as LightValue;    // every line without an error has one
       const params = cmd.param === 'colour' ? (['red', 'green', 'blue'].every((c) => def.byKey.has(c)) ? ['red', 'green', 'blue'] : [])
         : cmd.param ? (def.byKey.has(cmd.param) ? [cmd.param] : []) : [def.default];
       // "front = pass" lets go of everything this cue said about it; "front.red = pass" of that one parameter
-      if (cmd.value.kind === 'pass' && !cmd.param) { for (const p of def.params) levels.delete(`${key}.${p.key}`); hit++; continue; }
+      if (value.kind === 'pass' && !cmd.param) { for (const p of def.params) levels.delete(`${key}.${p.key}`); hit++; continue; }
       params.forEach((p, i) => {
         const k = `${key}.${p}`;
-        const info = def.byKey.get(p);
-        if (cmd.value.kind === 'pass') levels.delete(k);
-        else levels.set(k, cmd.value.kind === 'home' ? info.home : cmd.value.kind === 'colour' ? cmd.value.rgb[i] : round(cmd.value.v, info.bits));
+        const info = def.byKey.get(p)!;
+        if (value.kind === 'pass') levels.delete(k);
+        else levels.set(k, value.kind === 'home' ? info.home : value.kind === 'colour' ? value.rgb[i] : round(value.v, info.bits));
         hit++;
       });
     }
@@ -110,7 +121,7 @@ function evaluate(text, patch) {
 }
 
 /** One level as a command line: "front = 80", "cyc.red = 100". */
-function line(patch, key, value) {
+function line(patch: CompiledPatch, key: string, value: unknown): string {
   const at = key.lastIndexOf('.');
   const inst = patch.instruments.get(key.slice(0, at));
   const param = key.slice(at + 1);
@@ -120,10 +131,10 @@ function line(patch, key, value) {
 }
 
 /** Levels as text a person can read: one line each, in patch order, an instrument's intensity before its other parameters. */
-function format(levels, patch) {
-  const out = [];
+function format(levels: Levels, patch: CompiledPatch): string {
+  const out: string[] = [];
   for (const inst of patch.instruments.values()) {
-    for (const p of [inst.def.byKey.get(inst.def.default), ...inst.def.params.filter((x) => x.key !== inst.def.default)]) {
+    for (const p of [inst.def.byKey.get(inst.def.default)!, ...inst.def.params.filter((x) => x.key !== inst.def.default)]) {
       const k = `${inst.key}.${p.key}`;
       if (levels.has(k)) out.push(line(patch, k, levels.get(k)));
     }
@@ -135,7 +146,7 @@ function format(levels, patch) {
  * A cue's text with some levels changed (the dashboard's Update): a line that set exactly that one
  * level is rewritten where it stands; anything else is added at the end, where it wins.
  */
-function merge(text, levels, patch) {
+function merge(text: unknown, levels: Levels, patch: CompiledPatch): string {
   const left = new Map(levels);
   const lines = String(text || '').split(/\r?\n/);
   const out = lines.map((raw) => {

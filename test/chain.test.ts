@@ -6,11 +6,11 @@ import * as Chain from '../core/audio/chain';
 import { coerce, fieldOf } from '../core/show/cue-types';
 
 const SR = 48000;
-const sine = (hz, db, secs, harmonics = 1) => { const a = Math.pow(10, db / 20), s = new Float32Array(Math.round(SR * secs)); for (let i = 0; i < s.length; i++) for (let h = 1; h <= harmonics; h++) s[i] += a / h * Math.sin(2 * Math.PI * hz * h * i / SR); return s; };
+const sine = (hz: number, db: number, secs: number, harmonics = 1) => { const a = Math.pow(10, db / 20), s = new Float32Array(Math.round(SR * secs)); for (let i = 0; i < s.length; i++) for (let h = 1; h <= harmonics; h++) s[i] += a / h * Math.sin(2 * Math.PI * hz * h * i / SR); return s; };
 /** A kernel run over a signal, a block of 128 at a time as a worklet runs it. */
-function run(k, sig) { const out = new Float32Array(sig.length); for (let i = 0; i + 128 <= sig.length; i += 128) k.process([sig.subarray(i, i + 128)], [out.subarray(i, i + 128), new Float32Array(128)]); return out; }
-const rmsDb = (x, from, to) => { let s = 0; for (let i = Math.round(from * SR); i < Math.round(to * SR); i++) s += x[i] * x[i]; return 10 * Math.log10(s / (Math.round(to * SR) - Math.round(from * SR)) + 1e-12); };
-const hzOf = (x, from, to) => { let n = 0; for (let i = Math.round(from * SR) + 1; i < Math.round(to * SR); i++) if (x[i - 1] < 0 && x[i] >= 0) n++; return n / (to - from); };
+function run(k: { process(inp: Float32Array[], out: Float32Array[]): void }, sig: Float32Array) { const out = new Float32Array(sig.length); for (let i = 0; i + 128 <= sig.length; i += 128) k.process([sig.subarray(i, i + 128)], [out.subarray(i, i + 128), new Float32Array(128)]); return out; }
+const rmsDb = (x: Float32Array, from: number, to: number) => { let s = 0; for (let i = Math.round(from * SR); i < Math.round(to * SR); i++) s += x[i] * x[i]; return 10 * Math.log10(s / (Math.round(to * SR) - Math.round(from * SR)) + 1e-12); };
+const hzOf = (x: Float32Array, from: number, to: number) => { let n = 0; for (let i = Math.round(from * SR) + 1; i < Math.round(to * SR); i++) if (x[i - 1] < 0 && x[i] >= 0) n++; return n / (to - from); };
 
 test('a chain keeps only the tools it names, every setting written out and made safe', () => {
   assert.strictEqual(Chain.cleanChain(null), null);
@@ -54,12 +54,12 @@ test('a plan is the tools that are on, in the one order they run, and a sound wi
   // bypassed: the plain wire, eq and all
   assert.deepStrictEqual(Chain.plan({ highpass: {}, bypass: true }, { mid: 3 }).stages, []);
   // a tail with nothing that rings is no tail
-  assert.strictEqual(Chain.plan({ highpass: {}, tail: true }).tail, false);
+  assert.strictEqual(Chain.plan({ highpass: {}, tail: true }, undefined).tail, false);
   // a delay's tail: its repeats down 60 dB
-  const d = Chain.plan({ delay: { time: 0.5, feedback: 0.5 }, tail: true });
+  const d = Chain.plan({ delay: { time: 0.5, feedback: 0.5 }, tail: true }, undefined);
   assert.ok(d.tailSecs > 5 && d.tailSecs < 6.1, String(d.tailSecs));
   // a change of a number keeps the structure; a change of slope, or a tool switched on, does not
-  const sig = (c) => Chain.plan(c).sig;
+  const sig = (c: unknown) => Chain.plan(c, undefined).sig;
   assert.strictEqual(sig({ lowpass: { hz: 400 } }), sig({ lowpass: { hz: 9000 } }));
   assert.notStrictEqual(sig({ lowpass: { hz: 400 } }), sig({ lowpass: { hz: 400, slope: 24 } }));
   assert.notStrictEqual(sig({ lowpass: {} }), sig({ lowpass: {}, delay: {} }));
@@ -70,7 +70,7 @@ test('every built-in preset is a chain the show would keep as written', () => {
     const c = Chain.cleanChain(p.chain);
     assert.ok(c, name);
     assert.ok(Chain.plan(p.chain, p.eq).stages.length >= 2, name);
-    for (const [tool, set] of Object.entries(p.chain)) if (set && typeof set === 'object') for (const [k, v] of Object.entries(set)) assert.strictEqual(c[tool][k], v, `${name}: ${tool}.${k}`);
+    for (const [tool, set] of Object.entries(p.chain)) if (set && typeof set === 'object') for (const [k, v] of Object.entries(set)) assert.strictEqual((c![tool as keyof Chain.ChainValue] as Record<string, unknown>)[k], v, `${name}: ${tool}.${k}`);
   }
   assert.deepStrictEqual(Chain.PRESETS.Voice.chain.highpass, { hz: 80, slope: 12 });
 });

@@ -14,9 +14,13 @@
 import * as uiKeys from '../ui/keys';
 import * as places from '../ui/places';
 
+/** One thing on the screen: its place, the words a person uses for it, its keys, what the guide says of it. */
+export interface GuideItem { at: string; ask: RegExp; keys?: string[]; text: string }
+type Key = ReturnType<typeof uiKeys.all>[number];
+
 // [heading, [{ at: the place, ask: what a person says, keys: key ids, text }]]. Keys in the text are written as a
 // Mac shows them; the reader is told ⌘ is Ctrl elsewhere.
-const SCREENS = [
+const SCREENS: [string, GuideItem[]][] = [
   ['The title bar', [
     { at: 'tab:edit', ask: /\bedit (tab|mode)\b/, text: 'Edit [tab:edit]: the cue list, editable.' },
     { at: 'tab:rig', ask: /\brig\b|pre-?show check|equipment|devices?\b/, keys: ['rig'], text: 'Rig [tab:rig]: what the show depends on (devices, files, its script, the checklist) and whether each part is ready, worst first; Try on a device sends it one command; Look for props finds the kit’s props on the network.' },
@@ -87,11 +91,11 @@ const SCREENS = [
 ];
 
 const items = () => SCREENS.flatMap(([, list]) => list);
-const keysOf = (ids = []) => {
+const keysOf = (ids: string[] = []) => {
   const all = uiKeys.all();
-  return ids.map((id) => all.find((k) => k.id === id)).filter(Boolean);
+  return ids.map((id) => all.find((k) => k.id === id)).filter((k): k is Key => !!k);
 };
-const keyWords = (ids) => keysOf(ids).map((k) => `${k.what}: ${k.keys}`).join('; ');
+const keyWords = (ids: string[]) => keysOf(ids).map((k) => `${k.what}: ${k.keys}`).join('; ');
 
 function screensText() {
   return ['HOW TO USE THE APP. Names in [brackets] are places show_in_app can point at; cue:<number> is a cue’s row, settings:<pane> a pane.',
@@ -101,7 +105,7 @@ function screensText() {
 /** Every key, from the app's own table. */
 function keysText() {
   const all = uiKeys.all();
-  const line = (k) => `${k.keys} ${k.what}${k.kind === 'menu' ? ` (${k.where})` : ''}`;
+  const line = (k: Key) => `${k.keys} ${k.what}${k.kind === 'menu' ? ` (${k.where})` : ''}`;
   return ['KEYS (as they come; Settings ▸ Keys can change the single keys on a computer). On Windows and Linux ⌘ is Ctrl and ⌥ is Alt. The single keys work everywhere but in a field being typed in.',
     `Running the show: ${all.filter((k) => k.where === 'Running the show').map(line).join(' · ')}`,
     `Editing the selected cue: ${all.filter((k) => k.where === 'Editing').map(line).join(' · ')}`,
@@ -118,7 +122,7 @@ function guide(part = 'app') {
 
 /** Every [name] the guide's text uses. */
 function namedPlaces() {
-  const out = new Set();
+  const out = new Set<string>();
   for (const it of items()) { out.add(it.at); for (const m of it.text.matchAll(/\[([a-z][a-z0-9:-]*)\]/gi)) out.add(m[1]); }
   return [...out];
 }
@@ -128,9 +132,9 @@ function namedPlaces() {
  * item whose words are in the question wins, most specific first (a field before its tab, a tab before the list).
  */
 const ORDER = ['inspector-field:', 'inspector-tab:', 'settings:', 'tab:'];
-function find(question) {
+function find(question: unknown) {
   const q = ` ${String(question || '').toLowerCase().replace(/[?!.]+/g, ' ')} `;
-  const rank = (it) => { const i = ORDER.findIndex((p) => it.at.startsWith(p)); return i < 0 ? ORDER.length : i; };
+  const rank = (it: GuideItem) => { const i = ORDER.findIndex((p) => it.at.startsWith(p)); return i < 0 ? ORDER.length : i; };
   const hits = items().filter((it) => it.ask.test(q));
   if (!hits.length) return null;
   hits.sort((a, b) => rank(a) - rank(b));

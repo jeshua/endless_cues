@@ -22,17 +22,19 @@ import * as cart from './cart';
 import * as script from './script';
 import { cleanLimits } from '../audio/curves';
 import * as rigDevices from '../rig/devices';
+import type { ShowDoc, Settings, Modules, Cue, CueList, CueIndex, Bus, Device } from './types';
+import type { EngineCue, EngineDoc } from '../engine/cue-engine';
 
 const FORMAT = 'endless-cues-show';
 const VERSION = 1;
 
-const DEFAULT_BUSES = [
+const DEFAULT_BUSES: Bus[] = [
   { id: 'music', name: 'Music', db: 0 },
   { id: 'effects', name: 'Effects', db: 0 },
   { id: 'vocals', name: 'Vocals', db: 0 },
 ];
 
-function defaultSettings() {
+function defaultSettings(): Settings {
   return {
     go: {
       doubleGoProtection: 0.3,   // s: a second GO this soon is ignored
@@ -106,7 +108,7 @@ function defaultSettings() {
   };
 }
 
-function defaultModules() {
+function defaultModules(): Modules {
   return {
     // (who may do what is `passcodes` [{ code, view, edit, control }] and `noPasscode` { view, edit, control }, once set;
     //  `passcode` is the older single one, which grants everything. 53001 is where QLab answers a UDP sender.)
@@ -118,6 +120,8 @@ function defaultModules() {
   };
 }
 
+const isCue = (c: Cue | null): c is Cue => !!c;
+
 function newId(prefix = 'c') { return `${prefix}_${crypto.randomBytes(4).toString('hex')}`; }
 
 /** A NEW show's settings: the defaults, and the one thing only a show made from now on has: its buses say what
@@ -126,12 +130,12 @@ function newId(prefix = 'c') { return `${prefix}_${crypto.randomBytes(4).toStrin
  *  on. Ducking by kind (`ducking`) is written only when a person asks for it in Settings ▸ Audio. */
 function newSettings() {
   const s = defaultSettings();
-  const KIND = { music: 'music', effects: 'effects', vocals: 'voice' };
+  const KIND: Record<string, string> = { music: 'music', effects: 'effects', vocals: 'voice' };
   s.audio.buses = s.audio.buses.map((b) => ({ ...b, kind: KIND[b.id] }));
   return s;
 }
 
-function newShow(title = 'Untitled show') {
+function newShow(title = 'Untitled show'): ShowDoc {
   return {
     format: FORMAT,
     version: VERSION,
@@ -145,15 +149,15 @@ function newShow(title = 'Untitled show') {
 }
 
 /** Every cue in the show, depth first: fn(cue, parentCue | null, list). */
-function walk(doc, fn) {
-  const go = (cues, parent, list) => {
+function walk(doc: Pick<ShowDoc, 'lists'>, fn: (cue: Cue, parent: Cue | null, list: CueList) => void) {
+  const go = (cues: Cue[] | undefined, parent: Cue | null, list: CueList) => {
     for (const c of cues || []) { fn(c, parent, list); if (c.children) go(c.children, c, list); }
   };
   for (const l of doc.lists || []) go(l.cues, null, l);
 }
 
-function index(doc) {
-  const byId = new Map(), parentOf = new Map(), listOf = new Map();
+function index(doc: ShowDoc) {
+  const byId = new Map<string, Cue>() as CueIndex, parentOf = new Map<string, string | null>(), listOf = new Map<string, string>();
   walk(doc, (c, parent, list) => { byId.set(c.id, c); parentOf.set(c.id, parent ? parent.id : null); listOf.set(c.id, list.id); });
   // (the cue lists by id, beside the cues: a Start, Stop or Fade cue can be aimed at a whole list)
   byId.lists = new Map((doc.lists || []).map((l) => [l.id, l]));
@@ -162,11 +166,14 @@ function index(doc) {
   return { byId, parentOf, listOf };
 }
 
+/** Where a cue sits: the array it is in, its place in it, the group it is in (or null) and its list. */
+export interface Located { siblings: Cue[]; at: number; parent: Cue | null; list: CueList }
+
 /** The array a cue sits in, and where: { siblings, at, parent, list } or null. */
-function locate(doc, id) {
-  let found = null;
-  const go = (cues, parent, list) => {
-    for (let i = 0; i < (cues || []).length && !found; i++) {
+function locate(doc: Pick<ShowDoc, 'lists'>, id: string): Located | null {
+  let found: Located | null = null;
+  const go = (cues: Cue[] | undefined, parent: Cue | null, list: CueList) => {
+    for (let i = 0; cues && i < cues.length && !found; i++) {
       if (cues[i].id === id) { found = { siblings: cues, at: i, parent, list }; return; }
       if (cues[i].children) go(cues[i].children, cues[i], list);
     }
@@ -175,14 +182,14 @@ function locate(doc, id) {
   return found;
 }
 
-function findByNumber(doc, number) {
+function findByNumber(doc: Pick<ShowDoc, 'lists'>, number: string | number): Cue | null {
   const want = String(number).trim().toLowerCase();
-  let hit = null;
+  let hit: Cue | null = null;
   walk(doc, (c) => { if (!hit && c.number != null && String(c.number).toLowerCase() === want) hit = c; });
   return hit;
 }
 
-function deepMerge(base, over) {
+function deepMerge(base: any, over: any): any {
   if (!over || typeof over !== 'object' || Array.isArray(over)) return over === undefined ? base : over;
   const out = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}) };
   // (a show file is anyone's: a key that would reach an object's prototype is not a setting)
@@ -195,12 +202,12 @@ function deepMerge(base, over) {
  * everything, fields coerced. Never throws on a hand-edited file: what cannot be
  * understood is reported in `warnings` and left out of the result.
  */
-function normalise(input) {
-  const warnings = [];
+function normalise(input: any): { doc: ShowDoc; warnings: string[] } {
+  const warnings: string[] = [];
   if (!input || typeof input !== 'object') throw new Error('not a show file');
   if (input.format !== FORMAT) throw new Error(`not an Endless Cues show (format: ${JSON.stringify(input.format)})`);
   if (Number(input.version) > VERSION) throw new Error(`this show was saved by a newer Endless Cues (file version ${input.version}); update the app to open it`);
-  const doc = {
+  const doc: ShowDoc = {
     format: FORMAT,
     version: VERSION,
     id: input.id || newId('show'),
@@ -218,12 +225,12 @@ function normalise(input) {
     const rig = doc.settings.rig = doc.settings.rig && typeof doc.settings.rig === 'object' && !Array.isArray(doc.settings.rig) ? doc.settings.rig : { devices: [], checks: [], script: '' };
     // (an id made for a device that had none keeps clear of every id a patch or another device already has)
     const taken = new Set([...doc.settings.network.patches.map((p) => p && p.id), ...(Array.isArray(rig.devices) ? rig.devices : []).map((d) => d && d.id).filter((id) => rigDevices.ID.test(String(id || '')))]);
-    const devices = [];
+    const devices: Device[] = [];
     for (const raw of Array.isArray(rig.devices) ? rig.devices : []) {
       const r = rigDevices.clean(raw, { taken });
       for (const w of r.warnings) warnings.push(`rig: ${w}`);
       if (!r.device) continue;
-      if (devices.some((d) => d.id === r.device.id)) { warnings.push(`rig: two devices had the id ${r.device.id}; the second was left out`); continue; }
+      if (devices.some((d) => d.id === r.device!.id)) { warnings.push(`rig: two devices had the id ${r.device.id}; the second was left out`); continue; }
       taken.add(r.device.id); devices.push(r.device);
     }
     rig.devices = devices;
@@ -231,13 +238,13 @@ function normalise(input) {
     rig.script = typeof rig.script === 'string' ? rig.script : '';
   }
   const seen = new Set();
-  const cleanCue = (raw, where) => {
+  const cleanCue = (raw: any, where: string): Cue | null => {
     if (!raw || typeof raw !== 'object') { warnings.push(`${where}: not a cue, dropped`); return null; }
     if (!TYPES[raw.type]) { warnings.push(`${where}: unknown cue type ${JSON.stringify(raw.type)}, kept as a memo`); raw = { ...raw, type: 'memo', notes: `${raw.notes || ''}\n(was type ${raw.type})`.trim() }; }
     let id = raw.id && !seen.has(raw.id) ? String(raw.id) : newId();
     if (raw.id && seen.has(raw.id)) warnings.push(`${where}: two cues had the id ${raw.id}; one was given a new id`);
     seen.add(id);
-    const cue = { id, type: raw.type };
+    const cue: Cue = { id, type: raw.type };
     for (const f of fieldsOf(raw.type)) {
       if (raw[f.key] === undefined) continue;
       const r = coerce({ ...f, required: false }, raw[f.key]);
@@ -247,12 +254,12 @@ function normalise(input) {
     // what this version does not know (a field from a newer one, or written by hand) is kept as it was, and not played
     const known = new Set(['id', 'type', 'children', ...fieldsOf(raw.type).map((f) => f.key)]);
     for (const k of Object.keys(raw)) if (!known.has(k) && raw[k] !== undefined) cue[k] = raw[k];
-    if (TYPES[raw.type].container) cue.children = (raw.children || []).map((k, i) => cleanCue(k, `${where} › ${i + 1}`)).filter(Boolean);
+    if (TYPES[raw.type].container) cue.children = (raw.children || []).map((k: unknown, i: number) => cleanCue(k, `${where} › ${i + 1}`)).filter(isCue);
     return cue;
   };
   for (const [i, l] of (Array.isArray(input.lists) ? input.lists : []).entries()) {
     // (`cart`: the list is drawn as a grid of buttons, cart.js; a plain list has no such key)
-    doc.lists.push({ id: l.id || newId('list'), name: String(l.name || `List ${i + 1}`), ...(cart.cleanCart(l.cart) ? { cart: cart.cleanCart(l.cart) } : {}), cues: (l.cues || []).map((c, j) => cleanCue(c, `${l.name || 'list'} #${j + 1}`)).filter(Boolean) });
+    doc.lists.push({ id: l.id || newId('list'), name: String(l.name || `List ${i + 1}`), ...(cart.cleanCart(l.cart) ? { cart: cart.cleanCart(l.cart)! } : {}), cues: (l.cues || []).map((c: unknown, j: number) => cleanCue(c, `${l.name || 'list'} #${j + 1}`)).filter(isCue) });
   }
   if (!doc.lists.length) doc.lists.push({ id: newId('list'), name: 'Main', cues: [] });
   return { doc, warnings };
@@ -261,7 +268,7 @@ function normalise(input) {
 /** A clock trigger: "19:30", "19:30:15", optionally followed by the days it holds on ("mon tue", "sat,sun").
  *  Returns { secs (since midnight), days: Set of 0–6 (Sunday 0) | null } or null. */
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-function parseClock(text) {
+function parseClock(text: unknown): { secs: number; days: Set<number> | null } | null {
   const parts = String(text || '').trim().toLowerCase().split(/[\s,]+/).filter(Boolean);
   const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(parts.shift() || '');
   if (!m || Number(m[1]) > 23 || Number(m[2]) > 59 || Number(m[3] || 0) > 59) return null;
@@ -271,7 +278,7 @@ function parseClock(text) {
 }
 
 /** A hotkey as it is compared: "shift+b", "alt+7", "f5". null: not a key a cue can have. */
-function normaliseHotkey(text) {
+function normaliseHotkey(text: unknown): string | null {
   const parts = String(text || '').trim().toLowerCase().split('+').map((p) => p.trim()).filter(Boolean);
   const key = parts.pop();
   if (!key || !/^([a-z0-9]|f([1-9]|1[0-2]))$/.test(key) || parts.some((p) => p !== 'shift' && p !== 'alt')) return null;
@@ -280,16 +287,19 @@ function normaliseHotkey(text) {
 // the single keys the app itself answers to (Settings ▸ Keys): a cue cannot take one bare
 const APP_KEYS = new Set(['p', 's', 'v', 'l', 'a', 'q', 'n', 'o', 't', 'e', 'd', 'w', 'c', 'f', 'h']);
 
+/** Something the operator should know about a cue before a show. */
+export interface Problem { id: string; level: 'error' | 'warning'; why: string }
+
 /** Things the operator should know about before a show: [{ id, level: 'error' | 'warning', why }]. */
-function problems(doc) {
-  const out = [];
+function problems(doc: ShowDoc): Problem[] {
+  const out: Problem[] = [];
   const { byId } = index(doc);
-  const numbers = new Map();
-  const hotkeys = new Map();
+  const numbers = new Map<string, string>();
+  const hotkeys = new Map<string, string>();
   const buses = new Set(doc.settings.audio.buses.map((b) => b.id));
   const patches = new Set(doc.settings.network.patches.map((p) => p.id));
   const devices = byId.devices;       // a device is also somewhere a Network cue can send (by its id)
-  let rigPatch = null;              // the light patch, compiled the first time a Light cue with levels needs it
+  let rigPatch: ReturnType<typeof lightPatch.compile> | null = null;              // the light patch, compiled the first time a Light cue with levels needs it
   const levelMax = cleanLimits(doc.settings.audio.levels).max;
   walk(doc, (c) => {
     if (c.type === 'light') {
@@ -304,9 +314,10 @@ function problems(doc) {
     for (const f of fieldsOf(c.type)) {
       if (f.required && (c[f.key] === undefined || c[f.key] === '')) out.push({ id: c.id, level: 'error', why: `no ${/^[A-Z]{2}/.test(f.label) ? f.label : f.label.toLowerCase()}` });
       if (f.kind === 'cue' && c[f.key]) {
-        const t = byId.get(c[f.key]);
-        if (!t && f.lists && byId.lists.has(c[f.key])) continue;                 // a whole cue list
-        if (!t) out.push({ id: c.id, level: 'error', why: byId.lists.has(c[f.key]) ? 'targets a cue list; needs a cue' : f.key === 'target' ? 'its target is gone' : `its ${f.label.toLowerCase()} is gone` });
+        const aim = String(c[f.key]);
+        const t = byId.get(aim);
+        if (!t && f.lists && byId.lists.has(aim)) continue;                 // a whole cue list
+        if (!t) out.push({ id: c.id, level: 'error', why: byId.lists.has(aim) ? 'targets a cue list; needs a cue' : f.key === 'target' ? 'its target is gone' : `its ${f.label.toLowerCase()} is gone` });
         else if (t.type === 'section') out.push({ id: c.id, level: 'error', why: 'targets a section heading; needs a cue' });
         else if (f.targets && !f.targets.includes(t.type)) out.push({ id: c.id, level: 'error', why: `targets a ${TYPES[t.type].label} cue; needs ${f.targets.map((x) => TYPES[x].label).join(' or ')}` });
       }
@@ -332,16 +343,16 @@ function problems(doc) {
         if (!r.ok) out.push({ id: c.id, level: 'error', why: r.why });
         else if (rigDevices.isNetwork(d) && (!d.host || !(Number(d.port) > 0))) out.push({ id: c.id, level: 'error', why: 'its device has no address yet' });
         if (r.ok && cmd) for (const k of Object.keys(c.args || {})) if (!cmd.params.some((p) => p.key === k)) out.push({ id: c.id, level: 'warning', why: `“${cmd.label}” has no parameter ${k}, only ${cmd.params.map((p) => p.key).join(', ') || 'none'}: not sent` });
-        if (r.ok && fading) { const why = rigDevices.valueTrouble(cmd, c.fadeTo); if (why) out.push({ id: c.id, level: 'error', why: `its “Fade to”: ${why}` }); else if (!(Number(c.duration) > 0)) out.push({ id: c.id, level: 'warning', why: '“Fade to” with no duration: sent once' }); }
-        if (r.ok && c.fadeTo !== undefined && !fading) out.push({ id: c.id, level: 'warning', why: `“${cmd.label}” cannot fade: sent once` });
+        if (r.ok && fading) { const why = rigDevices.valueTrouble(cmd!, c.fadeTo); if (why) out.push({ id: c.id, level: 'error', why: `its “Fade to”: ${why}` }); else if (!(Number(c.duration) > 0)) out.push({ id: c.id, level: 'warning', why: '“Fade to” with no duration: sent once' }); }
+        if (r.ok && c.fadeTo !== undefined && !fading) out.push({ id: c.id, level: 'warning', why: `“${cmd!.label}” cannot fade: sent once` });
       }
     }
     if (c.type === 'network' && c.message && (c.format || 'osc') === 'osc' && !String(c.message).trim().startsWith('/')) out.push({ id: c.id, level: 'error', why: 'an OSC message starts with /, or set “Message is”' });
-    if (c.type === 'network' && c.message && c.format === 'hex') { try { netRaw.hex(c.message); } catch (err) { out.push({ id: c.id, level: 'error', why: `its message is not hex: ${err.message}` }); } }
+    if (c.type === 'network' && c.message && c.format === 'hex') { try { netRaw.hex(c.message); } catch (err) { out.push({ id: c.id, level: 'error', why: `its message is not hex: ${(err as Error).message}` }); } }
     if (c.type === 'network' && c.format && c.format !== 'osc' && Number(c.duration) > 0) out.push({ id: c.id, level: 'warning', why: 'text and hex are sent once: the duration does nothing' });
-    if (c.type === 'network' && (c.format || 'osc') === 'osc' && /#[xy]#/.test(String(c.message || ''))) { try { if (!networkCue.parsePath(c.path).length) out.push({ id: c.id, level: 'error', why: '#x# or #y# with no path to follow' }); } catch (err) { out.push({ id: c.id, level: 'error', why: err.message }); } }
+    if (c.type === 'network' && (c.format || 'osc') === 'osc' && /#[xy]#/.test(String(c.message || ''))) { try { if (!networkCue.parsePath(c.path).length) out.push({ id: c.id, level: 'error', why: '#x# or #y# with no path to follow' }); } catch (err) { out.push({ id: c.id, level: 'error', why: (err as Error).message }); } }
     if (c.type === 'network' && c.patch === undefined && patches.size > 1) out.push({ id: c.id, level: 'error', why: 'no network patch chosen' });
-    if (c.type === 'midi' && c.midi) { try { midi.encode(midi.parseText(c.midi)); } catch (err) { out.push({ id: c.id, level: 'error', why: `its MIDI message is not one: ${err.message}` }); } }
+    if (c.type === 'midi' && c.midi) { try { midi.encode(midi.parseText(c.midi)); } catch (err) { out.push({ id: c.id, level: 'error', why: `its MIDI message is not one: ${(err as Error).message}` }); } }
     if (c.type === 'script' && c.script) {
       const parsed = script.parse(c.script);
       for (const e of parsed.errors.slice(0, 3)) out.push({ id: c.id, level: 'error', why: `its script, line ${e.line}: ${e.why}` });
@@ -351,7 +362,7 @@ function problems(doc) {
       }
       if (!parsed.steps.length && !parsed.errors.length) out.push({ id: c.id, level: 'warning', why: 'its script has no commands in it' });
     }
-    if (c.midiTrigger) { try { midi.parseText(c.midiTrigger); } catch (err) { out.push({ id: c.id, level: 'warning', why: `its MIDI trigger is not a MIDI message: ${err.message}` }); } }
+    if (c.midiTrigger) { try { midi.parseText(c.midiTrigger); } catch (err) { out.push({ id: c.id, level: 'warning', why: `its MIDI trigger is not a MIDI message: ${(err as Error).message}` }); } }
     if (c.type === 'midi' && c.fadeTo !== undefined && c.midi) { try { const m = midi.parseText(c.midi), max = midi.valueMax(m); if (!max) out.push({ id: c.id, level: 'warning', why: 'only a controller, pressure or pitch bend can fade' }); else if (c.fadeTo < 0 || c.fadeTo > max) out.push({ id: c.id, level: 'warning', why: `its “Fade to” is outside 0 to ${max}` }); else if (!(Number(c.duration) > 0)) out.push({ id: c.id, level: 'warning', why: '“Fade to” with no duration: sent once' }); } catch { /* said above */ } }
     if (c.type === 'timecode') { const why = timecode.whyNot(timecode.parse(c.timecode === undefined ? '01:00:00:00' : c.timecode), c.fps || '30'); if (why) out.push({ id: c.id, level: 'error', why: `its start is not a timecode: ${why}` }); }
     if (c.type === 'midifile' && c.rate !== undefined && !(Number(c.rate) > 0)) out.push({ id: c.id, level: 'error', why: 'its rate must be above 0' });
@@ -364,15 +375,15 @@ function problems(doc) {
       else if (hotkeys.has(k)) out.push({ id: c.id, level: 'warning', why: `its hotkey ${k} is also another cue’s` });
       if (k) hotkeys.set(k, c.id);
     }
-    if (c.type === 'target' && byId.has(c.target)) {
+    if (c.type === 'target' && c.target !== undefined && byId.has(c.target)) {
       // the cue it re-aims must have a target, and the new one must be a kind that cue can take
-      const aimed = byId.get(c.target), tf = fieldsOf(aimed.type).find((f) => f.key === 'target' && f.kind === 'cue');
-      const to = byId.get(c.to);
+      const aimed = byId.get(c.target)!, tf = fieldsOf(aimed.type).find((f) => f.key === 'target' && f.kind === 'cue');
+      const to = c.to === undefined ? undefined : byId.get(String(c.to));
       if (!tf) out.push({ id: c.id, level: 'error', why: `the ${TYPES[aimed.type].label} cue it re-aims has no target to change` });
       else if (to && tf.targets && !tf.targets.includes(to.type)) out.push({ id: c.id, level: 'error', why: `the ${TYPES[aimed.type].label} cue it re-aims cannot target a ${TYPES[to.type].label} cue` });
-      else if (!to && c.to && byId.lists.has(c.to) && !tf.lists) out.push({ id: c.id, level: 'error', why: `the ${TYPES[aimed.type].label} cue it re-aims cannot target a cue list` });
+      else if (!to && c.to && byId.lists.has(String(c.to)) && !tf.lists) out.push({ id: c.id, level: 'error', why: `the ${TYPES[aimed.type].label} cue it re-aims cannot target a cue list` });
     }
-    if (c.duckOthers && c.fadeOthers > 0) out.push({ id: c.id, level: 'warning', why: 'fades and ducks the others: the fade wins' });
+    if (c.duckOthers && Number(c.fadeOthers) > 0) out.push({ id: c.id, level: 'warning', why: 'fades and ducks the others: the fade wins' });
     if (c.type === 'devamp' && c.startNext && c.continue && c.continue !== 'none') out.push({ id: c.id, level: 'warning', why: 'starts the next cue twice: set Continue to none' });
     if (c.type === 'group' && c.mode === 'playlist' && !(c.children || []).length) out.push({ id: c.id, level: 'warning', why: 'a playlist with nothing in it' });
     if (c.oscTrigger && !String(c.oscTrigger).trim().startsWith('/')) out.push({ id: c.id, level: 'warning', why: 'its OSC trigger does not start with /' });
@@ -392,15 +403,15 @@ function problems(doc) {
  * cues with the show file's friendlier fields turned into the engine's, and
  * anything that cannot work marked `broken` instead of thrown.
  */
-function toEngineDoc(doc) {
+function toEngineDoc(doc: ShowDoc): EngineDoc {
   const { byId } = index(doc);
-  const bad = new Map();
+  const bad = new Map<string, string>();
   for (const p of problems(doc)) if (p.level === 'error' && !bad.has(p.id)) bad.set(p.id, p.why);
-  const buses = doc.settings.audio.buses.map((b) => b.id);
+  const buses: (string | undefined)[] = doc.settings.audio.buses.map((b) => b.id);
   const floor = cleanLimits(doc.settings.audio.levels).min;
-  const conv = (c) => {
+  const conv = (c: Cue): EngineCue => {
     const t = TYPES[c.type];
-    const e = { id: c.id, type: t.engineType || c.type, name: c.name || defaultName(c, byId), number: c.number || '' };
+    const e: EngineCue & Record<string, unknown> = { id: c.id, type: t.engineType || c.type, name: c.name || defaultName(c, byId), number: c.number || '' };
     for (const f of fieldsOf(c.type)) if (c[f.key] !== undefined && f.key !== 'name' && f.key !== 'number') e[f.key] = c[f.key];      // (only what the table knows reaches the engine)
     // a field left alone plays at the default the inspector shows in grey (a new Fade goes to silence in 3 s)
     for (const f of fieldsOf(c.type)) if (e[f.key] === undefined && f.default !== undefined && f.default !== '') e[f.key] = f.default;
@@ -425,7 +436,7 @@ function toEngineDoc(doc) {
     // A Fade aimed at a picture moves what it names. Naming some geometry and no level, it leaves the sound alone;
     // naming nothing at all, it takes its target out: the sound to silence (the default level) and the picture to nothing.
     if (c.type === 'fade') {
-      const t = byId.get(c.target);
+      const t = c.target === undefined ? undefined : byId.get(c.target);
       // (left alone, a fade to silence stops what it faded: cue-types.js stopsTarget)
       e.stopTarget = stopsTarget(c, t || null, floor);
       if (t && STAGE_TYPES.includes(t.type)) {
@@ -437,17 +448,17 @@ function toEngineDoc(doc) {
     // A Device cue is, to the engine, what it sends: a Network cue to the device (its id is a patch to the hub), or a
     // MIDI cue. The engine has no cue type of its own for it.
     if (c.type === 'device') {
-      const d = byId.devices.get(c.device);
+      const d = c.device === undefined ? undefined : byId.devices.get(c.device);
       const cmd = d && d.commands.find((x) => x.id === c.command);
       const net = !d || rigDevices.isNetwork(d);
       const fading = !!(cmd && cmd.fade) && c.fadeTo !== undefined;
-      const r = d ? rigDevices.compose(d, c.command, c.args || {}, { fade: fading && net }) : { ok: false };
+      const r = d ? rigDevices.compose(d, c.command, c.args || {}, { fade: fading && net }) : { ok: false as const };
       for (const k of ['device', 'command', 'args']) delete e[k];
       e.sends = e.name;                    // what the dry run and the monitor call it: "Lantern A ▸ Effect (breathe)"
       if (!fading) { delete e.fadeTo; delete e.duration; }         // (a duration with nothing to fade would send the message again and again)
       if (net) {
-        e.type = 'network'; e.patch = c.device || ''; e.format = d ? rigDevices.viaOf(d) : 'osc'; e.message = r.ok ? r.message : '';
-        if (fading) { const from = Number(rigDevices.valuesOf(cmd, c.args)[cmd.params.findIndex((p) => p.key === cmd.fade)]); e.fadeFrom = Number.isFinite(from) ? from : 0; const p = cmd.params.find((x) => x.key === cmd.fade); if (p.whole) e.whole = true; }
+        e.type = 'network'; e.patch = c.device || ''; e.format = d ? rigDevices.viaOf(d) as 'osc' | 'text' | 'hex' : 'osc'; e.message = r.ok ? r.message : '';
+        if (fading && cmd) { const from = Number(rigDevices.valuesOf(cmd, c.args)[cmd.params.findIndex((p) => p.key === cmd.fade)]); e.fadeFrom = Number.isFinite(from) ? from : 0; const p = cmd.params.find((x) => x.key === cmd.fade)!; if (p.whole) e.whole = true; }
       } else { e.type = 'midi'; e.midi = r.ok ? r.message : ''; delete e.curve; }
       // one that cannot be sent (its device or command gone, a value out of range, no address) does nothing when it
       // fires: the engine plays it as a memo, marked broken below, and nothing half-made reaches the equipment
@@ -464,7 +475,9 @@ function toEngineDoc(doc) {
 
 /** Stable text for the disk: two-space JSON, keys in a fixed order so a diff shows only what changed. */
 const KEY_ORDER = ['format', 'version', 'id', 'title', 'notes', 'type', 'number', 'name', 'target', 'file', 'message', 'patch'];
-function stringify(doc) {
+/** A show as it is written: its settings may go without the rig. */
+type Written = Omit<ShowDoc, 'settings'> & { settings: Omit<Settings, 'rig'> & Partial<Pick<Settings, 'rig'>> };
+function stringify(doc: Written): string {
   // (a rig with nothing in it is not written: a show with no equipment is, on disk, exactly what it was before
   // there was a rig, and an older app reading the file meets nothing new)
   const rig = doc && doc.settings && doc.settings.rig;
@@ -472,7 +485,7 @@ function stringify(doc) {
     const { rig: _none, ...settings } = doc.settings;
     doc = { ...doc, settings };
   }
-  const order = (v) => {
+  const order = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(order);
     if (!v || typeof v !== 'object') return v;
     const keys = Object.keys(v).sort((a, b) => {
@@ -482,13 +495,13 @@ function stringify(doc) {
       if (ia >= 0 || ib >= 0) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       return a < b ? -1 : a > b ? 1 : 0;
     });
-    const out = {};
-    for (const k of keys) if (v[k] !== undefined) out[k] = order(v[k]);
+    const out: Record<string, unknown> = {};
+    for (const k of keys) if ((v as Record<string, unknown>)[k] !== undefined) out[k] = order((v as Record<string, unknown>)[k]);
     return out;
   };
   return JSON.stringify(order(doc), null, 2) + '\n';
 }
 
-function hash(doc) { return crypto.createHash('sha256').update(stringify(doc)).digest('hex').slice(0, 16); }
+function hash(doc: Written) { return crypto.createHash('sha256').update(stringify(doc)).digest('hex').slice(0, 16); }
 
 export { parseClock, normaliseHotkey, APP_KEYS, FORMAT, VERSION, newShow, newId, normalise, problems, toEngineDoc, stringify, hash, walk, index, locate, findByNumber, defaultSettings, newSettings, defaultModules, deepMerge };

@@ -28,6 +28,12 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { TOOLS, SYSTEM, reference, execute } from './tools';
+import type { ToolContext, ToolInput, ToolResult } from './tools';
+
+/** Where tool calls are answered: a show folder, or the running app. */
+export interface Backend { describe: string; call(name: string, input: ToolInput): Promise<ToolResult> }
+/** A JSON-RPC message, as it arrives. */
+interface Request { id?: string | number | null; method?: string; params?: { protocolVersion?: unknown; name?: string; arguments?: ToolInput } }
 
 const PROTOCOL = '2025-06-18';
 
@@ -40,9 +46,11 @@ const INSTRUCTIONS = `${SYSTEM.replace(/^You are the assistant inside Endless Cu
 // ── the MCP server ───────────────────────────────────────────────────────
 
 /** Serve MCP on a pair of streams. `backend.call(name, input)` → { content, is_error }. Resolves when input ends. */
-function serve({ input, output, backend, version = '0', log = () => {}, instructions = INSTRUCTIONS }) {
-  const send = (msg) => output.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
-  const handle = async (req) => {
+function serve({ input, output, backend, version = '0', log = () => {}, instructions = INSTRUCTIONS }: {
+  input: NodeJS.ReadableStream; output: NodeJS.WritableStream; backend: Backend; version?: string; log?: (line: string) => void; instructions?: string | null;
+}): Promise<void> {
+  const send = (msg: Record<string, unknown>) => output.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+  const handle = async (req: Request) => {
     const { id, method, params = {} } = req;
     const isRequest = id !== undefined && id !== null;
     try {
@@ -55,48 +63,49 @@ function serve({ input, output, backend, version = '0', log = () => {}, instruct
           return send({ id, result: { tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.input_schema })) } });
         case 'tools/call': {
           if (!TOOLS.some((t) => t.name === params.name)) return send({ id, error: { code: -32602, message: `Unknown tool: ${params.name}` } });
-          const r = await backend.call(params.name, params.arguments || {});
+          const r = await backend.call(params.name!, params.arguments || {});
           return send({ id, result: { content: [{ type: 'text', text: String(r.content) }], isError: !!r.is_error } });
         }
         default:
           if (isRequest) send({ id, error: { code: -32601, message: `Method not found: ${method}` } });   // (notifications are simply taken)
       }
-    } catch (err) {
+    } catch (e) {
+      const err = e as Error;
       log(`${method}: ${err.stack || err}`);
       if (isRequest) send({ id, error: { code: -32603, message: err.message } });
     }
   };
   return new Promise((resolve) => {
     let held = '';
-    let chain = Promise.resolve();
+    let chain: Promise<unknown> = Promise.resolve();
     input.setEncoding('utf8');
-    input.on('data', (chunk) => {
+    input.on('data', (chunk: string) => {
       held += chunk;
       let nl;
       while ((nl = held.indexOf('\n')) >= 0) {
         const line = held.slice(0, nl).trim(); held = held.slice(nl + 1);
         if (!line) continue;
-        let msg; try { msg = JSON.parse(line); } catch { send({ id: null, error: { code: -32700, message: 'Parse error' } }); continue; }
+        let msg: Request; try { msg = JSON.parse(line); } catch { send({ id: null, error: { code: -32700, message: 'Parse error' } }); continue; }
         chain = chain.then(() => handle(msg));      // in order: an edit and the check after it must not race
       }
     });
-    input.on('end', () => chain.then(resolve));
+    input.on('end', () => chain.then(() => resolve()));
   });
 }
 
 // ── a show folder, with no app ───────────────────────────────────────────
 
-function fileBackend(showDir, { save = false } = {}) {
-  const { ShowDocument } = require('../show/document');
-  const { wavInfo } = require('../engine/waveform');
-  const show = require('../show/show');
+function fileBackend(showDir: string, { save = false } = {}): Backend {
+  const { ShowDocument } = require('../show/document') as typeof import('../show/document');
+  const { wavInfo } = require('../engine/waveform') as typeof import('../engine/waveform');
+  const show = require('../show/show') as typeof import('../show/show');
   if (!fs.existsSync(path.join(showDir, 'show.json'))) throw new Error(`${showDir} is not a show (it has no show.json)`);
   const document = ShowDocument.open(showDir);
   // enough of an engine for the outline and the dry run: how long each sound is
-  const durations = new Map();
+  const durations = new Map<string, number>();
   show.walk(document.doc, (c) => { if (c.type === 'audio' && c.file && !durations.has(c.file)) { const info = wavInfo(document.resolveFile(c.file)); if (info) durations.set(c.file, Math.round(info.seconds * 100) / 100); } });
   // (no `rig`: with no app there is nothing to ask and no monitor; the folder, the script and the kit need none)
-  const ctx = { document, engine: { durations, running: new Map(), playhead: null }, draft: null, files: new Map() };
+  const ctx: ToolContext = { document, engine: { durations, running: new Map(), playhead: null }, draft: null, files: new Map() };
   return {
     describe: `the show folder ${showDir}`,
     async call(name, input) {
@@ -104,13 +113,13 @@ function fileBackend(showDir, { save = false } = {}) {
       if (!r.proposal) return r;
       // with no app there is nobody to review a proposal in a window: it lands as unsaved changes (marked, and
       // one Revert away, the next time the show is opened), or is saved outright when asked to be
-      const summary = document.proposal.summary;
+      const summary = document.proposal!.summary;
       const done = document.accept(r.proposal);
       ctx.draft = null; ctx.files = new Map();
       // (a proposal of files alone changes no cue: the files are in the folder now, and that is the whole of it)
       const wrote = done.files && done.files.length ? ` Written into the show folder: ${done.files.join(', ')}.` : '';
       if (!done.changed) return { content: `Done: “${summary}”.${wrote}` };
-      if (save) { const v = document.save({ note: summary }); return { content: `Saved to ${path.join(showDir, 'show.json')} as version ${v.id}: ${v.note}${wrote}` }; }
+      if (save) { const v = document.save({ note: summary })!; return { content: `Saved to ${path.join(showDir, 'show.json')} as version ${v.id}: ${v.note}${wrote}` }; }
       return { content: `Done: “${summary}”.${wrote} The changes are waiting as UNSAVED changes on this show. When it is next opened in Endless Cues they are there, each one marked; Save keeps them and Revert discards them. (show.json itself has not been modified.)` };
     },
   };
@@ -132,14 +141,16 @@ function bridgeFile() {
  * The app's side. `call(session, name, input)` runs a tool; each agent session has its own draft.
  * Listens on 127.0.0.1 only, on a port the OS picks, and refuses anything without the token.
  */
-function createBridge({ call, file = bridgeFile(), log = () => {} }) {
+function createBridge({ call, file = bridgeFile(), log = () => {} }: {
+  call: (session: string, name: string, input: ToolInput, client: string) => ToolResult | Promise<ToolResult>; file?: string; log?: (line: string) => void;
+}) {
   const token = crypto.randomBytes(18).toString('hex');
-  let server = null;
+  let server: http.Server | null = null;
   return {
     start() {
-      return new Promise((resolve, reject) => {
-        server = http.createServer((req, res) => {
-          const done = (code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      return new Promise<{ port: number; token: string }>((resolve, reject) => {
+        const s = server = http.createServer((req, res) => {
+          const done = (code: number, body: unknown) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
           if (req.headers['x-ec-token'] !== token) return done(403, { error: 'no' });
           if (req.method === 'GET' && req.url === '/hello') return done(200, { ok: true });
           if (req.method !== 'POST' || req.url !== '/tool') return done(404, { error: 'not found' });
@@ -147,13 +158,13 @@ function createBridge({ call, file = bridgeFile(), log = () => {} }) {
           req.on('data', (d) => { body += d; if (body.length > 4 << 20) req.destroy(); });
           req.on('end', async () => {
             try { const m = JSON.parse(body); done(200, await call(String(m.session || 'agent'), String(m.name), m.input || {}, String(m.client || 'an agent'))); }
-            catch (err) { log(`tool call failed: ${err.stack || err}`); done(200, { content: `Failed: ${err.message}`, is_error: true }); }
+            catch (e) { const err = e as Error; log(`tool call failed: ${err.stack || err}`); done(200, { content: `Failed: ${err.message}`, is_error: true }); }
           });
         });
-        server.on('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-          const port = server.address().port;
-          try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ port, token, pid: process.pid }), { mode: 0o600 }); } catch (err) { log(`could not write ${file}: ${err.message}`); }
+        s.on('error', reject);
+        s.listen(0, '127.0.0.1', () => {
+          const port = (s.address() as import('net').AddressInfo).port;
+          try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ port, token, pid: process.pid }), { mode: 0o600 }); } catch (err) { log(`could not write ${file}: ${(err as Error).message}`); }
           resolve({ port, token });
         });
       });
@@ -164,19 +175,19 @@ function createBridge({ call, file = bridgeFile(), log = () => {} }) {
 }
 
 /** The agent's side: tool calls forwarded to the app. Null when no app is offering a bridge. */
-async function appBackend({ file = bridgeFile(), session = crypto.randomBytes(4).toString('hex'), client = 'an agent' } = {}) {
-  let info; try { info = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
-  const post = (pathname, body) => new Promise((resolve, reject) => {
+async function appBackend({ file = bridgeFile(), session = crypto.randomBytes(4).toString('hex'), client = 'an agent' } = {}): Promise<Backend | null> {
+  let info: { port: number; token: string }; try { info = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  const post = <T>(pathname: string, body?: object) => new Promise<T>((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port: info.port, path: pathname, method: body ? 'POST' : 'GET', headers: { 'x-ec-token': info.token, 'content-type': 'application/json' }, timeout: 60000 }, (res) => {
       let text = ''; res.on('data', (d) => { text += d; }); res.on('end', () => { try { resolve(JSON.parse(text)); } catch (err) { reject(err); } });
     });
     req.on('error', reject); req.on('timeout', () => req.destroy(new Error('the app did not answer')));
     req.end(body ? JSON.stringify(body) : undefined);
   });
-  try { const hi = await post('/hello'); if (!hi || !hi.ok) return null; } catch { return null; }
+  try { const hi = await post<{ ok?: boolean } | null>('/hello'); if (!hi || !hi.ok) return null; } catch { return null; }
   return {
     describe: 'the show open in Endless Cues',
-    call: (name, input) => post('/tool', { session, name, input, client }).catch((err) => ({ content: `Endless Cues is not answering (${err.message}). Is the app still open, with agents allowed in Settings ▸ Assistant?`, is_error: true })),
+    call: (name, input) => post<ToolResult>('/tool', { session, name, input, client }).catch((err: Error) => ({ content: `Endless Cues is not answering (${err.message}). Is the app still open, with agents allowed in Settings ▸ Assistant?`, is_error: true })),
   };
 }
 

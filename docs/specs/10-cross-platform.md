@@ -12,20 +12,20 @@ Electron gives the same Chromium (so the same Web Audio engine, decoding and dev
 
 | | macOS | Windows | Linux | Where handled |
 |---|---|---|---|---|
-| Window chrome | Our title bar holds the window buttons (`hiddenInset`) | Native frame and menu bar | Native frame and menu bar | `main.js` `createWindow`; `.mac .titlebar` padding in `styles.css` |
-| Menus | App menu with Settings and Quit | Settings and Quit under File | same as Windows | `main.js` `buildMenu` |
-| Shortcuts | ⌘ | Ctrl | Ctrl | `CmdOrCtrl` accelerators; `mod(e)` and `keys()` in `renderer/lib.js` |
+| Window chrome | Our title bar holds the window buttons (`hiddenInset`) | Native frame and menu bar | Native frame and menu bar | `main.ts` `createWindow`; `.mac .titlebar` padding in `styles.css` |
+| Menus | App menu with Settings and Quit | Settings and Quit under File | same as Windows | `main.ts` `buildMenu` |
+| Shortcuts | ⌘ | Ctrl | Ctrl | `CmdOrCtrl` accelerators; `mod(e)` and `keys()` in `app/renderer/lib.ts` |
 | Settings folder | `~/Library/Application Support/EndlessCues` | `%APPDATA%\EndlessCues` | `~/.config/EndlessCues` | `app.getPath('appData')` |
 | Default shows folder | `~/Documents/Endless Cues` | `Documents\Endless Cues` | `~/Documents/Endless Cues` | `app.getPath('documents')` |
 | Paths in a show | forward slashes, relative | same (converted on import) | same | `host.adopt` |
 | Audio API under Chromium | Core Audio | WASAPI (shared mode) | PulseAudio / PipeWire | Chromium |
 | Local-network permission | Asked once (macOS 15+); declared in `Info.plist` | Firewall prompt on first listen | none | `package.json` `build.mac.extendInfo` |
-| Sleep | `powerSaveBlocker` | same | same (depends on the desktop) | `main.js` |
-| Never-take-focus test runs | activation policy `accessory` | `showInactive` only | `showInactive` only | `main.js`, `smoke.js` |
+| Sleep | `powerSaveBlocker` | same | same (depends on the desktop) | `main.ts` |
+| Never-take-focus test runs | activation policy `accessory` | `showInactive` only | `showInactive` only | `main.ts`, `smoke.ts` |
 
 Read for and fixed in the code without being run there (2026-11-15), so each is still to be seen working:
 
-- **One copy of the app.** Windows and Linux start a second process when a show is opened while the app is running (macOS sends `open-file` to the first). `main.js` takes the single-instance lock there, and the second hands its path to the first (`second-instance`) and quits.
+- **One copy of the app.** Windows and Linux start a second process when a show is opened while the app is running (macOS sends `open-file` to the first). `main.ts` takes the single-instance lock there, and the second hands its path to the first (`second-instance`) and quits.
 - **A show named on the command line** may end in `\`, or be the `show.json` inside the folder (a folder cannot be given an app to open with on Windows or Linux): `showArg`.
 - **Closing the main window quits** (asking about unsaved changes and sound still playing, as Quit does). The hidden audio window used to keep the app alive with nothing to click on, and `window-all-closed` never fired.
 - **Shortcut labels**: every tooltip and message that names a shortcut goes through `keys()`, which now also writes ⌥ and ⇧ as Alt+ and Shift+; key caps in Settings ▸ Keys are spelled out off the Mac.
@@ -55,15 +55,15 @@ Things to check on first contact with each platform (none verified):
 | Windows | NSIS installer, x64 and arm64 | `npm run dist:win` |
 | Linux | AppImage and `.deb` | `npm run dist:linux` |
 
-`npm run pack` makes an unpacked app for the current platform, which is what to test before making installers. The package contains `app/`, `core/`, `examples/make-demo.js` and the one runtime dependency (the Anthropic SDK); `docs/`, `site/`, `test/` and `reference/` are left out.
+`npm run pack` makes an unpacked app for the current platform, which is what to test before making installers. The package contains `app/`, `core/`, `examples/make-demo.ts` and the one runtime dependency (the Anthropic SDK); `docs/`, `site/`, `test/` and `reference/` are left out.
 
 ### Before a public release
 
-1. **The icon on every platform.** `build/mark.js` writes `build/icon.png` (1024 px) and `build/icon.icns` (macOS, with heavier drawings at 16 and 32 px); `electron-builder` derives the Windows icon from the PNG. Not yet checked: how it reads at 16 px in a Windows taskbar, and the Linux icon set.
+1. **The icon on every platform.** `build/mark.ts` writes `build/icon.png` (1024 px) and `build/icon.icns` (macOS, with heavier drawings at 16 and 32 px); `electron-builder` derives the Windows icon from the PNG. Not yet checked: how it reads at 16 px in a Windows taskbar, and the Linux icon set.
 2. **Signing and notarisation (macOS).** An Apple Developer ID certificate and notarisation credentials in CI. Unsigned, Gatekeeper refuses the app on anyone else's Mac, and macOS ties the Local Network permission to the signature (an app whose signature is broken shows the permission as granted and still cannot reach the network).
 3. **Signing (Windows).** A code-signing certificate, or SmartScreen warns on every install.
 4. **Auto-update.** `electron-updater` against GitHub Releases. A show computer must never update itself mid-run: updates are offered, never applied without being asked, and never while a show is open in Show mode.
-5. **File association.** A show is a folder. On macOS it is a package the app owns: `com.endlesscues.show`, an exported type conforming to `com.apple.package` (`mac.extendInfo.UTExportedTypeDeclarations`), and the `.ecshow` document type with `isPackage` (`LSTypeIsPackage`), so Finder shows a show as one file with the document icon and a double-click opens it. Checked on an unsigned `--dir` build registered with `lsregister`: `mdls` gives `kMDItemContentType = com.endlesscues.show` (tree: `com.apple.package`, `public.composite-content`, `public.directory`), Kind "Endless Cues Show", NSWorkspace names the build as the app to open it, and `open` delivered the open-documents event to it. File ▸ Open takes the package, a plain show folder or its `show.json` (`core/show/picked.js`); the pickers for sounds, pictures and a folder to search look inside packages, so a show's `media/` is still reachable (as is Finder's Show Package Contents). Windows and Linux cannot make a folder one file. The cross-platform answer is a single-file export (`.ecshowz`, a zip of the folder) for sending a show to someone, with the folder remaining the working form.
+5. **File association.** A show is a folder. On macOS it is a package the app owns: `com.endlesscues.show`, an exported type conforming to `com.apple.package` (`mac.extendInfo.UTExportedTypeDeclarations`), and the `.ecshow` document type with `isPackage` (`LSTypeIsPackage`), so Finder shows a show as one file with the document icon and a double-click opens it. Checked on an unsigned `--dir` build registered with `lsregister`: `mdls` gives `kMDItemContentType = com.endlesscues.show` (tree: `com.apple.package`, `public.composite-content`, `public.directory`), Kind "Endless Cues Show", NSWorkspace names the build as the app to open it, and `open` delivered the open-documents event to it. File ▸ Open takes the package, a plain show folder or its `show.json` (`core/show/picked.ts`); the pickers for sounds, pictures and a folder to search look inside packages, so a show's `media/` is still reachable (as is Finder's Show Package Contents). Windows and Linux cannot make a folder one file. The cross-platform answer is a single-file export (`.ecshowz`, a zip of the folder) for sending a show to someone, with the folder remaining the working form.
 6. **A second name.** The app this grew from is also called "Endless Cues" and is installed on the original show's computers under a different bundle id. They do not share settings, but two apps with one name on one Mac is confusing; that install should be renamed when this one ships.
 
 ## Why Electron

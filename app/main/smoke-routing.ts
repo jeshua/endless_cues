@@ -7,10 +7,12 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Smoke, Snap } from './smoke';
+import type { Op } from '../../core/show/ops';
 
 const RATE = 44100;
 /** A WAV of steady tones: one channel per entry of `amps` (0: that channel is silent), 16-bit. */
-function writeTones(file, amps, secs = 6) {
+function writeTones(file: string, amps: number[], secs = 6) {
   const n = Math.round(RATE * secs), ch = amps.length, buf = Buffer.alloc(44 + n * ch * 2);
   buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * ch * 2, 4); buf.write('WAVE', 8);
   buf.write('fmt ', 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(ch, 22);
@@ -20,16 +22,16 @@ function writeTones(file, amps, secs = 6) {
   fs.writeFileSync(file, buf);
 }
 
-async function routingChecks({ host, check, until, sleep, page, win, shot }) {
-  const snap = () => host.snapshot();
+async function routingChecks({ host, check, until, sleep, page, win, shot }: Pick<Smoke, 'host' | 'check' | 'until' | 'sleep' | 'page' | 'win' | 'shot'>) {
+  const snap = () => host.snapshot() as Snap;
   const ch = () => snap().routing.outCh;
-  const at = (o) => { const v = ch()[o - 1]; return v === undefined ? -60 : v; };          // output o's level, dB
-  const quiet = (...outs) => outs.every((o) => at(o) <= -58);
-  const near = (o, db, tol = 2.5) => Math.abs(at(o) - db) <= tol;
-  const audio = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
-  const edit = (ops, label = 'routing') => host.cmd({ op: 'edit', ops, label });
+  const at = (o: number) => { const v = ch()[o - 1]; return v === undefined ? -60 : v; };          // output o's level, dB
+  const quiet = (...outs: number[]) => outs.every((o) => at(o) <= -58);
+  const near = (o: number, db: number, tol = 2.5) => Math.abs(at(o) - db) <= tol;
+  const audio = (js: string) => host.audioWindow()!.webContents.executeJavaScript(js, true);
+  const edit = (ops: Op[], label = 'routing') => host.cmd({ op: 'edit', ops, label });
   const list = host.document.doc.lists[0].id;
-  const set = (pathTo, value) => edit([{ op: 'show.set', path: pathTo, value }]);
+  const set = (pathTo: string, value: unknown) => edit([{ op: 'show.set', path: pathTo, value }]);
   if (!host.document.showDir) { check('the routing checks have a show folder to put their tones in', false); return; }
   host.cmd({ op: 'panic', hard: true });
 
@@ -51,7 +53,7 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }) {
   // a cue's own outputs: there, at the level of each crosspoint, and nowhere else; its bus's meter hears it
   host.cmd({ op: 'start', number: 'R1' });
   check('a cue sent to outputs 5 and 6 plays there, each at its own level, and not on 1–2', await until(() => near(5, -6) && near(6, -18) && quiet(1, 2, 3, 4, 7, 8), 4000), ch());
-  check('…and its bus’s meter hears it', await until(() => (snap().mixer.buses.find((b) => b.id === 'effects') || {}).peak > -30, 2000), snap().mixer.buses);
+  check('…and its bus’s meter hears it', await until(() => (snap().mixer.buses.find((b) => b.id === 'effects') || { peak: -Infinity }).peak > -30, 2000), snap().mixer.buses);
   host.cmd({ op: 'bus', name: 'effects', db: -20 });
   check('…and its bus’s fader still moves it', await until(() => near(5, -26) && near(6, -38), 3000), ch());
   host.cmd({ op: 'bus', name: 'effects', db: 0 });
@@ -75,7 +77,7 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }) {
   // outputs the device lacks: silent, and said on the cue; never moved to 1–2
   host.cmd({ op: 'start', number: 'R3' });
   await sleep(600);
-  const r3 = snap().rows.find((r) => r.number === 'R3');
+  const r3 = snap().rows.find((r) => r.number === 'R3')!;
   check('a cue sent to outputs the device does not have is silent everywhere, and says so', quiet(1, 2, 3, 4, 5, 6, 7, 8) && snap().engine.active.some((a) => a.id === r3.id) && snap().problems.some((p) => p.id === r3.id && /output/.test(p.why)), [ch(), snap().problems]);
   host.cmd({ op: 'stop', number: 'R3' });
 
@@ -91,7 +93,7 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }) {
 
   // a cue's eq is in its path, and only its
   host.cmd({ op: 'start', number: 'R5' });
-  const r5 = snap().rows.find((r) => r.number === 'R5').id;
+  const r5 = snap().rows.find((r) => r.number === 'R5')!.id;
   check('a cue’s eq is on that sound', await until(() => audio(`(() => { const v = voices.get(${JSON.stringify(r5)}); return !!v && !!v.fx && /^eq\\(/.test(v.fx.sig) && v.fx.plan.stages[0].bands[0].db === -40; })()`), 3000));
   check('…which plays on its bus’s pair as before', await until(() => at(1) > -30 && quiet(3, 4, 5, 6, 7, 8), 3000), ch());
   host.cmd({ op: 'stop', number: 'R5' });
@@ -129,7 +131,7 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }) {
 
   // the window: the inspector's matrix, and Settings ▸ Audio's outputs
   if (page && win) {
-    const r1 = snap().rows.find((r) => r.number === 'R1').id;
+    const r1 = snap().rows.find((r) => r.number === 'R1')!.id;
     host.cmd({ op: 'playhead', id: r1 });
     await page(`(() => { const row = [...document.querySelectorAll('.list tbody tr')].find((r) => /to 5 and 6/.test(r.textContent)); if (row) row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })), row.click(); })()`);
     await page(`(() => { const t = [...document.querySelectorAll('.inspector .tabs button')].find((b) => b.textContent === 'Audio'); if (t) t.click(); })()`);
@@ -141,7 +143,7 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }) {
     // a level typed into the grid is the cue's (with no sign it is a cut, as everywhere), and "On its bus" takes the routing away
     await page(`(() => { const i = document.querySelector('.matrix [data-cell="1:3"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, '6'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
     await page(`document.querySelector('.matrix [data-cell="1:3"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
-    const cueR1 = () => host.document.doc.lists[0].cues.find((c) => c.number === 'R1');
+    const cueR1 = () => host.document.doc.lists[0].cues.find((c) => c.number === 'R1')!;
     check('a level typed into the matrix is written to the cue', await until(() => JSON.stringify(cueR1().outputs) === '[{"3":-6,"5":0},{"6":-12}]', 3000), cueR1().outputs);
     await page(`[...document.querySelectorAll('.matrix-wrap button')].find((b) => b.textContent === 'On its bus').click()`);
     check('…and “On its bus” takes its outputs away', await until(() => cueR1().outputs === undefined, 3000), cueR1().outputs);

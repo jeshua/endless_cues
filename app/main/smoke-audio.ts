@@ -9,16 +9,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as show from '../../core/show/show';
+import type { Smoke, Snap } from './smoke';
+import type { Op } from '../../core/show/ops';
 
-async function audioDepth({ host, win, check, timed = check, until, page, sleep, log = () => {}, shot = async () => {} }) {
-  const snap = () => host.snapshot();
-  const av = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
+async function audioDepth({ host, win, check, timed = check, until, page, sleep, log = () => {}, shot = async () => {} }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep'> & Partial<Pick<Smoke, 'timed' | 'log' | 'shot'>>) {
+  const snap = () => host.snapshot() as Snap;
+  const av = (js: string) => host.audioWindow()!.webContents.executeJavaScript(js, true);
   const list = host.document.doc.lists[0].id;
   let edits = 0;
-  const edit = (ops, label) => { const r = host.cmd({ op: 'edit', ops, label }); if (r && !r.error) edits++; return r; };
-  const idOf = (number) => (show.findByNumber(host.document.doc, number) || {}).id;
-  const active = (id) => snap().engine.active.find((a) => a.id === id && a.kind === 'audio');
-  const { tone, fixture } = require('./test-media');
+  const edit = (ops: Op[], label: string) => { const r = host.cmd({ op: 'edit', ops, label }); if (r && !r.error) edits++; return r; };
+  const idOf = (number: string) => (show.findByNumber(host.document.doc, number) || {}).id!;
+  const active = (id: string) => snap().engine.active.find((a) => a.id === id && a.kind === 'audio');
+  const { tone, fixture } = (require('./test-media') as typeof import('./test-media'));
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
 
@@ -26,7 +28,7 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   const formats = ['wav', 'aiff', 'mp3', 'm4a', 'flac', 'ogg', 'opus', 'caf'].filter((x) => fixture(path.join('formats', `tone.${x}`)));
   if (!formats.length) log('SMOKE skip  every file format: no test sounds here (a packaged build; EC_FIXTURES names them)');
   edit(formats.map((x) => ({ op: 'cue.add', cue: { type: 'audio', number: `FMT-${x}`, file: tone(x), gainDb: -20 }, list })), 'formats');
-  const results = {};
+  const results: Record<string, { duration: number; waveform?: unknown; seek?: unknown; loop?: unknown }> = {};
   await until(() => formats.every((x) => snap().engine.durations[tone(x)] > 0 || snap().problems.some((p) => p.id === idOf(`FMT-${x}`))), 8000);
   for (const x of formats) results[x] = { duration: Math.round((snap().engine.durations[tone(x)] || 0) * 100) / 100 };
   await until(() => formats.every((x) => !host.cmd({ op: 'peaks', file: tone(x), detail: true }).pending), 8000);
@@ -73,7 +75,7 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   const back = await av(`(() => { const v = voices.get(${JSON.stringify(ad1)}); return { rate: v.buf ? rateAt(v) : v.el.playbackRate, db: 20 * Math.log10(v.gain.gain.value) }; })()`);
   await timed('a Fade cue moves the rate with the level, and Revert fade puts both back', moving.rate > 1.05 && moving.rate < 1.3 && moving.db < -1 && rev.reverted === 1 && Math.abs(back.rate - 1) < 0.01 && Math.abs(back.db) < 0.5 && !snap().engine.active.some((a) => a.kind === 'fade'), { moving, rev, back });
   const took = host.cmd({ op: 'fade-from-target', number: 'AD3' }); edits++;
-  check('“Set level from target” takes the level the target is playing at', took.playing === true && Math.abs(took.db) < 0.5 && show.findByNumber(host.document.doc, 'AD3').db === 0, took);
+  check('“Set level from target” takes the level the target is playing at', took.playing === true && Math.abs(took.db) < 0.5 && show.findByNumber(host.document.doc, 'AD3')!.db === 0, took);
   host.cmd({ op: 'panic', hard: true });
 
   // ── rate: the engine's clock and the sound agree on where it is; a kept pitch is a stream, a tape a buffer ──
@@ -81,13 +83,13 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
         { op: 'cue.add', cue: { type: 'audio', number: 'AD5', file: tone('flac'), gainDb: -20, rate: 0.5, loop: true }, list },
         { op: 'cue.add', cue: { type: 'audio', number: 'AD6', file: tone('wav'), gainDb: -6, envelope: [[0, -60], [0.6, -60], [1.4, 0]] }, list }], 'rate and envelope');
   host.cmd({ op: 'fire', number: 'AD4' }); host.cmd({ op: 'fire', number: 'AD5' });
-  await until(() => active(idOf('AD5')) && active(idOf('AD5')).exact, 5000);
+  await until(() => active(idOf('AD5')) && active(idOf('AD5'))!.exact, 5000);
   await sleep(900);
   const rates = await av(`Object.fromEntries([...voices].map(([k, v]) => [k, { at: placeOf(v), buffer: !!v.buf, keeps: v.el ? v.el.preservesPitch : false, rate: v.buf ? rateAt(v) : v.el.playbackRate }]))`);
   const fast = rates[idOf('AD4')] || {}, slow = rates[idOf('AD5')] || {};
   const eFast = (active(idOf('AD4')) || {}).elapsed, eSlow = (active(idOf('AD5')) || {}).elapsed;
-  await timed('a sound at double rate with its pitch kept is a stream, and is where the engine says', fast.buffer === false && fast.keeps === true && fast.rate === 2 && fast.at > 1.2 && Math.abs(fast.at - eFast) < 0.35, { fast, eFast });
-  await timed('a sound at half rate is played as a tape from its buffer, and is where the engine says', slow.buffer === true && slow.rate === 0.5 && slow.at > 0.2 && slow.at < 1 && Math.abs(slow.at - eSlow) < 0.2, { slow, eSlow });
+  await timed('a sound at double rate with its pitch kept is a stream, and is where the engine says', fast.buffer === false && fast.keeps === true && fast.rate === 2 && fast.at > 1.2 && Math.abs(fast.at - eFast!) < 0.35, { fast, eFast });
+  await timed('a sound at half rate is played as a tape from its buffer, and is where the engine says', slow.buffer === true && slow.rate === 0.5 && slow.at > 0.2 && slow.at < 1 && Math.abs(slow.at - eSlow!) < 0.2, { slow, eSlow });
   host.cmd({ op: 'panic', hard: true });
 
   // ── the envelope: silent while its line is at the bottom, at the cue's level once it has risen ──────────────
@@ -140,7 +142,7 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   host.audioEvent({ type: 'devices', list: [builtIn, iface], inputs: [], current: 'default' });
   host.cmd({ op: 'device', id: iface.id });
   host.audioEvent({ type: 'devices', list: [builtIn], inputs: [], current: 'default' });
-  check('the chosen output going away moves the show to the default output, and says so', snap().mixer.fallback && snap().mixer.fallback.label === 'Smoke Interface' && snap().mixer.device === 'default' && /has gone/.test(snap().notice), [snap().mixer.fallback, snap().mixer.device, snap().notice]);
+  check('the chosen output going away moves the show to the default output, and says so', snap().mixer.fallback && snap().mixer.fallback!.label === 'Smoke Interface' && snap().mixer.device === 'default' && /has gone/.test(snap().notice), [snap().mixer.fallback, snap().mixer.device, snap().notice]);
   host.audioEvent({ type: 'devices', list: [builtIn, iface], inputs: [], current: 'default' });
   check('…and its return moves it back', !snap().mixer.fallback && snap().mixer.device === iface.id && /is back/.test(snap().notice), [snap().mixer.fallback, snap().mixer.device, snap().notice]);
   host.cmd({ op: 'device', id: 'default' });
@@ -154,9 +156,9 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   await shot('9-audio-tab-wave');
   await page(`[...document.querySelectorAll('.inspector .tabs button')].find((b) => b.textContent === 'Time & Loops').click()`);
   check('Time & Loops shows the waveform with its Start and End handles', await until(() => page(`!!document.querySelector('[data-wavedit] [data-handle="start"]') && !!document.querySelector('[data-wavedit] [data-handle="end"]') && !!document.querySelector('[data-wavedit] canvas')`), 4000));
-  const drag = (fx0, fx1, fy = 0.6) => page(`(async () => { const el = document.querySelector('[data-wavedit]'), r = el.getBoundingClientRect(); const ev = (type, fx) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + fx * r.width, clientY: r.top + ${fy} * r.height }));
+  const drag = (fx0: number, fx1: number, fy = 0.6) => page(`(async () => { const el = document.querySelector('[data-wavedit]'), r = el.getBoundingClientRect(); const ev = (type, fx) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: r.left + fx * r.width, clientY: r.top + ${fy} * r.height }));
     ev('pointerdown', ${fx0}); await new Promise((q) => setTimeout(q, 30)); ev('pointermove', ${(0.5)} * ${fx0} + 0.5 * ${fx1}); await new Promise((q) => setTimeout(q, 30)); ev('pointermove', ${fx1}); await new Promise((q) => setTimeout(q, 30)); ev('pointerup', ${fx1}); })()`);
-  const cue = () => show.findByNumber(host.document.doc, 'AD6');
+  const cue = () => show.findByNumber(host.document.doc, 'AD6')!;
   await until(() => snap().engine.durations[tone('wav')] > 0, 2000);
   await drag(0.4, 0.6, 0.95); edits++;            // (low down: the Volume line, always drawn, is not where the drag starts)
   check('a drag across the waveform draws a loop region', await until(() => { const l = (cue().loops || [])[0]; return l && Math.abs(l.start - 1.2) < 0.06 && Math.abs(l.end - 1.8) < 0.06; }, 2000), cue().loops);
@@ -169,12 +171,12 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   check('the waveform zooms in', await until(() => page(`/×2/.test(document.querySelector('.wavedit .wavebar').textContent)`), 2000));
   await page(`document.querySelector('.wavedit [data-zoom="fit"]').click()`);
   // the lines, the markers and the loop regions on it are smoke-lanes.js's
-  await require('./smoke-lanes').editing({ host, check, until, page, sleep, cue, edit: (n) => { edits += n; } });
+  await (require('./smoke-lanes') as typeof import('./smoke-lanes')).editing({ host, check, until, page, sleep, cue, edit: (n) => { edits += n; } });
   host.cmd({ op: 'fire', id: ad6 });
   await sleep(700);
   await page(`document.activeElement && document.activeElement.blur()`);
   await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'I', code: 'KeyI', shiftKey: true, bubbles: true }))`); edits++;
-  check('⇧I sets Start at where the sound is playing', await until(() => cue().from > 0.5 && cue().from < 1.6, 2000), cue().from);
+  check('⇧I sets Start at where the sound is playing', await until(() => cue().from! > 0.5 && cue().from! < 1.6, 2000), cue().from);
   host.cmd({ op: 'panic', hard: true });
 
   // ── a Fade cue's shapes in the inspector ───────────────────────────────────────────────────────────────

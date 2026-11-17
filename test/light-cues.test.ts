@@ -7,6 +7,8 @@ import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import { createLighting } from '../core/light/lighting';
 import * as artnet from '../core/light/artnet';
+import type { CueSpec, Op } from '../core/show/ops';
+import type { LightInput } from '../core/light/patch';
 
 const LIGHT = {
   on: true,
@@ -16,18 +18,18 @@ const LIGHT = {
 };
 
 /** A show with a light patch and these cues, an engine on a fake clock, and the lighting driven by hand (no timer). */
-function stage(cues, light = LIGHT) {
-  const b = build([{ op: 'show.set', path: 'settings.light', value: light }, ...cues.map((cue) => ({ op: 'cue.add', cue, ref: cue.ref }))]);
+function stage(cues: CueSpec[], light: LightInput = LIGHT) {
+  const b = build([{ op: 'show.set', path: 'settings.light', value: light }, ...cues.map((cue): Op => ({ op: 'cue.add', cue, ref: cue.ref }))]);
   const e = engineRig(b.doc);
   let doc = b.doc;
   const lighting = createLighting({ dryRun: true, clock: e.now, timers: { setInterval: () => null, clearInterval() {} } });
   lighting.configure(doc.settings.light);
   lighting.attach(e.engine);
-  const ctx = { cueOf: (id) => show.index(doc).byId.get(id), edit: (ops) => { const r = applyOps(doc, ops); doc = r.doc; e.engine.load(show.toEngineDoc(doc)); return r; } };
-  const level = (k) => { lighting.step(); return Math.round(lighting.rig.level(k) * 10) / 10; };
+  const ctx = { cueOf: (id: string) => show.index(doc).byId.get(id), edit: (ops: Op[]) => { const r = applyOps(doc, ops); doc = r.doc; e.engine.load(show.toEngineDoc(doc)); return r; } };
+  const level = (k: string) => { lighting.step(); return Math.round(lighting.rig.level(k)! * 10) / 10; };
   // (in the app a timer refreshes 40 times a second; here time only moves in `advance`, so that is when it refreshes)
-  const advance = (secs) => { e.advance(secs); lighting.step(); };
-  return { ...e, advance, b, lighting, level, ctx, doc: () => doc, dmx: (ch) => { lighting.step(); return artnet.parseDmx(lighting.output.last(1)).data[ch - 1]; } };
+  const advance = (secs: number) => { e.advance(secs); lighting.step(); };
+  return { ...e, advance, b, lighting, level, ctx, doc: () => doc, dmx: (ch: number) => { lighting.step(); return artnet.parseDmx(lighting.output.last(1)!)!.data[ch - 1]; } };
 }
 
 test('a Light cue with levels is a problem only when its lines cannot be read; one with nothing at all is an error', () => {
@@ -38,7 +40,7 @@ test('a Light cue with levels is a problem only when its lines cannot be read; o
     { op: 'cue.add', cue: { type: 'light', number: '3' } },
     { op: 'cue.add', cue: { type: 'light', number: '4', lightCue: '12' } },
   ]);
-  const of = (n) => show.problems(doc).filter((p) => p.id === show.findByNumber(doc, n).id);
+  const of = (n: string) => show.problems(doc).filter((p) => p.id === show.findByNumber(doc, n)!.id);
   assert.deepEqual(of('1'), []);
   assert.equal(of('2')[0].level, 'warning');
   assert.match(of('2')[0].why, /line 2, “nobody = 3”/);
@@ -47,7 +49,7 @@ test('a Light cue with levels is a problem only when its lines cannot be read; o
   // a new show has an empty patch and nothing switched on
   assert.deepEqual(show.newShow().settings.light, { on: false, rate: 40, panicBlackout: false, universes: [], instruments: [], groups: [], fixtures: [] });
   // and a show saved before there was lighting opens with one
-  const old = show.newShow(); delete old.settings.light;
+  const old = show.newShow(); delete (old.settings as { light?: unknown }).light;
   assert.deepEqual(show.normalise(old).doc.settings.light.instruments, []);
 });
 
@@ -180,7 +182,7 @@ test('a Fade aimed at a Light cue takes that cue’s lights home over the Fade�
 test('a Light cue with levels is always a stop; one that is only a desk cue is skipped while light cues are off', () => {
   const s = stage([{ type: 'light', number: '1', lightCue: '5' }, { type: 'light', number: '2', levels: 'front = 50', duration: 0 }, { type: 'light', number: '3', lightCue: '7', levels: 'side = 50', duration: 0 }]);
   s.engine.setSkipLights(true);
-  assert.equal(s.engine.byId.get(s.engine.playhead).number, '2');
+  assert.equal(s.engine.byId.get(s.engine.playhead!)!.number, '2');
   s.engine.go();
   assert.equal(s.level('front.intensity'), 50);
   s.engine.go();
@@ -196,14 +198,14 @@ test('the dashboard: a hand on the lights, a blackout, and the picture the windo
   const s = stage([{ type: 'light', levels: 'front = 40', duration: 0 }]);
   s.engine.go();
   assert.deepEqual(s.lighting.cmd({ op: 'light-set', text: 'side = 70\ncyc.colour = #0000ff' }), { ok: true, count: 4 });
-  assert.match(s.lighting.cmd({ op: 'light-set', text: 'ghost = 1' }).error, /no instrument or group “ghost”/);
+  assert.match(s.lighting.cmd({ op: 'light-set', text: 'ghost = 1' }).error!, /no instrument or group “ghost”/);
   s.lighting.cmd({ op: 'light-level', name: 'wash', value: 20, secs: 2 });
   s.advance(1);
   assert.deepEqual([s.level('front.intensity'), s.level('side.intensity')], [30, 45]);
   s.advance(1.1);
   let snap = s.lighting.snapshot();
   assert.equal(snap.changed, 5);
-  assert.equal(snap.instruments.find((i) => i.name === 'cyc').colour, '#0000ff');
+  assert.equal(snap.instruments.find((i) => i.name === 'cyc')!.colour, '#0000ff');
   assert.equal(snap.universes[0].to, 'broadcast');
   assert.equal(snap.dryRun, true);
   assert.ok(snap.fixtures.some((f) => f.id === 'rgbw'));
@@ -221,7 +223,7 @@ test('the dashboard: a hand on the lights, a blackout, and the picture the windo
 test('recording: a new cue from what was changed, a full-state cue of everything, and an update of a cue', () => {
   const s = stage([{ type: 'light', ref: 'a', number: '1', levels: 'wash = 50\nfront = 60', duration: 0 }]);
   s.engine.go();
-  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'changes' }, s.ctx).error, /nothing has been changed by hand/);
+  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'changes' }, s.ctx).error!, /nothing has been changed by hand/);
   s.lighting.cmd({ op: 'light-set', text: 'side = 75\ncyc = 20' });
   // a tracking cue: only what the hand changed
   const made = s.lighting.cmd({ op: 'light-record', mode: 'changes', after: s.b.id('a') }, s.ctx);
@@ -230,28 +232,28 @@ test('recording: a new cue from what was changed, a full-state cue of everything
   assert.deepEqual(cues.map((c) => c.levels), ['wash = 50\nfront = 60', 'side = 75\ncyc = 20']);
   assert.equal(cues[1].id, made.id);
   assert.equal(s.lighting.snapshot().changed, 0);     // recorded: no longer a hand's
-  assert.equal(s.lighting.snapshot().instruments.find((i) => i.name === 'side').params[0].cue, made.id);
+  assert.equal(s.lighting.snapshot().instruments.find((i) => i.name === 'side')!.params[0].cue, made.id);
   // update: the change is written into the cue's own text
   s.lighting.cmd({ op: 'light-set', text: 'front = 85' });
   assert.equal(s.lighting.cmd({ op: 'light-record', mode: 'changes', id: s.b.id('a') }, s.ctx).ok, true);
   assert.equal(s.doc().lists[0].cues[0].levels, 'wash = 50\nfront = 85');
   // everything: a full state
   const all = s.lighting.cmd({ op: 'light-record', mode: 'all' }, s.ctx);
-  const full = s.doc().lists[0].cues.find((c) => c.id === all.id);
+  const full = s.doc().lists[0].cues.find((c) => c.id === all.id)!;
   assert.equal(full.block, true);
   assert.equal(full.levels, 'front = 85\nside = 75\ncyc = 20\ncyc.red = 100\ncyc.green = 100\ncyc.blue = 100');
   // what it recorded is what it plays back
   s.lighting.cmd({ op: 'light-clear' });
-  s.engine.fire(all.id); s.advance(3.1);
+  s.engine.fire(all.id!); s.advance(3.1);
   assert.deepEqual([s.level('front.intensity'), s.level('side.intensity'), s.level('cyc.intensity')], [85, 75, 20]);
   // Show mode locks it; a cue that is not a Light cue cannot be updated
-  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'all' }, { ...s.ctx, locked: true }).error, /Show mode/);
-  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'all', id: 'nope' }, s.ctx).error, /select a Light cue/);
+  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'all' }, { ...s.ctx, locked: true }).error!, /Show mode/);
+  assert.match(s.lighting.cmd({ op: 'light-record', mode: 'all', id: 'nope' }, s.ctx).error!, /select a Light cue/);
 });
 
 test('a show with no instruments runs no timer; one with instruments refreshes at its rate, on or off', () => {
-  const made = [];
-  const timers = { setInterval: (fn, ms) => { made.push(ms); return { unref() {} }; }, clearInterval() { made.push('cleared'); } };
+  const made: (number | string)[] = [];
+  const timers = { setInterval: (fn: () => void, ms: number) => { made.push(ms); return { unref() {} }; }, clearInterval() { made.push('cleared'); } };
   const l = createLighting({ dryRun: true, timers });
   l.configure({});
   assert.deepEqual(made, []);
@@ -262,7 +264,7 @@ test('a show with no instruments runs no timer; one with instruments refreshes a
   l.configure({ ...LIGHT, rate: 30 });
   assert.equal(made.at(-1), 1000 / 30);
   l.step();
-  assert.equal(artnet.parseDmx(l.output.last(1)).universe, 0);
+  assert.equal(artnet.parseDmx(l.output.last(1)!)!.universe, 0);
   l.configure({});
   assert.equal(made.at(-1), 'cleared');
   l.close();

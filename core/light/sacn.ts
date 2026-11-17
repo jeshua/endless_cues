@@ -24,11 +24,11 @@ const OPT_PREVIEW = 0x80;
 const MAX_UNIVERSE = 63999;
 
 /** The multicast group a universe is sent to. */
-function multicastAddress(universe) {
+function multicastAddress(universe: number): string {
   check(universe);
   return `239.255.${(universe >> 8) & 0xff}.${universe & 0xff}`;
 }
-function check(universe) {
+function check(universe: number) {
   if (!(Number.isInteger(universe) && universe >= 1 && universe <= MAX_UNIVERSE)) throw new Error(`sACN universe ${universe}: 1 to ${MAX_UNIVERSE}`);
 }
 
@@ -36,7 +36,7 @@ function check(universe) {
  * One E1.31 data packet. `cid`: 16 bytes, the same for as long as this sender is this sender.
  * `priority` 0–200 (100 is the default: where two sources send a universe, the higher wins).
  */
-function dataPacket({ universe, cid, sequence = 0, data, name = 'Endless Cues', priority = 100, terminated = false, preview = false, sync = 0 }) {
+function dataPacket({ universe, cid, sequence = 0, data, name = 'Endless Cues', priority = 100, terminated = false, preview = false, sync = 0 }: { universe: number; cid: Buffer; sequence?: number; data?: ArrayLike<number> | null; name?: string; priority?: number; terminated?: boolean; preview?: boolean; sync?: number }): Buffer {
   check(universe);
   if (!Buffer.isBuffer(cid) || cid.length !== 16) throw new Error('sACN: the CID is 16 bytes');
   const levels = Buffer.from(data || []);
@@ -72,7 +72,7 @@ function dataPacket({ universe, cid, sequence = 0, data, name = 'Endless Cues', 
 }
 
 /** A data packet read back (tests): { universe, sequence, priority, name, terminated, cid, data } or null. */
-function parse(buf) {
+function parse(buf: unknown) {
   if (!Buffer.isBuffer(buf) || buf.length < 126 || !buf.subarray(4, 16).equals(ACN_ID)) return null;
   if (buf.readUInt32BE(18) !== VECTOR_ROOT_DATA || buf.readUInt32BE(40) !== VECTOR_FRAMING_DATA) return null;
   const name = buf.subarray(44, 108); const end = name.indexOf(0);

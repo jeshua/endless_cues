@@ -3,15 +3,26 @@
 // (core/audio/chain.js): its name above, the dial, its value and unit below. The arithmetic is dial.js.
 import { html, useState, useRef, useEffect, cx } from './lib.js';
 import { toPos, fromPos, format, parseTyped, scaleOf } from './dial.js';
+import type { DialParam } from './dial.js';
+import type { ComponentChildren } from 'preact';
 
-const ang = (p) => (-135 + p * 270) * Math.PI / 180;
-const pt = (p, r) => [24 + r * Math.sin(ang(p)), 24 - r * Math.cos(ang(p))];
-const at = (p, r) => pt(p, r).map((n) => n.toFixed(2)).join(' ');
-const arc = (a, b) => `M ${at(a, 20)} A 20 20 0 ${Math.abs(b - a) * 270 > 180 ? 1 : 0} ${b > a ? 1 : 0} ${at(b, 20)}`;
+const ang = (p: number) => (-135 + p * 270) * Math.PI / 180;
+const pt = (p: number, r: number) => [24 + r * Math.sin(ang(p)), 24 - r * Math.cos(ang(p))];
+const at = (p: number, r: number) => pt(p, r).map((n) => n.toFixed(2)).join(' ');
+const arc = (a: number, b: number) => `M ${at(a, 20)} A 20 20 0 ${Math.abs(b - a) * 270 > 180 ? 1 : 0} ${b > a ? 1 : 0} ${at(b, 20)}`;
 
 /** A dial's face: the track from 7 o'clock round to 5, the arc from `origin` to `pos` (both 0…1), a needle, and a
  *  meter's arc under it when there is a `peak`. Every other prop (pointer events, a title) goes on the svg. */
-export function DialFace({ pos, origin = 0, peak = null, title, cls = 'kdial', children, ...events }) {
+export interface DialFaceProps {
+  pos: number;
+  origin?: number;
+  peak?: number | null;
+  title?: string;
+  cls?: string;
+  children?: ComponentChildren;
+  [prop: string]: unknown;
+}
+export function DialFace({ pos, origin = 0, peak = null, title, cls = 'kdial', children, ...events }: DialFaceProps) {
   const [x1, y1] = pt(pos, 6), [x2, y2] = pt(pos, 13.5);
   return html`<svg viewBox="0 0 48 48" class=${cls} ...${events}>${title ? html`<title>${title}</title>` : null}
     <path class="ktrack" d=${arc(0, 1)} />
@@ -29,36 +40,48 @@ export function DialFace({ pos, origin = 0, peak = null, title, cls = 'kdial', c
  * "350 ms", "30%"). A drag is shown as it is made and kept (one undoable edit) when the button is let go; the wheel
  * keeps its turn once it rests. `p`: { key, label, unit, min, max, def }. `id` goes on as data-knob.
  */
-export function ParamKnob({ p, value, pending = false, disabled = false, id, onCommit, label, automated = false }) {
-  const [drag, setDrag] = useState(null);
+/** A setting of a tool's table (core/audio/chain.js TOOLS): `def` is what a double-click puts back. */
+export interface KnobParam extends DialParam { key: string; label: string; def?: number }
+export interface ParamKnobProps {
+  p: KnobParam;
+  value: number;
+  pending?: boolean;
+  disabled?: boolean;
+  id: string;
+  onCommit: (v: number) => void;
+  label?: string;
+  automated?: boolean;
+}
+export function ParamKnob({ p, value, pending = false, disabled = false, id, onCommit, label, automated = false }: ParamKnobProps) {
+  const [drag, setDrag] = useState<number | null>(null);
   const [typing, setTyping] = useState(false);
-  const start = useRef(null), wheelTimer = useRef(null), wheelPos = useRef(null), live = useRef(value);
+  const start = useRef<{ y: number; pos: number } | null>(null), wheelTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), wheelPos = useRef<number | null>(null), live = useRef(value);
   useEffect(() => () => clearTimeout(wheelTimer.current), []);
   const shown = drag !== null ? drag : value;
   live.current = shown;
   const s = scaleOf(p);
   const pos = toPos(p, shown), origin = toPos(p, s.origin);
-  const done = (v) => { if (v !== null && v !== undefined && v !== value) onCommit(v); };
-  const down = (e) => {
+  const done = (v: number | null | undefined) => { if (v !== null && v !== undefined && v !== value) onCommit(v); };
+  const down = (e: PointerEvent & { currentTarget: SVGSVGElement }) => {
     if (disabled || e.button > 0) return;
     e.preventDefault();
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* a pointer the page made up */ }
     start.current = { y: e.clientY, pos: toPos(p, shown) };
     if (e.currentTarget.focus) e.currentTarget.focus();
   };
-  const move = (e) => {
+  const move = (e: PointerEvent) => {
     if (!start.current) return;
     const v = fromPos(p, start.current.pos + (start.current.y - e.clientY) / (e.shiftKey ? 1500 : 150), e.shiftKey);
     if (v !== live.current) { live.current = v; setDrag(v); }
   };
   const up = () => { if (!start.current) return; start.current = null; const v = live.current; setDrag(null); done(v); };
   // one press of an arrow key: a hundredth of the way round, or as far as it takes to land on the next value (a bit, a semitone)
-  const nudge = (by, fine) => {
+  const nudge = (by: number, fine: boolean) => {
     const from = toPos(p, live.current);
     for (let k = 1; k <= 100; k++) { const v = fromPos(p, from + by * k * (fine ? 0.001 : 0.01), fine); if (v !== live.current) return v; }
     return live.current;
   };
-  const wheel = (e) => {
+  const wheel = (e: WheelEvent) => {
     if (disabled) return;
     e.preventDefault();
     // (a turn as long as the scroll: a mouse's notch is two hundredths of the way round, a trackpad's small steps less)
@@ -70,15 +93,15 @@ export function ParamKnob({ p, value, pending = false, disabled = false, id, onC
     clearTimeout(wheelTimer.current);
     wheelTimer.current = setTimeout(() => { wheelPos.current = null; setDrag(null); done(live.current); }, 350);
   };
-  const key = (e) => {
+  const key = (e: KeyboardEvent) => {
     if (disabled) return;
-    const by = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[e.key];
+    const by = ({ ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 } as Record<string, number>)[e.key];
     if (!by) return;
     e.preventDefault(); e.stopPropagation();
     done(nudge(by, e.shiftKey));
   };
   const f = format(p, shown);
-  const typed = (text) => { setTyping(false); const v = parseTyped(p, text); if (v !== null) done(v); };
+  const typed = (text: string) => { setTyping(false); const v = parseTyped(p, text); if (v !== null) done(v); };
   return html`<div class=${cx('pknob', pending && 'pending', disabled && 'disabled', automated && 'auto')} data-knob=${id} data-automated=${automated ? '1' : null}>
     <div class="pk-name" title=${automated ? `${p.label}: follows its line on Time & Loops; turning it moves the whole line` : p.label}>${label || p.label}</div>
     <${DialFace} cls="kdial pk-dial" pos=${pos} origin=${origin} tabIndex=${disabled ? -1 : 0} role="slider"
@@ -87,9 +110,9 @@ export function ParamKnob({ p, value, pending = false, disabled = false, id, onC
       onPointerDown=${down} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up} onWheel=${wheel} onKeyDown=${key}
       onDblClick=${() => { if (!disabled && p.def !== undefined) done(p.def); }} />
     ${typing
-      ? html`<input class="pk-input mono" data-knob-input=${id} value=${f.text} ref=${(el) => { if (el && !el.dataset.held) { el.dataset.held = '1'; el.focus(); el.select(); } }}
-          onBlur=${(e) => typed(e.target.value)}
-          onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } if (e.key === 'Escape') { e.target.value = f.text; setTyping(false); } }} />`
+      ? html`<input class="pk-input mono" data-knob-input=${id} value=${f.text} ref=${(el: HTMLInputElement | null) => { if (el && !el.dataset.held) { el.dataset.held = '1'; el.focus(); el.select(); } }}
+          onBlur=${(e: FocusEvent) => typed((e.target as HTMLInputElement).value)}
+          onKeyDown=${(e: KeyboardEvent & { target: HTMLInputElement }) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } if (e.key === 'Escape') { e.target.value = f.text; setTyping(false); } }} />`
       : html`<div class="pk-val mono" data-knob-value=${id} title="Double-click to type a value" onDblClick=${() => { if (!disabled) setTyping(true); }}>${f.text}<span class="pk-unit">${f.unit}</span></div>`}
   </div>`;
 }

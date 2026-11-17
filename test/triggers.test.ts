@@ -17,13 +17,13 @@ test('every trigger in the show is one table, and what would be set off together
     { op: 'show.set', path: 'settings.network.commands.panic', value: '/sm/thunder 1' },
   ]);
   const rows = triggersOf(doc);
-  const row = (number, kind) => rows.find((r) => r.number === number && r.kind === kind);
+  const row = (number: string, kind: string) => rows.find((r) => r.number === number && r.kind === kind)!;
   assert.equal(rows.length, 3 + 4 + 4 + 4 + 1 + 1);
   assert.deepEqual(row('1', 'hotkey').clash, ['2 · Rain']);
   assert.deepEqual(row('1', 'midi').clash, ['2 · Rain']);                 // "note 60" is also "note 60 ch 2"
   assert.deepEqual(row('1', 'osc').clash, ['4 · Bell', 'Panic']);                // (and an OSC message set to run the show)
   assert.deepEqual(row('4', 'midi').clash, ['GO']);                       // a cue's trigger is also the show's GO
-  assert.deepEqual(rows.find((r) => r.what === 'GO').clash, ['4 · Bell']);
+  assert.deepEqual(rows.find((r) => r.what === 'GO')!.clash, ['4 · Bell']);
   assert.deepEqual(row('2', 'clock').clash, ['4 · Bell']);                // both on a Saturday
   assert.deepEqual(row('2', 'timecode').clash, ['4 · Bell']);
   assert.equal(row('4', 'timecode').list, 'Main');
@@ -35,7 +35,7 @@ test('every trigger in the show is one table, and what would be set off together
   assert.ok(show.problems(doc).some((p) => /timecode trigger “01:00:10:30” cannot be used/.test(p.why)));
   // at 24 frames a second, frame 24 does not exist either
   const at24 = applyOps(doc, [{ op: 'show.set', path: 'settings.timecode.rate', value: '24' }, { op: 'cue.set', id: '#5', props: { timecodeTrigger: '01:00:10:24' } }]).doc;
-  assert.match(triggersOf(at24).find((r) => r.number === '5' && r.kind === 'timecode').bad, /no frame 24/);
+  assert.match(triggersOf(at24).find((r) => r.number === '5' && r.kind === 'timecode')!.bad, /no frame 24/);
 });
 
 test('a clock trigger fires at its time, once, on its days, and not for a time that passed while the app was closed', () => {
@@ -44,9 +44,9 @@ test('a clock trigger fires at its time, once, on its days, and not for a time t
     { op: 'cue.add', ref: 'b', cue: { type: 'memo', number: '2', clockTrigger: '19:25:30 fri sat' } },
     { op: 'cue.add', ref: 'c', cue: { type: 'memo', number: '3', clockTrigger: 'teatime' } },
   ]);
-  const fired = new Set();
-  const due = (date) => clockDue(doc, date, fired).map((c) => c.id);
-  const fri = (h, m, s) => new Date(2030, 0, 4, h, m, s);                 // 4 January 2030 is a Friday
+  const fired = new Set<string>();
+  const due = (date: Date) => clockDue(doc, date, fired).map((c) => c.id);
+  const fri = (h: number, m: number, s: number) => new Date(2030, 0, 4, h, m, s);                 // 4 January 2030 is a Friday
   assert.equal(fri(0, 0, 0).getDay(), 5);
   assert.deepEqual(due(fri(19, 24, 59)), []);
   assert.deepEqual(due(fri(19, 25, 0)), [id('a')]);

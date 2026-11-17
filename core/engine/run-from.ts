@@ -25,47 +25,55 @@
  *
  * Pure: the plan is worked out on its own engine; only apply() touches the real one.
  */
-import { CueEngine } from './cue-engine';
+import { CueEngine, type Clock, type EngineAudio, type EngineCue } from './cue-engine';
 import * as show from '../show/show';
+import type { Cue, ShowDoc } from '../show/types';
 import * as midi from '../net/midi';
 import { cleanLimits } from '../audio/curves';
 
 const STOP = Symbol('reached');
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-function plan(doc, fromId, { durations = {}, skipLights = false, disarmed = null, maxSecs = 6 * 3600 } = {}) {
+/** A sound brought back: at what level, how far into it (from its Start at), and why. */
+export interface RunSound { id: string; number: string; name: string; db: number; at: number; why: string; kind: 'mic' | 'picture' | 'sound' }
+/** A cue fired again for what it set: kind device | network | midi | light | mix. */
+export interface RunSend { id: string; number: string; name: string; kind: string }
+export interface RunPlan { error?: undefined; from: string; list: string; sounds: RunSound[]; sends: RunSend[]; left: string[]; reachedByContinue: boolean; text: string }
+export interface RunPlanError { error: 'run from a cue at the top of a list' | 'that cue is not one the playhead stops on (light cues are off)' }
+
+function plan(doc: ShowDoc, fromId: string, { durations = {}, skipLights = false, disarmed = null, maxSecs = 6 * 3600 }: { durations?: Record<string, number>; skipLights?: boolean; disarmed?: Iterable<string> | null; maxSecs?: number } = {}): RunPlan | RunPlanError {
   const edoc = show.toEngineDoc(doc);
   const list = edoc.lists.find((l) => l.cues.some((c) => c.id === fromId));
   if (!list) return { error: 'run from a cue at the top of a list' };
 
   // ── an engine of its own, on a clock that is moved by hand ──
-  let t = 0, timers = [], nextId = 1;
-  const clock = {
+  let t = 0, timers: { id: number; at: number; fn: () => void }[] = [], nextId = 1;
+  const clock: Clock = {
     now: () => t,
     setTimeout: (fn, ms) => { const id = nextId++; timers.push({ id, at: t + Math.max(0, ms) / 1000, fn }); return id; },
     clearTimeout: (id) => { timers = timers.filter((x) => x.id !== id); },
   };
   let goNo = 0;
-  const startedIn = new Map();      // sound -> the GO whose sequence started it
-  const ends = new Map();           // sound -> the timer that ends it (a sound of known length that does not loop)
-  let sim;
-  const audio = {
+  const startedIn = new Map<string, number>();      // sound -> the GO whose sequence started it
+  const ends = new Map<string, unknown>();           // sound -> the timer that ends it (a sound of known length that does not loop)
+  let sim: CueEngine;
+  const audio: Partial<EngineAudio> = {
     play: (key, o) => {
       startedIn.set(key, goNo);
       clock.clearTimeout(ends.get(key));
-      const d = durations[o.file];
+      const d = durations[o.file!];
       if (d > 0 && !o.loop) ends.set(key, clock.setTimeout(() => { ends.delete(key); sim.audioEnded(key); }, Math.max(0, d - (o.from || 0)) * 1000));
     },
     stop: (key) => { clock.clearTimeout(ends.get(key)); ends.delete(key); },
   };
-  for (const op of ['fade', 'move', 'rate', 'sweep', 'pause', 'resume', 'seek', 'cut', 'setLoop', 'setRegion', 'duck']) audio[op] = () => {};
+  for (const op of ['fade', 'move', 'rate', 'sweep', 'pause', 'resume', 'seek', 'cut', 'setLoop', 'setRegion', 'duck'] as const) audio[op] = () => {};
   // what was set on the equipment and the mixer, by what: the last word on each thing wins
-  const last = new Map();           // what it set -> { id, seq, kind }
+  const last = new Map<string, { id: string; seq: number; kind: string }>();           // what it set -> { id, seq, kind }
   let seq = 0;
-  const said = (key, cue, kind) => { if (key && cue && cue.id) last.set(key, { id: cue.id, seq: ++seq, kind }); };
-  const addressOf = (m) => { const s = String(m || '').trim(); return s.startsWith('/') ? s.split(/\s+/)[0] : s; };
+  const said = (key: string, cue: EngineCue | null | undefined, kind: string) => { if (key && cue && cue.id) last.set(key, { id: cue.id, seq: ++seq, kind }); };
+  const addressOf = (m: unknown) => { const s = String(m || '').trim(); return s.startsWith('/') ? s.split(/\s+/)[0] : s; };
   sim = new CueEngine({
-    audio, clock, panicFade: doc.settings.go.panicFade, limits: cleanLimits(doc.settings.audio.levels),
+    audio: audio as EngineAudio, clock, panicFade: doc.settings.go.panicFade, limits: cleanLimits(doc.settings.audio.levels),
     send: (message, cue) => said(`net ${cue && cue.patch || ''} ${addressOf(message)}`, cue, cue && cue.sends ? 'device' : 'network'),
     midi: (cue) => {
       let m; try { m = midi.parseText(cue.midi); } catch { return; }
@@ -86,7 +94,7 @@ function plan(doc, fromId, { durations = {}, skipLights = false, disarmed = null
   let reached = false, reachedIn = -1;
   const fire = sim.fire.bind(sim);
   sim.fire = (id, ...rest) => { if (id === fromId) { reached = true; reachedIn = goNo; throw STOP; } return fire(id, ...rest); };
-  const step = (fn) => { try { fn(); } catch (err) { if (err !== STOP) throw err; } };
+  const step = (fn: () => void) => { try { fn(); } catch (err) { if (err !== STOP) throw err; } };
   // after a GO: its waits, fades and follows run out (a sound followed by the next cue plays to its end first);
   // then the next GO comes at once, as no one knows how long the operator would have waited
   const settle = () => {
@@ -114,13 +122,13 @@ function plan(doc, fromId, { durations = {}, skipLights = false, disarmed = null
 
   // ── what is still going, and which of it to bring back ──
   const { byId } = show.index(doc);
-  const later = new Set();          // cues that something at or after the cue stops, fades, pauses or moves
+  const later = new Set<string>();          // cues that something at or after the cue stops, fades, pauses or moves
   const fromHere = list.cues.slice(list.cues.findIndex((c) => c.id === fromId));
   const ACTS_ON = new Set(['fade', 'stop', 'pause', 'devamp', 'music']);
-  const walk = (cues) => { for (const c of cues) { if (ACTS_ON.has(c.type) && c.target) later.add(c.target); if (c.children) walk(c.children); } };
+  const walk = (cues: EngineCue[]) => { for (const c of cues) { if (ACTS_ON.has(c.type) && c.target) later.add(c.target); if (c.children) walk(c.children); } };
   walk(fromHere);
-  const expected = (id) => { for (let x = id; x; x = sim.parentOf.get(x)) if (later.has(x)) return true; return false; };
-  const sounds = [], left = [];
+  const expected = (id: string) => { for (let x: string | null | undefined = id; x; x = sim.parentOf.get(x)) if (later.has(x)) return true; return false; };
+  const sounds: RunSound[] = [], left: string[] = [];
   for (const [id, r] of sim.running) {
     const c = sim.byId.get(id);
     if (!c) continue;
@@ -130,25 +138,25 @@ function plan(doc, fromId, { durations = {}, skipLights = false, disarmed = null
     const why = goesOn ? 'goes on' : known ? 'still playing' : expected(id) ? 'stopped later' : null;
     if (!why) { left.push(id); continue; }
     const into = known ? Math.max(0, sim.positionOf(r) - (Number(c.from) || 0)) : held ? Math.max(0, Number(held.start) - (Number(c.from) || 0)) : 0;
-    const src = byId.get(id) || {};
+    const src: Partial<Cue> = byId.get(id) || {};
     sounds.push({ id, number: src.number || '', name: src.name || c.name || '', db: Math.round((r.fade ? r.fade.to : r.db) * 10) / 10, at: Math.round(into * 100) / 100, why,
       kind: c.type === 'mic' ? 'mic' : r.still || c.picture ? 'picture' : 'sound' });
   }
   // in the order they started
   const firstAt = new Map([...sim.running].map(([id, r]) => [id, r.startedAt]));
-  sounds.sort((a, b) => firstAt.get(a.id) - firstAt.get(b.id));
+  sounds.sort((a, b) => firstAt.get(a.id)! - firstAt.get(b.id)!);
   // each cue that has the last word on something, once, in the order it said it
-  const latest = new Map();
+  const latest = new Map<string, { id: string; seq: number; kind: string }>();
   for (const v of last.values()) { const was = latest.get(v.id); if (!was || v.seq > was.seq) latest.set(v.id, v); }
-  const sends = [...latest.values()].sort((a, b) => a.seq - b.seq).map((v) => { const src = byId.get(v.id) || {}; return { id: v.id, number: src.number || '', name: src.name || (sim.byId.get(v.id) || {}).name || '', kind: v.kind }; });
-  const out = { from: fromId, list: list.name, sounds, sends, left, reachedByContinue: reached };
+  const sends = [...latest.values()].sort((a, b) => a.seq - b.seq).map((v) => { const src: Partial<Cue> = byId.get(v.id) || {}; return { id: v.id, number: src.number || '', name: src.name || (sim.byId.get(v.id) || {}).name || '', kind: v.kind }; });
+  const out: RunPlan = { from: fromId, list: list.name, sounds, sends, left, reachedByContinue: reached, text: '' };
   out.text = describe(out);
   return out;
 }
 
 /** "Starts 3 sounds and sets 2 devices." in as few words as it takes. */
-function describe(p) {
-  const n = (k) => p.sounds.filter((x) => x.kind === k).length, s = (k) => p.sends.filter((x) => x.kind === k).length;
+function describe(p: Pick<RunPlan, 'sounds' | 'sends'>) {
+  const n = (k: string) => p.sounds.filter((x) => x.kind === k).length, s = (k: string) => p.sends.filter((x) => x.kind === k).length;
   const parts = [
     n('sound') ? `starts ${plural(n('sound'), 'sound')}` : '', n('mic') ? `opens ${plural(n('mic'), 'microphone')}` : '', n('picture') ? `shows ${plural(n('picture'), 'picture')}` : '',
     s('device') ? `sets ${plural(s('device'), 'device')}` : '', s('network') ? `sends ${plural(s('network'), 'message')}` : '', s('midi') ? `sends ${plural(s('midi'), 'MIDI message')}` : '',
@@ -160,7 +168,7 @@ function describe(p) {
 }
 
 /** Do it on the engine that plays: everything stops dead, what was worked out starts, the playhead goes to the cue. */
-function apply(engine, p) {
+function apply(engine: CueEngine, p: RunPlan) {
   engine.panic(); engine.panic();                       // (twice: the second is the hard stop)
   for (const x of p.sends) if (engine.byId.has(x.id)) engine.fire(x.id);
   for (const x of p.sounds) {

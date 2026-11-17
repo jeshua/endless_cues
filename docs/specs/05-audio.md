@@ -1,6 +1,6 @@
 # 05 · Audio
 
-Source: `app/audio/audio.html` (the player), `app/main/host.js` (its controller), `core/engine/waveform.js` (peaks), `core/audio/chain.js` (a sound's own tools), `core/audio/kinds.js` (the kinds of sound).
+Source: `app/audio/audio.html` (the player), `app/main/host.ts` (its controller), `core/engine/waveform.ts` (peaks), `core/audio/chain.ts` (a sound's own tools), `core/audio/kinds.ts` (the kinds of sound).
 
 ## The signal path
 
@@ -13,7 +13,7 @@ VOICE  (one per playing Audio or Mic cue, or Video cue's sound)
   buffer (decoded) ─▶ sub stage (a move's crossfade, bass swap) ─┤   a move crossfades two sub stages
   microphone (one channel of an input) ──────────────────────────┤   a stream becoming a buffer (`upgrade`) crossfades the first two
                                                                  ▼
- [ SOUND DESIGN  (the cue's `chain` and `eq`; built by core/audio/chain.js, in this order, each only if on)
+ [ SOUND DESIGN  (the cue's `chain` and `eq`; built by core/audio/chain.ts, in this order, each only if on)
      door (cutAt and Stop shut this when the tail is to ring)
      ─▶ high-pass ─▶ low-pass ─▶ eq (4 bands) ─▶ gate ─▶ compressor ─▶ drive ─▶ crush ─▶ pitch shift
      ─▶ chorus ─▶ tremolo ─▶ auto-pan ─▶ stereo width ─▶ delay ─▶ reverb ]
@@ -38,7 +38,7 @@ PAIR   (one per pair of outputs in use)      master ─▶ limiter ─▶ meters
 
 ## Where sound goes
 
-Source: `core/audio/routing.js` (what the show file says, as data), `patch`, `ride`, `route`, `lay`, `setOutputs`, `setFx` and `setSends` in `audio.html`, `app/renderer/Routing.js` (the matrix in the inspector, the outputs in Settings ▸ Audio).
+Source: `core/audio/routing.ts` (what the show file says, as data), `patch`, `ride`, `route`, `lay`, `setOutputs`, `setFx` and `setSends` in `audio.html`, `app/renderer/Routing.ts` (the matrix in the inspector, the outputs in Settings ▸ Audio).
 
 ```
 bus ─▶ its pair of outputs (bus.out) ──────────────┐
@@ -81,7 +81,7 @@ On a bus, such a file is folded to two channels where the bus's pan meets it (fo
 
 `settings.audio.auditionOut` (Settings ▸ Audio) names a pair for V. With it set, an auditioned cue's sounds go straight into that pair and nowhere else: past the bus entirely (its fader, mute and ducking do not apply, and it does not trigger the ducker), with the cue's own level and eq. Unset, V plays the cue as a GO would.
 
-The host decides what is an audition (`Audition` in `core/audio/routing.js`): V marks the cue and everything under it; a sound starting from a marked cue is sent to the pair and its mark is spent. GO, a start, a launch, Panic and Reset clear the marks first, and a mark expires two seconds after the longest pre-wait under the auditioned cue. The bias is deliberate: a sound that was meant for the house must never end up only in the headphones. A cue fired by an OSC, MIDI, clock or hotkey trigger inside that short window, while its own audition is still waiting on a pre-wait, would go to the audition pair; that is the one known gap. There is no "always audition" switch.
+The host decides what is an audition (`Audition` in `core/audio/routing.ts`): V marks the cue and everything under it; a sound starting from a marked cue is sent to the pair and its mark is spent. GO, a start, a launch, Panic and Reset clear the marks first, and a mark expires two seconds after the longest pre-wait under the auditioned cue. The bias is deliberate: a sound that was meant for the house must never end up only in the headphones. A cue fired by an OSC, MIDI, clock or hotkey trigger inside that short window, while its own audition is still waiting on a pre-wait, would go to the audition pair; that is the one known gap. There is no "always audition" switch.
 
 ### The outputs themselves
 
@@ -99,7 +99,7 @@ A bus stays **a plain wire at rest**: a send is a branch off the end of the bus,
 
 ## Sound design: a cue's own chain of tools
 
-Source: `core/audio/chain.js` (the table of tools, what the show keeps, the node builder, the worklets' kernels, the presets), `design`, `setDesign`, `sweep`, `ring`, `measure` in `audio.html`, `app/renderer/SoundDesign.js` (the inspector's tab: a rack of devices), `app/renderer/Knob.js` and `dial.js` (its knobs and response curves), `core/engine/sound-kinds.js` (a Fade's sweep).
+Source: `core/audio/chain.ts` (the table of tools, what the show keeps, the node builder, the worklets' kernels, the presets), `design`, `setDesign`, `sweep`, `ring`, `measure` in `audio.html`, `app/renderer/SoundDesign.ts` (the inspector's tab: a rack of devices), `app/renderer/Knob.ts` and `dial.ts` (its knobs and response curves), `core/engine/sound-kinds.ts` (a Fade's sweep).
 
 An Audio cue, a Mic cue and a Video cue (its sound) have two fields, both edited on the inspector's **Sound design** tab:
 
@@ -164,8 +164,8 @@ Applying a preset writes its `chain` and `eq` onto the cue, where every number c
 
 **Nobody has listened to any of this.** A test run plays to no device. Each tool is checked by measurement instead, two ways:
 
-- The kernels (gate, compressor, crusher, pitch shifter) are run on synthesised signals in the unit tests (`test/chain.test.js`): a tone 12 dB over a 4:1 threshold comes out 9 dB down; a transient is let through for the attack; the gate is shut, open, held and shut again; the shifted tone's pitch and steadiness.
-- The built chain is rendered offline in the audio window (`measure`: the same `Chain.build`, on an `OfflineAudioContext`, a synthesised signal in, levels and a pitch out) by the smoke run (`app/main/smoke-sound.js`): 100 Hz and 5 kHz through a high-pass, the slopes, the old and the new eq, a step through the compressor, an impulse through the reverb for its decay and pre-delay and through the delay for its repeats and its ping-pong, a tone through the pitch shifter, tremolo's swing, auto-pan's sides, width 0 as mono, a sweep.
+- The kernels (gate, compressor, crusher, pitch shifter) are run on synthesised signals in the unit tests (`test/chain.test.ts`): a tone 12 dB over a 4:1 threshold comes out 9 dB down; a transient is let through for the attack; the gate is shut, open, held and shut again; the shifted tone's pitch and steadiness.
+- The built chain is rendered offline in the audio window (`measure`: the same `Chain.build`, on an `OfflineAudioContext`, a synthesised signal in, levels and a pitch out) by the smoke run (`app/main/smoke-sound.ts`): 100 Hz and 5 kHz through a high-pass, the slopes, the old and the new eq, a step through the compressor, an impulse through the reverb for its decay and pre-delay and through the delay for its repeats and its ping-pong, a tone through the pitch shifter, tremolo's swing, auto-pan's sides, width 0 as mono, a sweep.
 
 That shows each tool does what its numbers say. It does not show that any of them sounds good, that the generated room is a pleasant one, that the presets are well chosen, or that a rebuild's click is acceptable in a show.
 
@@ -173,7 +173,7 @@ That shows each tool does what its numbers say. It does not show that any of the
 
 ## The kinds of sound
 
-Source: `core/audio/kinds.js` (kinds, ducking rules, where the speech is, the guess), `core/engine/sound-kinds.js` (what a kind asks of a stop and a start), `setDucker` and its tick in `audio.html`, `app/renderer/Kinds.js` (Settings ▸ Audio, the chooser).
+Source: `core/audio/kinds.ts` (kinds, ducking rules, where the speech is, the guess), `core/engine/sound-kinds.ts` (what a kind asks of a stop and a start), `setDucker` and its tick in `audio.html`, `app/renderer/Kinds.ts` (Settings ▸ Audio, the chooser).
 
 A bus has a **kind**: `music`, `voice` (recorded dialogue and voice-over), `effects`, `ambience` (beds and loops) or `live` (microphones). A new show's three buses are music, effects and voice. The kind is `kind` on the bus, chosen in Settings ▸ Audio ("What each bus carries").
 
@@ -196,7 +196,7 @@ One behaviour that was already in the app is untouched and not part of this: wit
 
 **Cue, bus or show?** Ducking is the show's (it is a relation between kinds, and one place to see it is better than a setting per bus). A stop that fades, one-at-a-time and never-ducked are the bus's (they are about what else is on that bus, and a designer with two music buses may want them different). Loop, the transcript, the chain and the speech map are the cue's (they are about that one sound).
 
-**A show from before kinds plays exactly as it did**, and so does a new one. Neither has `ducking`, `stopFade`, `oneAtATime` or `noDuck` until a person writes them; opening a show adds none (`defaultSettings` has none), and a new show differs from an old one only in its buses carrying `kind`. A bus with no `kind` is read from its id and name (`kindOf`: "Vocals" is a voice bus, "Mics" live, "Atmos" ambience), which is used only for what it is called and, once ducking by kind is on, for which side of it the bus is on. Ducking is the one pair it always was (`settings.audio.duck`: one bus under one other, off by default), sent to the audio window as one rule with the same numbers; **Duck by kind instead** writes `ducking` with the pair's depth, times and on/off (`duckingFromPair`), and from then on `ducking` is what is read. `test/fixtures/before-kinds.ecshow` and its test hold the old show (the one rule, no bus rules, the three-band eq as written, a Stop cue that cuts); "a new show plays as a plain cue list" in `test/kinds.test.js` holds the new one (every behaviour above off, a Stop that cuts, two sounds on a bus overlapping).
+**A show from before kinds plays exactly as it did**, and so does a new one. Neither has `ducking`, `stopFade`, `oneAtATime` or `noDuck` until a person writes them; opening a show adds none (`defaultSettings` has none), and a new show differs from an old one only in its buses carrying `kind`. A bus with no `kind` is read from its id and name (`kindOf`: "Vocals" is a voice bus, "Mics" live, "Atmos" ambience), which is used only for what it is called and, once ducking by kind is on, for which side of it the bus is on. Ducking is the one pair it always was (`settings.audio.duck`: one bus under one other, off by default), sent to the audio window as one rule with the same numbers; **Duck by kind instead** writes `ducking` with the pair's depth, times and on/off (`duckingFromPair`), and from then on `ducking` is what is read. `test/fixtures/before-kinds.ecshow` and its test hold the old show (the one rule, no bus rules, the three-band eq as written, a Stop cue that cuts); "a new show plays as a plain cue list" in `test/kinds.test.ts` holds the new one (every behaviour above off, a Stop that cuts, two sounds on a bus overlapping).
 
 ### Ducking by kind, and look-ahead
 
@@ -221,7 +221,7 @@ With **Sort new sounds by kind** on (`settings.audio.sortNew`; off by default, a
 
 It goes on the show's first bus of that kind, or on the cue's usual bus if the show has none. **The guess is always shown.** One sound: the notice says which bus and why ("it sounds like music (a steady pulse, 120 bpm)"). A guessed ambience on an ambience bus is added as a loop. Several: a chooser lists each file, what it was taken for and why, and its bus as a menu to change, with a loop switch (`state.added`; `AddedChooser`). A template that names a bus for new Audio cues is kept over the guess, and the chooser says so. A sound that cannot be read within fifteen seconds is added with no guess.
 
-The rules are tested on synthesised signals only (`app/main/test-signals.js`: syllables in phrases, a kick and a chord at a tempo, a hit of noise, steady filtered noise). They have not been run on a real voice-over, a real song or a real rainstorm. Expect a rhythmic speech to be taken for music (rule 2 comes first), a voice over a music bed for music or ambience, and a rubato piano for ambience: which is why it is a guess with a menu beside it.
+The rules are tested on synthesised signals only (`app/main/test-signals.ts`: syllables in phrases, a kick and a chord at a tempo, a hit of noise, steady filtered noise). They have not been run on a real voice-over, a real song or a real rainstorm. Expect a rhythmic speech to be taken for music (rule 2 comes first), a voice over a music bed for music or ambience, and a rubato piano for ambience: which is why it is a guess with a menu beside it.
 
 ### A voice-over's words
 
@@ -251,7 +251,7 @@ What is worth building first when it is done: **audition on a second device** (h
 
 ## The channel strip (the Live view)
 
-Each bus has a strip between its fader and its ducker: a three-band eq (low shelf 250 Hz, peak 1 kHz, high shelf 4 kHz; −40 dB is a kill), one filter (a low-pass or a high-pass, by which way its knob is turned), a pan, and a gate that is mute, solo and the crossfader as one gain. `core/audio/strip.js` turns a bus's settings into those numbers; `setStrips` in `audio.html` applies them, each as a 20 ms glide.
+Each bus has a strip between its fader and its ducker: a three-band eq (low shelf 250 Hz, peak 1 kHz, high shelf 4 kHz; −40 dB is a kill), one filter (a low-pass or a high-pass, by which way its knob is turned), a pan, and a gate that is mute, solo and the crossfader as one gain. `core/audio/strip.ts` turns a bus's settings into those numbers; `setStrips` in `audio.html` applies them, each as a 20 ms glide.
 
 The eq and the filter are connected only while they are doing something, so a bus at rest is the plain wire it was before the strip existed. The pan is always in the path and is told its input is stereo, so a mono file does not drop 3 dB on meeting it.
 
@@ -261,15 +261,15 @@ Strip settings are the show's (`settings.audio.buses[].eq`, `.filter`, `.pan`, `
 
 **A desk in a Mix cue.** `desk: { crossfader, buses: { <bus>: { eq, filter, pan, mute, xf } } }`, written like a bus's own settings (only what is not at rest). Recalling it (`recallOf`) sets every strip setting of each bus it names, so what it leaves out goes to rest, and the crossfader if it names it; a bus it does not name is left alone. It glides over the cue's `duration` (`setStrips({ list, secs })`: the same time constant a fader's ramp has). **Keep desk** in the Live view (`op: 'desk-keep'`) writes the desk as it stands, live moves included, into a new Mix cue or the one named.
 
-**One clip per track.** A launch from the Live view (`op: 'launch'`; never a GO, a fire or a trigger) fades out, over `TAKEOVER_FADE` (80 ms), every sound playing on the tracks the launched cue has sounds on, at the moment the launch fires (so on the quantise). `core/audio/launch.js` says which. `settings.live.overlap: true` turns it off.
+**One clip per track.** A launch from the Live view (`op: 'launch'`; never a GO, a fire or a trigger) fades out, over `TAKEOVER_FADE` (80 ms), every sound playing on the tracks the launched cue has sounds on, at the moment the launch fires (so on the quantise). `core/audio/launch.ts` says which. `settings.live.overlap: true` turns it off.
 
-**Mapping.** `settings.live.map` is `[{ on, to }]` (`core/audio/desk-map.js`): `on` a key (`key q`), a note or a controller (`cc 7 ch 1`); `to` a clip or scene (`launch:<id>`), a track's stop, mute or solo, a fader, pan, eq band or filter, the crossfader, the master. Buttons answer a key down, a note on, or a controller at 64 or more. A controller's value is spread over a control's travel with its rest at 64 (`actionOf`), and what it moves is the desk as it is played (`op: 'desk-live'`), never the show. Keys are sent by the Live view (`op: 'map-in'`), MIDI arrives in `midiIn`. In Map mode the view marks every element that carries `data-map`, and the next key or MIDI control (`op: 'map-learn'`) is given to the one clicked.
+**Mapping.** `settings.live.map` is `[{ on, to }]` (`core/audio/desk-map.ts`): `on` a key (`key q`), a note or a controller (`cc 7 ch 1`); `to` a clip or scene (`launch:<id>`), a track's stop, mute or solo, a fader, pan, eq band or filter, the crossfader, the master. Buttons answer a key down, a note on, or a controller at 64 or more. A controller's value is spread over a control's travel with its rest at 64 (`actionOf`), and what it moves is the desk as it is played (`op: 'desk-live'`), never the show. Keys are sent by the Live view (`op: 'map-in'`), MIDI arrives in `midiIn`. In Map mode the view marks every element that carries `data-map`, and the next key or MIDI control (`op: 'map-learn'`) is given to the one clicked.
 
 A deck's loop buttons hold any stretch of a track (`toggleHold(id, region, free)`), not only the regions a cue declares as looping cleanly. Nothing aligns such a loop to the music: with no beat grid it wraps wherever it was asked to.
 
 ## Tempo
 
-`core/audio/tempo.js` finds a steady track's tempo from its sound: an onset envelope in three bands, its autocorrelation for the period a person would tap, then every tempo within 2 % tried against the whole track so the answer does not drift. It returns the bpm, where a beat falls, a confidence, and the other readings worth offering (half time; a dotted reading such as 76 for 114), because which of those is "the" beat is a person's call. Below `MIN_CONFIDENCE`, or when the pulse does not hold sixteen beats on, the answer is "none": pads, rain, rubato, speech.
+`core/audio/tempo.ts` finds a steady track's tempo from its sound: an onset envelope in three bands, its autocorrelation for the period a person would tap, then every tempo within 2 % tried against the whole track so the answer does not drift. It returns the bpm, where a beat falls, a confidence, and the other readings worth offering (half time; a dotted reading such as 76 for 114), because which of those is "the" beat is a person's call. Below `MIN_CONFIDENCE`, or when the pulse does not hold sixteen beats on, the answer is "none": pads, rain, rubato, speech.
 
 **Sections.** A tempo may change within a track: `tempo: { bpm, first, bar, sections: [{ from, bpm, first, bar }] }`. The top is the section from the start of the file; each later section has its own tempo, its own bar line (`first`) and its own beats in a bar from `from` on, so a change of time signature is a section too. `gridOf` lays every section's beats and bar lines end to end, and that one grid is all the engine reads, so quantise, loops in beats and the bar counter follow the section the track is in with no code of their own. `tempoMap` finds sections: where `tempoOf`'s grid does not hold, each stretch of sixteen seconds or more is listened to by itself, two stretches on one grid are joined (a breakdown does not make a section), and the hand-over between two tempos is placed on the beat before which the onsets sit on the first grid and after which on the second. It cannot hear a ritardando or a tempo kept for under sixteen seconds; those are marked by hand. `editTempo` is the hand: a section's bpm or bar, a nudge, "1 is here" (the beat nearest a place becomes beat one of its section's bar), a new section on the beat nearest a place, a section taken away. Beat one is never guessed.
 
@@ -312,13 +312,13 @@ Until then, 0.1 says plainly: one output device; any number of buses, each on a 
 
 ## Fade shapes
 
-A fade moves a level from where it is to where it is going; its **shape** says how far along it is at each moment. `core/audio/curves.js` is the arithmetic: `linear` (a straight line in dB, which is what every fade was before shapes and is still the default, written as nothing), `s-curve` (a raised cosine: it eases out of the start and into the end), or a custom shape, points `[[x, y], …]` from (0, 0) to (1, 1) joined by straight lines. A Fade cue has `shapeUp` and `shapeDown`: the engine picks by whether the level it is asking for is above or below where the sound is. An Audio cue has `fadeInShape` and `fadeOutShape`.
+A fade moves a level from where it is to where it is going; its **shape** says how far along it is at each moment. `core/audio/curves.ts` is the arithmetic: `linear` (a straight line in dB, which is what every fade was before shapes and is still the default, written as nothing), `s-curve` (a raised cosine: it eases out of the start and into the end), or a custom shape, points `[[x, y], …]` from (0, 0) to (1, 1) joined by straight lines. A Fade cue has `shapeUp` and `shapeDown`: the engine picks by whether the level it is asking for is above or below where the sound is. An Audio cue has `fadeInShape` and `fadeOutShape`.
 
 The engine passes the shape with the fade (`audio.fade(key, db, secs, range, shape, from)`); the host turns it into 65 evenly spaced readings (`progressOf`) and the audio window interpolates dB along them into the one `setValueCurveAtTime` it already used. A paused fade is taken up along what is left of its shape (`from`). A shape is applied in dB: there is no choice of domain (QLab's slider / dB / linear) yet.
 
 ## Lines over a sound (automation)
 
-A sound's volume, its pan and the settings of its sound design can each be drawn as a line over its length, as the lanes of a DAW. `core/audio/lanes.js` is the arithmetic, loaded by Node, the audio window and the main window alike.
+A sound's volume, its pan and the settings of its sound design can each be drawn as a line over its length, as the lanes of a DAW. `core/audio/lanes.ts` is the arithmetic, loaded by Node, the audio window and the main window alike.
 
 **What a cue keeps.**
 
@@ -328,11 +328,11 @@ A sound's volume, its pan and the settings of its sound design can each be drawn
 | `pan` | The cue's pan, −100 (left) … 0 … 100 (right). A field on the Audio tab (and on a Mic cue). |
 | `automation` | Every other line, by lane id: `{ "pan": [[t, −100…100], …], "chain.<tool>.<setting>": [[t, value], …] }`. |
 
-A point is `[t, value]` or `[t, value, bend]`: the bend (−1 … 1, none = straight) shapes the line from that point to the next; above 0 it starts slow, below 0 fast (`bend(x, c) = (e^{4cx} − 1)/(e^{4c} − 1)`). Before the first point and after the last the line holds. An envelope written before lines had bends is the same straight lines in dB, read and played exactly as before (`test/lanes.test.js` holds the old reading against the new one).
+A point is `[t, value]` or `[t, value, bend]`: the bend (−1 … 1, none = straight) shapes the line from that point to the next; above 0 it starts slow, below 0 fast (`bend(x, c) = (e^{4cx} − 1)/(e^{4c} − 1)`). Before the first point and after the last the line holds. An envelope written before lines had bends is the same straight lines in dB, read and played exactly as before (`test/lanes.test.ts` holds the old reading against the new one).
 
-A `pan` lane replaces the Pan field while it has points; a `chain.<tool>.<setting>` lane replaces that knob. Only a setting that glides can have a line (`SWEEPABLE` in `core/audio/chain.js`: a filter's frequency, a mix, a time…); one whose change rebuilds the chain (a slope, a reverb's size and decay, a drive's amount) cannot, and nor can the cue's eq bands. A lane for a tool the chain does not have does nothing; removing a device in the window removes its lanes in the same edit. Between points a setting moves along its knob's scale (`app/renderer/dial.js`: a frequency along a ratio, so a straight line from 200 Hz to 2 kHz passes 632 Hz half way); Volume moves in dB and Pan in its own units.
+A `pan` lane replaces the Pan field while it has points; a `chain.<tool>.<setting>` lane replaces that knob. Only a setting that glides can have a line (`SWEEPABLE` in `core/audio/chain.ts`: a filter's frequency, a mix, a time…); one whose change rebuilds the chain (a slope, a reverb's size and decay, a drive's amount) cannot, and nor can the cue's eq bands. A lane for a tool the chain does not have does nothing; removing a device in the window removes its lanes in the same edit. Between points a setting moves along its knob's scale (`app/renderer/dial.ts`: a frequency along a ratio, so a straight line from 200 Hz to 2 kHz passes 632 Hz half way); Volume moves in dB and Pan in its own units.
 
-**Pan** is equal power: each side's gain is √2·cos θ and √2·sin θ for θ = (pan/100 + 1)·π/4, so at 0 both are exactly 1 (an unpanned sound plays exactly as before, and has no pan stage at all) and a sound at either side has the power it had in the middle. A stereo sound is balanced (each side by its gain), as a DAW's stereo pan is. A sound sent to outputs of its own is not panned: its matrix already says where each channel goes. A QLab Audio cue whose crosspoints only share its sound between outputs 1 and 2 (a mono file to both, or a stereo file's left to 1 and right to 2, each at a level of its own) is imported as a pan on its bus, with what is left over on its level (`panOfMatrix`, `core/import/qlab.js`).
+**Pan** is equal power: each side's gain is √2·cos θ and √2·sin θ for θ = (pan/100 + 1)·π/4, so at 0 both are exactly 1 (an unpanned sound plays exactly as before, and has no pan stage at all) and a sound at either side has the power it had in the middle. A stereo sound is balanced (each side by its gain), as a DAW's stereo pan is. A sound sent to outputs of its own is not panned: its matrix already says where each channel goes. A QLab Audio cue whose crosspoints only share its sound between outputs 1 and 2 (a mono file to both, or a stereo file's left to 1 and right to 2, each at a level of its own) is imported as a pan on its bus, with what is left over on its level (`panOfMatrix`, `core/import/qlab.ts`).
 
 **Playing.** In the voice, the Volume line is a gain after the level (`env`) and the pan a stage after that (two gains on a splitter and a merger); a setting's line moves its tool. Every line is read at a place **in the file**, never at a time since the GO. Thirty times a second each is scheduled for the next 60 ms as straight ramps 10 ms apart, each ramp ending at the value drawn where the sound will be at that moment (a buffer's place from its own clock, through any ramp of its rate; a stream's from its element). So:
 
@@ -345,7 +345,7 @@ A corner of a line lands within about 10 ms; a bend is followed as a curve in 10
 
 **Drawing.** Time & Loops draws the line chosen in its lane picker (Volume, Pan, and each such setting of each tool on the cue; a dot marks a line with points), the others faint behind it. A click on the line adds a point there; points drag in time and value together (time snaps lightly to markers, bar lines, beats, Start and End; Shift is fine and does not snap); ⌘-drag selects a box of them to move or Delete together; ⌥-drag on a stretch bends it; a double-click removes a point. The value and time show while dragging. The Playing strip under the list draws the Volume line, read only. A knob with a line shows the line's value (where the sound is, else at its Start), carries a small ∿, and turning it moves the whole line by as much along its scale. In Show mode the lines are drawn and nothing moves.
 
-**Markers and loop regions on the waveform.** Above the waveform on Time & Loops, the marker strip: a marker drags along it (snapping lightly to bar lines, beats, Start and End; Shift: fine), a double-click on its name renames it in place, an ⌥-click (or selecting it and Delete) removes it, and a drag on an empty part of the strip, or right-click ▸ Add marker here, makes one. Above that, the loop lane: a region's edge drags that edge, its middle moves it whole; a click (no drag) still holds it while it plays. Each is one edit (`markers`, `loops`). The arithmetic is `app/renderer/edit-math.js` (`test/wave-edit.test.js`). The Live view and the Playing strip draw the same `markers` and `loops`; the Live view's tempo **sections** (`tempo.sections`, where the tempo or the bar changes) are something else, a part of the tempo map, made and taken away with its "+ here" and Remove, and not dragged.
+**Markers and loop regions on the waveform.** Above the waveform on Time & Loops, the marker strip: a marker drags along it (snapping lightly to bar lines, beats, Start and End; Shift: fine), a double-click on its name renames it in place, an ⌥-click (or selecting it and Delete) removes it, and a drag on an empty part of the strip, or right-click ▸ Add marker here, makes one. Above that, the loop lane: a region's edge drags that edge, its middle moves it whole; a click (no drag) still holds it while it plays. Each is one edit (`markers`, `loops`). The arithmetic is `app/renderer/edit-math.ts` (`test/wave-edit.test.ts`). The Live view and the Playing strip draw the same `markers` and `loops`; the Live view's tempo **sections** (`tempo.sections`, where the tempo or the bar changes) are something else, a part of the tempo map, made and taken away with its "+ here" and Remove, and not dragged.
 
 ## Rate
 
@@ -375,7 +375,7 @@ An absolute Fade is the last word on a sound's level: a dip still held in the so
 
 ## Losing the output device
 
-`core/audio/device-watch.js` decides and the host carries it out. The audio window reports the computer's outputs whenever they change, and when its context fails. If the chosen device is no longer listed (or fails), the show moves to the system default output and says so; when the chosen device is listed again the show goes back to it and says so. A device that failed while still listed is not returned to until it has been seen to leave and come back, or the operator chooses again. A device that comes back under a new id is recognised by its name. On the system default there is nothing to fall back to: the output is simply opened again. The operator's choice (`config.json`) is never overwritten by a fallback.
+`core/audio/device-watch.ts` decides and the host carries it out. The audio window reports the computer's outputs whenever they change, and when its context fails. If the chosen device is no longer listed (or fails), the show moves to the system default output and says so; when the chosen device is listed again the show goes back to it and says so. A device that failed while still listed is not returned to until it has been seen to leave and come back, or the operator chooses again. A device that comes back under a new id is recognised by its name. On the system default there is nothing to fall back to: the output is simply opened again. The operator's choice (`config.json`) is never overwritten by a fallback.
 
 This is tested as a decision (unit tests, and the smoke run feeds the host device lists). **It has not been tried by unplugging an interface**: what Chromium does to sounds that were playing when a device vanishes is not known, so the notice says they may need starting again.
 
@@ -391,7 +391,7 @@ Checked end to end by the smoke run on generated three-second files (`test/fixtu
 | FLAC | Pass | Chromium |
 | OGG (Vorbis) | Pass | Chromium |
 | Opus (in Ogg) | Pass | Chromium |
-| AIFF, AIFF-C (PCM) | Pass, **from a WAV copy** | Chromium reads neither AIFF nor CAF (measured: the element refuses them and `decodeAudioData` fails). `core/audio/pcm-container.js` rewraps the same samples as a WAV in the system's temporary folder (`endless-cues-audio/`), once per file, found again by path, size and date. The show's file is not touched. |
+| AIFF, AIFF-C (PCM) | Pass, **from a WAV copy** | Chromium reads neither AIFF nor CAF (measured: the element refuses them and `decodeAudioData` fails). `core/audio/pcm-container.ts` rewraps the same samples as a WAV in the system's temporary folder (`endless-cues-audio/`), once per file, found again by path, size and date. The show's file is not touched. |
 | CAF (PCM) | Pass, from a WAV copy | As AIFF |
 | AIFF-C or CAF with compressed sound (IMA4, AAC, ALAC in CAF) | Refused | The cue is flagged, with the reason (“…whose sound is compressed (ima4): convert it to WAV”). Unit-tested; no such file was played. |
 

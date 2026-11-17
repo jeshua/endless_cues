@@ -18,17 +18,17 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 
 const NEEDS_COPY = /\.(aiff?|aifc|caf)$/i;
-const tag = (b, at) => b.toString('latin1', at, at + 4);
+const tag = (b: Buffer, at: number) => b.toString('latin1', at, at + 4);
 
 /** An 80-bit extended float (AIFF's sample rate). */
-function extended(b, at) {
+function extended(b: Buffer, at: number) {
   const exp = ((b[at] & 0x7f) << 8) | b[at + 1];
   const hi = b.readUInt32BE(at + 2), lo = b.readUInt32BE(at + 6);
   if (!exp && !hi && !lo) return 0;
   return (hi * 2 ** 32 + lo) * 2 ** (exp - 16383 - 63);
 }
 
-function wavOf({ rate, channels, bits, float, data }) {
+function wavOf({ rate, channels, bits, float, data }: { rate: number; channels: number; bits: number; float: boolean; data: Buffer }) {
   const h = Buffer.alloc(44), bytes = bits / 8;
   h.write('RIFF', 0, 'latin1'); h.writeUInt32LE(36 + data.length, 4); h.write('WAVEfmt ', 8, 'latin1'); h.writeUInt32LE(16, 16);
   h.writeUInt16LE(float ? 3 : 1, 20); h.writeUInt16LE(channels, 22); h.writeUInt32LE(Math.round(rate), 24);
@@ -38,7 +38,7 @@ function wavOf({ rate, channels, bits, float, data }) {
 }
 
 /** PCM samples as a WAV keeps them: little-endian, and 8-bit ones unsigned. */
-function samples(src, bytes, bigEndian, signed8) {
+function samples(src: Buffer, bytes: number, bigEndian: boolean, signed8: boolean) {
   const out = Buffer.from(src.subarray(0, src.length - (src.length % bytes)));
   if (bytes === 1) { if (signed8) for (let i = 0; i < out.length; i++) out[i] = (out[i] + 128) & 0xff; return out; }
   if (!bigEndian) return out;
@@ -47,7 +47,7 @@ function samples(src, bytes, bigEndian, signed8) {
   return out;
 }
 
-function aiffToWav(b) {
+function aiffToWav(b: Buffer) {
   const aifc = tag(b, 8) === 'AIFC';
   let comm = null, data = null, at = 12;
   while (at + 8 <= b.length) {
@@ -65,7 +65,7 @@ function aiffToWav(b) {
   return wavOf({ rate: comm.rate, channels: comm.channels, bits, float, data: pcm });
 }
 
-function cafToWav(b) {
+function cafToWav(b: Buffer) {
   let desc = null, data = null, at = 8;
   while (at + 12 <= b.length) {
     const id = tag(b, at), len = Number(b.readBigInt64BE(at + 4)), body = at + 12;
@@ -81,14 +81,14 @@ function cafToWav(b) {
   return wavOf({ rate: desc.rate, channels: desc.channels, bits: desc.bits, float, data: samples(data, desc.bits / 8, !little, true) });
 }
 
-function toWav(b) {
+function toWav(b: unknown) {
   if (!Buffer.isBuffer(b) || b.length < 12) return null;
   if (tag(b, 0) === 'FORM' && (tag(b, 8) === 'AIFF' || tag(b, 8) === 'AIFC')) return aiffToWav(b);
   if (tag(b, 0) === 'caff') return cafToWav(b);
   return null;
 }
 
-function wavCopyOf(file, cacheDir) {
+function wavCopyOf(file: string, cacheDir: string) {
   if (!file || !NEEDS_COPY.test(file)) return file;
   const st = fs.statSync(file);
   const name = `${crypto.createHash('sha1').update(`${path.resolve(file)}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 20)}.wav`;

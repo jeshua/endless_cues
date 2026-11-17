@@ -1,10 +1,10 @@
 # 04 · The cue engine
 
-This document describes the cue engine: the object that decides what happens on GO, what is running, and when things end. It covers `core/engine/cue-engine.js` (the `CueEngine` class and the helpers `busOf`, `isCall`, `encodeOsc`), the cue-type table in `core/show/cue-types.js`, the translation from a show file to the engine's document in `core/show/show.js` (`toEngineDoc`), and the behaviour pinned by `test/engine.test.js`. Everything here was read from that code; where a behaviour is reachable in the engine but not from a show file, or was not exercised, it says so.
+This document describes the cue engine: the object that decides what happens on GO, what is running, and when things end. It covers `core/engine/cue-engine.ts` (the `CueEngine` class and the helpers `busOf`, `isCall`, `encodeOsc`), the cue-type table in `core/show/cue-types.ts`, the translation from a show file to the engine's document in `core/show/show.ts` (`toEngineDoc`), and the behaviour pinned by `test/engine.test.ts`. Everything here was read from that code; where a behaviour is reachable in the engine but not from a show file, or was not exercised, it says so.
 
 ## 1. Shape
 
-`CueEngine` is plain Node (an `EventEmitter`), with no Electron, no audio and no sockets. Sound, the network, the mixer, the lighting desk and the clock are injected, so the tests drive it with a fake clock (`test/helpers.js`). The host (`app/main/host.js`) owns one engine. The engine emits one event, `'change'`, after anything that alters what a UI would show; `changed()` also runs the auto-follow check (section 4) before emitting.
+`CueEngine` is plain Node (an `EventEmitter`), with no Electron, no audio and no sockets. Sound, the network, the mixer, the lighting desk and the clock are injected, so the tests drive it with a fake clock (`test/helpers.ts`). The host (`app/main/host.ts`) owns one engine. The engine emits one event, `'change'`, after anything that alters what a UI would show; `changed()` also runs the auto-follow check (section 4) before emitting.
 
 ### 1.1 Injected dependencies
 
@@ -54,24 +54,24 @@ Only `DUCK_HOLD`, `PANIC_FADE` and `SYNC_LEAD` are exported, with `CueEngine`, `
 
 `load(doc)` takes `{ format: 'ec-cuelist', lists: [{ name, cues: [...] }] }` (the legacy `'ef-cuelist'` is also accepted). It throws on anything else, on two cues with one id, and on a truthy `target` that is not in the list. A reload keeps the playhead on the same cue if it is still a top-level cue of the current list, cancels waits and fades of cues that no longer exist, and leaves sounds playing (a sound whose cue has gone carries on until stopped). `armed: false` puts a cue in the disarmed set, unless the operator has flipped that cue by hand since launch (`armTouched`).
 
-`toEngineDoc(showDoc)` (`core/show/show.js`) makes that document from a show file. Per cue it:
+`toEngineDoc(showDoc)` (`core/show/show.ts`) makes that document from a show file. Per cue it:
 
 - copies every field, sets `name` to the cue's name or `defaultName()`, and `number` to `''` when absent;
 - turns `continue: 'auto-continue' | 'auto-follow'` into `autoContinue: true` / `autoFollow: true`;
 - renames the type by `engineType` (only `devamp` → `release`);
 - on groups, drops `onBeat` when it is `'now'` or unset and drops an empty `blend`;
 - on audio cues, sets `bus` to the cue's bus if the show has it, otherwise the second bus (or the only one);
-- leaves out every **section** (`type: 'section'`, a heading in the list, `core/show/sections.js`), at any level: the engine never sees one, so GO, `steps()`, `movePlayhead`, auto-continue and auto-follow go from the cue before a section to the cue after it, a list that starts with sections stands by its first cue, and one that ends with them ends at its last cue. A `target` that is a section is set to `null` (and is an error in `problems()`). What names a section from outside the engine is turned into its first cue by the host (`sections.landingIn`: the next cue after it, past empty sections): Stand By Here, the playhead command, Load to Time, and Jump to cue, which also takes a section's name ("act two", or the start of it);
+- leaves out every **section** (`type: 'section'`, a heading in the list, `core/show/sections.ts`), at any level: the engine never sees one, so GO, `steps()`, `movePlayhead`, auto-continue and auto-follow go from the cue before a section to the cue after it, a list that starts with sections stands by its first cue, and one that ends with them ends at its last cue. A `target` that is a section is set to `null` (and is an error in `problems()`). What names a section from outside the engine is turned into its first cue by the host (`sections.landingIn`: the next cue after it, past empty sections): Stand By Here, the playhead command, Load to Time, and Jump to cue, which also takes a section's name ("act two", or the start of it);
 - sets a `target` that no longer exists to `null`, and marks any cue with an error-level problem `broken: '<why>'`, so a broken cue never stops the list loading (it fires and does nothing).
 
-Only fields named in `core/show/cue-types.js` survive `normalise()`, so only those reach the engine from a show file. What the engine once read beyond that table has been given a field or taken out (section 12).
+Only fields named in `core/show/cue-types.ts` survive `normalise()`, so only those reach the engine from a show file. What the engine once read beyond that table has been given a field or taken out (section 12).
 
 ## 3. Lists, the playhead, GO
 
 - **Lists.** The engine holds every list; `listName` is the one on screen. Each list has its own playhead (`heads`: list name → cue id; `playhead` is the accessor for the list on screen). `selectList(name)` switches the list on screen and leaves both playheads where they were. A list that is not on screen keeps running: waits, sounds, fades and continues are not tied to `listName`. `go(name)` is the GO of any list on its own playhead; a Start cue aimed at a list (`target` = the list's id) calls it. `homes` maps every cue to its list; `within(id, target)` is true for a cue at or under `target`, where a target that is a list holds every cue in it.
 - **Top-level cues.** `top()` is the active list's cues. Only top-level cues are places the playhead stops; children fire through their group.
 - **`steps()`** is `top()` without light cues (`isCall`: `type: 'light'`) while `skipLights` is on. GO, `movePlayhead`, auto-continue, Reset and reload all go through it. `stopFrom(id)` is the first stop at or after `id`.
-- **`go()`** fires the cue at the playhead and moves the playhead to the next step (`null` at the end of the list; GO then does nothing and returns `null`). In order: lets go of Hold if `held`; records `lastGo`; starts the show clock (`showStartedAt`) on the first GO in the first list since Reset; advances the playhead; `fire(id)`; clears `loaded`; `continueAfter(id)`. It returns the fired cue's id. Double-GO protection is the host's, not the engine's (`core/engine/go-guard.js`): one time between GOs for every way a GO arrives, and the same for a cue's own trigger repeating; a trigger is not a GO and does not lock it.
+- **`go()`** fires the cue at the playhead and moves the playhead to the next step (`null` at the end of the list; GO then does nothing and returns `null`). In order: lets go of Hold if `held`; records `lastGo`; starts the show clock (`showStartedAt`) on the first GO in the first list since Reset; advances the playhead; `fire(id)`; clears `loaded`; `continueAfter(id)`. It returns the fired cue's id. Double-GO protection is the host's, not the engine's (`core/engine/go-guard.ts`): one time between GOs for every way a GO arrives, and the same for a cue's own trigger repeating; a trigger is not a GO and does not lock it.
 - **`setPlayhead(id)`** puts the playhead of the cue's own list on it (top-level ids only; the list on screen does not change). `setPlayhead(null)` leaves the list on screen with no cue standing by, and a reload keeps it so (`parked`). **`movePlayhead(step)`** (clamped to the ends), **`moveSequence(±1)`** (to the next or previous cue that the cue before it does not continue into: `=` and `-`), **`jumpTo(number)`** (matches a top-level cue's number, else id, case-insensitively, in any list, and switches list; `"lq 2"` is read as `"lq2"`).
 - **`fire(id, offset = 0, preWaited = false)`** is the one way a cue starts: skipped with a log line if disarmed; otherwise its pre-wait (section 5) is put in `waits`, or `act(cue)` runs at once. `fire` does not move the playhead and does not run continues.
 
@@ -142,7 +142,7 @@ Tails are rescheduled on resume, seek, release, `setDuration` and a change of ra
 
 ### 7.2 Fade
 
-Targets an audio cue. Its `stopTarget` reaches the engine decided (`show.toEngineDoc`, `cue-types.js` `stopsTarget`): the cue's own value when it has one, and when it has none, on for a fade to silence (the show's floor or below; not `relative`, not a voice-band duck, not rate-only, not aimed at a Light cue; on a picture, one that names nothing or takes it out of sight and out of hearing), off otherwise. In order:
+Targets an audio cue. Its `stopTarget` reaches the engine decided (`show.toEngineDoc`, `cue-types.ts` `stopsTarget`): the cue's own value when it has one, and when it has none, on for a fade to silence (the show's floor or below; not `relative`, not a voice-band duck, not rate-only, not aimed at a Light cue; on a picture, one that names nothing or takes it out of sight and out of hearing), off otherwise. In order:
 
 1. **The last word wins.** Any *other* top-level cue's Fade still waiting (in its pre-wait) on the same target is cancelled. Two ducks fired close together therefore keep the music down: the first one's return is dropped and the second one's return brings it back.
 2. If the target is not running, nothing more happens.
@@ -185,7 +185,7 @@ On a running target (`devamp(key)`): a sound going round a section (or with one 
 
 ### 7.7b Script
 
-A Script cue's `script` is text, one command a line (`core/show/script.js`): `/cue/<number>/start` (and `go`, `preview`, `stop`, `hardStop`, `panic`, `pause`, `hardPause`, `resume`, `togglePause`), `/cue_id/<id>/…`, `/go`, `/panic`, `/pause`, `/resume`, `/playhead/<number>`, `/playhead/next`, `/playhead/previous`, `wait <seconds>`, and `#` notes. The words are the OSC control module's.
+A Script cue's `script` is text, one command a line (`core/show/script.ts`): `/cue/<number>/start` (and `go`, `preview`, `stop`, `hardStop`, `panic`, `pause`, `hardPause`, `resume`, `togglePause`), `/cue_id/<id>/…`, `/go`, `/panic`, `/pause`, `/resume`, `/playhead/<number>`, `/playhead/next`, `/playhead/previous`, `wait <seconds>`, and `#` notes. The words are the OSC control module's.
 
 It is a list, not a language, and that is the decision: QLab's Script cue runs AppleScript with the user's powers; a show file here can come from anyone (and can be written by an assistant), so nothing in one may run code. A script can do only what an operator could do to this show's transport. No edits, no save, no files, no network of its own, no loops or variables. `parse()` never throws; a line it cannot read is an error on the cue (`show.problems`, with the line number), and is left out of the steps.
 

@@ -5,8 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert';
 import * as Chain from '../core/audio/chain';
 import * as D from '../app/renderer/dial';
-const param = (tool, key) => Chain.TOOLS.find((t) => t.key === tool).params.find((p) => p.key === key);
-const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
+const param = (tool: string, key: string) => Chain.TOOLS.find((t) => t.key === tool)!.params.find((p) => p.key === key) as Chain.NumberParam;
+const near = (a: number, b: number, tol: number, what: string) => assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
 
 test('a frequency turns along a ratio: halfway round 20 Hz to 20 kHz is 632 Hz, and each octave is the same turn', () => {
   const hz = param('highpass', 'hz');
@@ -55,7 +55,7 @@ test('a turn rounds as a hand would want it, finer with Shift, and never leaves 
 });
 
 test('a value is shown in the units a sound engineer reads', () => {
-  const show = (p, v) => { const f = D.format(p, v); return `${f.text}${f.unit ? ` ${f.unit}` : ''}`; };
+  const show = (p: D.DialParam, v: number) => { const f = D.format(p, v); return `${f.text}${f.unit ? ` ${f.unit}` : ''}`; };
   assert.strictEqual(show(param('lowpass', 'hz'), 3200), '3.2 kHz');
   assert.strictEqual(show(param('lowpass', 'hz'), 12500), '12.5 kHz');
   assert.strictEqual(show(param('highpass', 'hz'), 80), '80 Hz');

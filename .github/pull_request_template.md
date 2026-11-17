@@ -3,5 +3,5 @@
 **How it was checked** (`npm test`, `npm run smoke`, by hand, on real equipment?):
 
 - [ ] I have read `CONTRIBUTING.md`.
-- [ ] A show still changes only through edit operations (`core/show/ops.js`).
+- [ ] A show still changes only through edit operations (`core/show/ops.ts`).
 - [ ] Nothing private or show-specific is in it.

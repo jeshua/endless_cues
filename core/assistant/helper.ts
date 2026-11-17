@@ -23,9 +23,16 @@ import * as show from '../show/show';
 import * as rigDevices from '../rig/devices';
 import * as models from '../net/devices';
 import * as appGuide from './app-guide';
+import type { Block, Provider, Reply } from './assistant';
+import type { ToolContext, ToolInput } from './tools';
+import type { Op } from '../show/ops';
+import type { Cue, ShowDoc } from '../show/types';
+
+/** What to do with the next tool result: its text, and whether it failed. */
+type Then = (text: string, failed: boolean) => Reply;
 
 /** The words a person uses for a model. The first that is in the request wins, so the longer come first. */
-const WORDS = [
+const WORDS: [string, string][] = [
   ['prop switch', 'ec-prop-switch'], ['prop light', 'ec-prop-light'],
   ['etc', 'etc-eos'], ['eos', 'etc-eos'], ['ion', 'etc-eos'], ['element', 'etc-eos'], ['gio', 'etc-eos'], ['nomad', 'etc-eos'],
   ['grandma', 'grandma3'], ['ma3', 'grandma3'], ['x32', 'x32'], ['m32', 'x32'], ['x air', 'xair'], ['xair', 'xair'], ['xr18', 'xair'], ['xr16', 'xair'], ['xr12', 'xair'], ['mr18', 'xair'],
@@ -34,10 +41,10 @@ const WORDS = [
   ['relay', 'ec-prop-switch'], ['servo', 'ec-prop-switch'], ['switch', 'ec-prop-switch'],
 ];
 // (a "lighting desk" is not a "light": a desk is named by its maker or not at all)
-const modelIn = (text) => { const t = ` ${text.toLowerCase().replace(/lighting (desk|board|console)/g, 'desk')} `; for (const id of Object.keys(models.DEVICES)) if (t.includes(` ${id} `)) return id; const w = WORDS.find(([word]) => new RegExp(`\\b${word}\\b`).test(t)); return w ? w[1] : null; };
+const modelIn = (text: string) => { const t = ` ${text.toLowerCase().replace(/lighting (desk|board|console)/g, 'desk')} `; for (const id of Object.keys(models.DEVICES)) if (t.includes(` ${id} `)) return id; const w = WORDS.find(([word]) => new RegExp(`\\b${word}\\b`).test(t)); return w ? w[1] : null; };
 const ADDRESS = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?::(\d{1,5}))?\b/;
-const capital = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const unquote = (s) => String(s || '').trim().replace(/^["“'‘]+|["”'’.?!]+$/g, '').trim();
+const capital = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const unquote = (s: unknown) => String(s || '').trim().replace(/^["“'‘]+|["”'’.?!]+$/g, '').trim();
 
 const LIST = [
   'The built-in helper has no model. It knows only these:',
@@ -58,23 +65,24 @@ const LIST = [
 /** A question about the app itself: where something is, how to do something in the window, what a key is. */
 const ASKS_WHERE = /^\s*(where|how (do|can) i|how to|what('?s| is) the (key|shortcut)|which (key|button)|what (key|button)|is there a (key|shortcut)|show me)\b|\b(key|shortcut) (for|to)\b/i;
 /** Keys as this computer writes them: ⌘S on a Mac, Ctrl+S elsewhere (as the window's keys() does). */
-const local = (text, platform = process.platform) => (platform === 'darwin' ? text : text.replace(/⇧⌘/g, 'Ctrl+Shift+').replace(/⌥⌘/g, 'Ctrl+Alt+').replace(/⌘/g, 'Ctrl+').replace(/⌥/g, 'Alt+').replace(/⇧/g, 'Shift+'));
+const local = (text: string, platform: string = process.platform) => (platform === 'darwin' ? text : text.replace(/⇧⌘/g, 'Ctrl+Shift+').replace(/⌥⌘/g, 'Ctrl+Alt+').replace(/⌘/g, 'Ctrl+').replace(/⌥/g, 'Alt+').replace(/⇧/g, 'Shift+'));
 
-function helperProvider() {
+function helperProvider(): Provider {
   let n = 0;
-  let then = null;          // what to do with the next tool result: (text, failed) → a message
-  const msg = (content, stop_reason) => ({ role: 'assistant', content, stop_reason });
-  const say = (text) => { then = null; return msg([{ type: 'text', text }], 'end_turn'); };
-  const call = (name, input, next) => { then = next; return msg([{ type: 'tool_use', id: `helper_${++n}`, name, input }], 'tool_use'); };
+  let then: Then | null = null;          // what to do with the next tool result: (text, failed) → a message
+  const msg = (content: Block[], stop_reason: string): Reply => ({ role: 'assistant', content, stop_reason });
+  const say = (text: string) => { then = null; return msg([{ type: 'text', text }], 'end_turn'); };
+  const call = (name: string, input: ToolInput, next: Then) => { then = next; return msg([{ type: 'tool_use', id: `helper_${++n}`, name, input }], 'tool_use'); };
   /** Hand a change over, and say `reply` once it is staged (or why it was not). */
-  const propose = (summary, ops, reply = 'Ready to review.') => call('propose_changes', { summary, ...(ops ? { ops } : {}) }, (text, failed) => say(failed ? `I could not stage that: ${text}` : reply));
+  const propose = (summary: string, ops: Op[] | null, reply = 'Ready to review.') => call('propose_changes', { summary, ...(ops ? { ops } : {}) }, (text, failed) => say(failed ? `I could not stage that: ${text}` : reply));
 
-  function respond(text, ctx) {
-    const document = ctx && ctx.document, doc = document ? (ctx.draft || document.doc) : null;
+  function respond(text: string, ctx: Partial<ToolContext>) {
+    // (with no show open, a job that needs one fails, and says so)
+    const document = ctx && ctx.document, doc = (document ? (ctx.draft || document.doc) : null)!;
     const devs = doc ? rigDevices.list(doc) : [];
-    const device = (words) => { const w = unquote(words).toLowerCase().replace(/^(the|my)\s+/, ''); return devs.find((d) => d.id === w || d.name.toLowerCase() === w) || devs.find((d) => d.name.toLowerCase().startsWith(w) || w.startsWith(d.name.toLowerCase())) || null; };
-    const noDevice = (words) => say(devs.length ? `The show has no device called “${unquote(words)}”. It has: ${devs.map((d) => d.name).join(', ')}.` : 'No devices yet. Say “add a lantern at 10.0.0.42”, or “look for props”.');
-    let m;
+    const device = (words: string) => { const w = unquote(words).toLowerCase().replace(/^(the|my)\s+/, ''); return devs.find((d) => d.id === w || d.name.toLowerCase() === w) || devs.find((d) => d.name.toLowerCase().startsWith(w) || w.startsWith(d.name.toLowerCase())) || null; };
+    const noDevice = (words: string) => say(devs.length ? `The show has no device called “${unquote(words)}”. It has: ${devs.map((d) => d.name).join(', ')}.` : 'No devices yet. Say “add a lantern at 10.0.0.42”, or “look for props”.');
+    let m: RegExpExecArray | null;
 
     // ── the folder ──
     if (/how do i start from a folder/i.test(text)) return say('Choose File ▸ Start from a Folder… and pick your sounds’ folder. Nothing is moved or copied.');
@@ -94,7 +102,7 @@ function helperProvider() {
       if (!document || !document.showDir) return say('This show is not in a folder yet. Choose File ▸ Start from a Folder… first.');
       return call('list_folder', {}, (_listing, failed) => {
         if (failed) return say(`I could not look at the folder: ${_listing}`);
-        const plan = starters.folderPlan(quickListing(document.showDir, doc), { from: starters.nextNumber(doc) });
+        const plan = starters.folderPlan(quickListing(document.showDir!, doc), { from: starters.nextNumber(doc) });
         if (!plan.count) return say(starters.said(plan));
         return propose(`Cues for the ${plan.count} sound${plan.count === 1 ? '' : 's'} in the folder`, plan.ops, `${starters.said(plan)} Accept to add them.`);
       });
@@ -105,16 +113,16 @@ function helperProvider() {
       const d = device(m[2]);
       if (!d) return noDevice(m[2]);
       const words = unquote(m[1]).replace(/^(the|a|an)\s+/i, '').split(/\s+/);
-      const cmd = (d.commands || []).find((c) => c.id === words[0].toLowerCase() || c.label.toLowerCase() === unquote(m[1]).toLowerCase()) || (d.commands || []).find((c) => c.label.toLowerCase().startsWith(words[0].toLowerCase()));
+      const cmd = (d.commands || []).find((c) => c.id === words[0].toLowerCase() || c.label.toLowerCase() === unquote(m![1]).toLowerCase()) || (d.commands || []).find((c) => c.label.toLowerCase().startsWith(words[0].toLowerCase()));
       if (!cmd) return say(`${d.name} has no command “${unquote(m[1])}”. It has: ${(d.commands || []).map((c) => c.label).join(', ') || 'none yet'}.`);
       // words after the command's name are its values, in the order of its parameters ("effect breathe")
-      const args = {};
+      const args: Record<string, string | number> = {};
       (cmd.params || []).forEach((p, i) => { const v = words[i + 1]; if (v !== undefined) args[p.key] = p.kind === 'number' && Number.isFinite(Number(v)) ? Number(v) : v; });
       const engine = ctx.engine, at = engine && engine.playhead && show.index(doc).byId.get(engine.playhead);
       return call('read_show', { device: d.id }, () => {
         const made = rigDevices.compose(d, cmd.id, args);
         if (!made.ok) return say(`That would not send: ${made.why}.`);
-        const number = numberAfter(doc, at);
+        const number = numberAfter(doc, at || null);
         return propose(`A cue that sends ${cmd.label} to ${d.name}`, [{ op: 'cue.add', cue: { type: 'device', device: d.id, command: cmd.id, ...(number ? { number } : {}), ...(Object.keys(args).length ? { args } : {}) }, ...(at ? { after: at.id } : {}) }],
           `A Device cue, “${rigDevices.cueName(d, { device: d.id, command: cmd.id, args })}”, ${at ? `after ${at.number ? `cue ${at.number}` : 'the cue the playhead is on'}` : 'at the end of the list'}. GO on it sends ${made.message}. I cannot send it myself: accept, then GO it or press Try on the Rig page.`);
       });
@@ -129,8 +137,8 @@ function helperProvider() {
         if (!fresh.length && !moved.length) return say(found.length ? `${heard}\nThere is nothing to add.` : `${heard} Then ask again. A prop without the kit’s firmware cannot answer: “write firmware for …” makes it.`);
         const taken = new Set([...devs.map((d) => d.id), ...(doc.settings.network.patches || []).map((p) => p && p.id)]);
         const ops = [
-          ...fresh.map((f) => { const id = rigDevices.ID.test(String(f.name)) && !taken.has(f.name) ? f.name : rigDevices.idFrom(f.name, taken); taken.add(id); return { op: 'device.add', device: { id, name: capital(String(f.name).replace(/_/g, ' ')), model: f.kind === 'switch' ? 'ec-prop-switch' : 'ec-prop-light', host: f.host, port: Number(f.port) || 53100 } }; }),
-          ...moved.map((f) => ({ op: 'device.set', id: f.known, props: { host: f.host } })),
+          ...fresh.map((f): Op => { const id = rigDevices.ID.test(String(f.name)) && !taken.has(f.name) ? f.name : rigDevices.idFrom(f.name, taken); taken.add(id); return { op: 'device.add', device: { id, name: capital(String(f.name).replace(/_/g, ' ')), model: f.kind === 'switch' ? 'ec-prop-switch' : 'ec-prop-light', host: f.host, port: Number(f.port) || 53100 } }; }),
+          ...moved.map((f): Op => ({ op: 'device.set', id: f.known!, props: { host: f.host } })),
         ];
         const what = [fresh.length && `${fresh.length === 1 ? 'One prop' : `${fresh.length} props`} answered that the show does not have yet: ${fresh.map((f) => `${f.name} at ${f.host} (a ${f.kind === 'switch' ? 'switch' : 'light'}${f.fw ? `, firmware ${f.fw}` : ''})`).join(', ')}.`, moved.length && `${moved.map((f) => f.name).join(', ')} answered from a new address: I have corrected it.`].filter(Boolean).join(' ');
         return propose(fresh.length ? `Add ${fresh.length === 1 ? `the prop ${fresh[0].name}` : `${fresh.length} props`} found on the network` : 'Props at their new addresses', ops, `${what} Accept, and each gets a row on the Rig page; Try ▸ Identify there shows which is which.`);
@@ -169,7 +177,7 @@ function helperProvider() {
     if (/hand\s*(?:the show|it|this)?\s*(?:over|off)|coding agent/i.test(text)) {
       return call('hand_off', { why: 'The person asked for the show to be handed over to a coding agent.' }, (staged, failed) => {
         if (failed) return say(staged);
-        return propose('The guide for coding agents', null, `Accept, and AGENTS.md and CLAUDE.md, a guide for coding agents, are written into the show folder. Then, in a terminal:\n  cd ${JSON.stringify(document.showDir)}\n  claude\nand say what you want. Codex reads the same file.`);
+        return propose('The guide for coding agents', null, `Accept, and AGENTS.md and CLAUDE.md, a guide for coding agents, are written into the show folder. Then, in a terminal:\n  cd ${JSON.stringify(document!.showDir)}\n  claude\nand say what you want. Codex reads the same file.`);
       });
     }
     if ((m = /turn (?:the )?patch\s+(.+?)\s+into a device/i.exec(text))) {
@@ -225,7 +233,7 @@ function helperProvider() {
     label: 'Built-in helper',
     async create({ messages, ctx = null }) {
       const last = messages[messages.length - 1];
-      const blocks = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content) }];
+      const blocks: Block[] = Array.isArray(last.content) ? last.content : [{ type: 'text', text: String(last.content) }];
       const result = blocks.find((b) => b.type === 'tool_result');
       if (result) {
         const text = typeof result.content === 'string' ? result.content : JSON.stringify(result.content);
@@ -233,7 +241,7 @@ function helperProvider() {
         return next ? next(text, !!result.is_error) : say(result.is_error ? `I could not do that: ${text}` : 'Done.');
       }
       const text = (blocks.filter((b) => b.type === 'text').map((b) => b.text).pop() || '').replace(/<show_outline>[\s\S]*<\/show_outline>/, '').trim();
-      try { return respond(text, ctx || {}); } catch (err) { return say(`I could not do that: ${err.message}`); }
+      try { return respond(text, ctx || {}); } catch (err) { return say(`I could not do that: ${(err as Error).message}`); }
     },
     explain: (err) => err.message,
   };
@@ -242,11 +250,11 @@ function helperProvider() {
 /** The number a cue added after `at` takes, as one added from the toolbar would (the window's `nextNumber`): the next
  *  whole number, else half or a tenth of the way to the cue after it; none when numbering is off or there is no
  *  number to count from. At the end of the list (no `at`): one more than the highest. */
-function numberAfter(doc, at) {
+function numberAfter(doc: ShowDoc, at: Cue | null | undefined) {
   if (((doc.settings || {}).editing || {}).autoNumber === false) return null;
   const step = Number(((doc.settings || {}).editing || {}).numberStep) > 0 ? Number(doc.settings.editing.numberStep) : 1;
-  const used = new Set(); show.walk(doc, (c) => { if (c.number) used.add(String(c.number)); });
-  const round = (n) => Math.round(n * 1000) / 1000;
+  const used = new Set<string>(); show.walk(doc, (c) => { if (c.number) used.add(String(c.number)); });
+  const round = (n: number) => Math.round(n * 1000) / 1000;
   if (!at) return String(starters.nextNumber(doc));
   const list = doc.lists.find((l) => l.cues.some((c) => c.id === at.id));
   if (!list) return null;

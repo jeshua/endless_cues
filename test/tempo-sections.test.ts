@@ -3,13 +3,18 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { tempoMap, gridOf, cleanTempo, editTempo, sectionAt, MIN_CONFIDENCE } from '../core/audio/tempo';
 import { rig, build } from './helpers';
+import type { CueEngine, EngineAudio } from '../core/engine/cue-engine';
+import type { TempoValue } from '../core/audio/tempo';
+
+/** A line of Active Cues that is a sound (it has a rate). */
+type SoundRow = Extract<ReturnType<CueEngine['active']>[number], { rate: unknown }>;
 
 const RATE = 11025, TAU = Math.PI * 2;
 let seed = 11;
 const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 * 2 - 1; };
-const near = (a, b, by) => Math.abs(a - b) <= by;
+const near = (a: number, b: number, by: number) => Math.abs(a - b) <= by;
 /** A made track in parts: [{ secs, bpm }], each part's first kick on its first sample (after `lead` s of nothing). */
-function track(parts, lead = 0) {
+function track(parts: { secs: number; bpm?: number }[], lead = 0) {
   const total = parts.reduce((n, p) => n + p.secs, lead), x = new Float32Array(Math.round(total * RATE));
   let from = lead;
   for (const part of parts) {
@@ -24,7 +29,7 @@ function track(parts, lead = 0) {
   }
   return x;
 }
-const onGrid = (t, first, bpm) => { const b = 60 / bpm, d = (t - first) / b; return Math.abs(d - Math.round(d)) * b; };
+const onGrid = (t: number, first: number, bpm: number) => { const b = 60 / bpm, d = (t - first) / b; return Math.abs(d - Math.round(d)) * b; };
 
 test('a track with one tempo has no sections', () => {
   const r = tempoMap(track([{ secs: 64, bpm: 120 }]), RATE);
@@ -66,10 +71,10 @@ test('the grid of a tempo with sections: each section its own beats and bar line
   // no beat of the old tempo a hair before the new section's first
   const tight = gridOf({ bpm: 120, first: 0, bar: 4, sections: [{ from: 8.01, bpm: 90, first: 8.01, bar: 4 }] }, 10);
   assert.ok(!tight.beats.includes(8) && tight.beats.includes(8.01), tight.beats.join(' '));
-  assert.strictEqual(sectionAt(tempo, 7.9).bpm, 120);
-  assert.strictEqual(sectionAt(tempo, 8).bpm, 90);
-  assert.strictEqual(sectionAt(tempo, 8).bar, 3);
-  assert.strictEqual(sectionAt(tempo, 3).to, 8);
+  assert.strictEqual(sectionAt(tempo, 7.9)!.bpm, 120);
+  assert.strictEqual(sectionAt(tempo, 8)!.bpm, 90);
+  assert.strictEqual(sectionAt(tempo, 8)!.bar, 3);
+  assert.strictEqual(sectionAt(tempo, 3)!.to, 8);
 });
 
 test('a tempo is cleaned with its sections: in order, each bar line inside its first bar, nonsense dropped', () => {
@@ -80,29 +85,29 @@ test('a tempo is cleaned with its sections: in order, each bar line inside its f
 });
 
 test('by hand: a new section, its tempo and its beats in a bar, "1 is here", and taken away again', () => {
-  let t = { bpm: 120, first: 0, bar: 4, confidence: 0.5 };
-  t = editTempo(t, { do: 'split', at: 10.1 });                       // on the beat nearest: 10.0
+  let t: TempoValue = { bpm: 120, first: 0, bar: 4, confidence: 0.5 };
+  t = editTempo(t, { do: 'split', at: 10.1 })!;                       // on the beat nearest: 10.0
   assert.deepStrictEqual(t.sections, [{ from: 10, bpm: 120, first: 10, bar: 4 }]);
-  t = editTempo(t, { do: 'set', at: 12, bpm: 90, bar: 3 });
+  t = editTempo(t, { do: 'set', at: 12, bpm: 90, bar: 3 })!;
   assert.deepStrictEqual(t.sections, [{ from: 10, bpm: 90, first: 10, bar: 3 }]);
   assert.strictEqual(t.bpm, 120);                                    // the first section is not touched
   assert.strictEqual(t.confidence, 0.5);
   // "1 is here", in the second section: the beat nearest 11.4 (10 + 2 beats of 0.667 = 11.333) is beat one
-  t = editTempo(t, { do: 'one', at: 11.4 });
-  assert.ok(near(gridOf(t, 20).downbeats.find((d) => d > 10.5), 11.333, 0.002), JSON.stringify(t));
+  t = editTempo(t, { do: 'one', at: 11.4 })!;
+  assert.ok(near(gridOf(t, 20).downbeats.find((d) => d > 10.5)!, 11.333, 0.002), JSON.stringify(t));
   // …and in the first: the bar lines move, the beats do not
   const before = gridOf(t, 9).beats;
-  t = editTempo(t, { do: 'one', at: 1.02 });
+  t = editTempo(t, { do: 'one', at: 1.02 })!;
   assert.deepStrictEqual(gridOf(t, 9).beats, before);
   assert.deepStrictEqual(gridOf(t, 9).downbeats, [1, 3, 5, 7, 9]);
-  t = editTempo(t, { do: 'nudge', at: 12, by: 0.01 });
-  assert.ok(near(t.sections[0].first, 11.343, 0.002), JSON.stringify(t));
-  t = editTempo(t, { do: 'join', at: 12 });
+  t = editTempo(t, { do: 'nudge', at: 12, by: 0.01 })!;
+  assert.ok(near(t.sections![0].first, 11.343, 0.002), JSON.stringify(t));
+  t = editTempo(t, { do: 'join', at: 12 })!;
   assert.strictEqual(t.sections, undefined);
   assert.strictEqual(editTempo(t, { do: 'join', at: 1 }), null);     // the first section cannot be taken away
   assert.strictEqual(editTempo(t, { do: 'set', at: 1, bpm: 5 }), null);
   // a tempo typed over what was heard is no longer the heard one
-  assert.strictEqual(editTempo(t, { do: 'set', at: 1, bpm: 100 }).confidence, undefined);
+  assert.strictEqual(editTempo(t, { do: 'set', at: 1, bpm: 100 })!.confidence, undefined);
 });
 
 test('the engine quantises to the section the track is in', () => {
@@ -112,11 +117,11 @@ test('the engine quantises to the section the track is in', () => {
   engine.setDuration('a.wav', 60);
   engine.fire(id('a'));
   advance(5.1);                                                      // in the first section: bars of 2 s, the next at 6
-  assert.ok(near(engine.toNextDownbeat(0.03), 0.9, 0.01), String(engine.toNextDownbeat(0.03)));
-  assert.ok(near(engine.toNextDownbeat(0.03, 'beats'), 0.4, 0.01));
+  assert.ok(near(engine.toNextDownbeat(0.03)!, 0.9, 0.01), String(engine.toNextDownbeat(0.03)));
+  assert.ok(near(engine.toNextDownbeat(0.03, 'beats')!, 0.4, 0.01));
   advance(3.4);                                                      // 8.5, in the second: beats of 1 s, bars of 3 s
-  assert.ok(near(engine.toNextDownbeat(0.03, 'beats'), 0.5, 0.01), String(engine.toNextDownbeat(0.03, 'beats')));
-  assert.ok(near(engine.toNextDownbeat(0.03), 2.5, 0.01), String(engine.toNextDownbeat(0.03)));
+  assert.ok(near(engine.toNextDownbeat(0.03, 'beats')!, 0.5, 0.01), String(engine.toNextDownbeat(0.03, 'beats')));
+  assert.ok(near(engine.toNextDownbeat(0.03)!, 2.5, 0.01), String(engine.toNextDownbeat(0.03)));
 });
 
 // ── warp: a clip at the desk's tempo ──────────────────────────────────────────────────────────────────────
@@ -138,17 +143,17 @@ test('a warped sound: the engine knows where it is in its file, when its bar com
   ]);
   let desk = 120;
   const { engine, audio, advance } = rig(doc, { warp: (cue, from) => (cue.warp ? { rate: warpRate(cue.tempo, desk, from), keepPitch: cue.warp === 'keep' } : null) });
-  audio.rate = (...a) => audio.calls.push(['rate', ...a]);
+  (audio as EngineAudio).rate = (...a) => audio.calls.push(['rate', ...a]);
   engine.setDuration('a.wav', 60); engine.setDuration('k.wav', 60);
   engine.fire(id('a'));
-  const played = audio.calls.find((c) => c[0] === 'play')[2];
+  const played = audio.calls.find((c) => c[0] === 'play')![2];
   assert.strictEqual(played.rate, 1.2);
   assert.strictEqual(played.preservePitch, false);
   advance(5);
-  const a = () => engine.active().find((x) => x.id === id('a'));
+  const a = () => engine.active().find((x) => x.id === id('a')) as SoundRow;
   assert.ok(near(a().elapsed, 6, 0.001) && a().rate === 1.2, JSON.stringify(a()));        // 5 s of clock is 6 s of file
   // its bars are 2.4 s of file, 2 s of clock at the desk's 120: the next (at 7.2) is 1 s away
-  assert.ok(near(engine.toNextDownbeat(0.03), 1, 0.01), String(engine.toNextDownbeat(0.03)));
+  assert.ok(near(engine.toNextDownbeat(0.03)!, 1, 0.01), String(engine.toNextDownbeat(0.03)));
   // the desk's tempo moves: it carries on from where it is, at the new speed
   desk = 100; engine.rewarp(id('a'), warpRate({ bpm: 100, first: 0, bar: 4 }, desk));
   advance(2);
@@ -160,7 +165,7 @@ test('a warped sound: the engine knows where it is in its file, when its bar com
   advance(0.3); assert.ok(!engine.running.has(id('a')));
   // keeping its pitch, a sound streams (the audio backend can only stretch a stream)
   engine.fire(id('k'));
-  const kept = audio.calls.filter((c) => c[0] === 'play').pop()[2];
+  const kept = audio.calls.filter((c) => c[0] === 'play').pop()![2];
   assert.strictEqual(kept.preservePitch, true);
   assert.strictEqual(kept.exact, false);
   // …and while warped it is not held in a section
@@ -171,5 +176,5 @@ test('a sound that is not warped is told nothing of rates', () => {
   const { doc, id } = build([{ op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav', tempo: { bpm: 100, first: 0, bar: 4 } } }]);
   const { engine, audio } = rig(doc, { warp: (cue) => (cue.warp ? { rate: 2 } : null) });
   engine.fire(id('a'));
-  assert.deepStrictEqual(Object.keys(audio.calls.find((c) => c[0] === 'play')[2]).sort(), ['bus', 'exact', 'file', 'from', 'gainDb', 'loop']);
+  assert.deepStrictEqual(Object.keys(audio.calls.find((c) => c[0] === 'play')![2]).sort(), ['bus', 'exact', 'file', 'from', 'gainDb', 'loop']);
 });

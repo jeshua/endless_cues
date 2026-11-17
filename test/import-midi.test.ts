@@ -4,7 +4,7 @@ import { midiText, timecodeOf } from '../core/import/qlab';
 import * as midi from '../core/net/midi';
 
 test('a QLab MIDI cue’s pressure and pitch bend come across as text this sends', () => {
-  const voice = (status, byte1, byte2, more = {}) => midiText({ messageType: 1, status, byte1, byte2, channel: 1, ...more });
+  const voice = (status: number, byte1: number, byte2: number, more = {}) => midiText({ messageType: 1, status, byte1, byte2, channel: 1, ...more });
   assert.equal(voice(2, 60, 90), 'key pressure 60 90');
   assert.equal(voice(5, 77, 0, { channel: 3 }), 'pressure 77 ch 3');
   assert.equal(voice(6, 0, 64), 'bend 8192');                                    // two bytes, low then high

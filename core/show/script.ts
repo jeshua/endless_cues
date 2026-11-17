@@ -33,18 +33,23 @@
  */
 import { parseSmart } from './cue-types';
 
+/** One step of a script: what the engine is asked to do, from which line. */
+export interface Step { line: number; do: string; secs?: number; step?: number; number?: string; id?: string }
+/** A line that could not be read. */
+export interface ScriptError { line: number; why: string }
+
 const MAX_LINES = 200;
 /** A cue's verb -> what the engine is asked to do (the same meanings the OSC control module gives them). */
-const VERBS = { start: 'start', go: 'start', preview: 'preview', stop: 'stop', hardStop: 'stop', panic: 'stop', pause: 'pause', hardPause: 'pause', resume: 'resume', togglePause: 'toggle' };
-const ALL = { '/go': 'go', '/panic': 'panic', '/pause': 'pause-all', '/resume': 'resume-all' };
+const VERBS: Record<string, string> = { start: 'start', go: 'start', preview: 'preview', stop: 'stop', hardStop: 'stop', panic: 'stop', pause: 'pause', hardPause: 'pause', resume: 'resume', togglePause: 'toggle' };
+const ALL: Record<string, string> = { '/go': 'go', '/panic': 'panic', '/pause': 'pause-all', '/resume': 'resume-all' };
 
-function parse(text) {
-  const steps = [], errors = [];
+function parse(text: unknown): { steps: Step[]; errors: ScriptError[] } {
+  const steps: Step[] = [], errors: ScriptError[] = [];
   const lines = String(text || '').split(/\r?\n/);
   lines.forEach((raw, i) => {
     const line = i + 1, s = raw.trim();
     if (!s || s.startsWith('#')) return;
-    const bad = (why) => errors.push({ line, why });
+    const bad = (why: string) => errors.push({ line, why });
     if (steps.length >= MAX_LINES) { if (steps.length === MAX_LINES && !errors.some((e) => /at most/.test(e.why))) bad(`a script has at most ${MAX_LINES} steps`); return; }
     const w = /^wait\s+(\S+)\s*(?:s|secs?|seconds?)?$/i.exec(s);
     if (w) { const secs = parseSmart('seconds', w[1]); if (Number.isFinite(secs) && secs >= 0) steps.push({ line, do: 'wait', secs }); else bad(`“${w[1]}” is not a time (wait 2, wait 1.5, wait 1:30)`); return; }
@@ -69,6 +74,6 @@ function parse(text) {
 }
 
 /** How long a script takes: the sum of its waits. */
-const lengthOf = (steps) => steps.reduce((n, s) => n + (s.do === 'wait' ? s.secs : 0), 0);
+const lengthOf = (steps: Step[]) => steps.reduce((n, s) => n + (s.do === 'wait' ? s.secs! : 0), 0);
 
 export { parse, lengthOf, VERBS, MAX_LINES };

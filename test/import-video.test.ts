@@ -12,12 +12,12 @@ const load = () => importQlab(fs.readFileSync(FILE), { file: FILE });
 
 test('QLab’s Video, Text and Camera cues come across as cues for the stage, each with a note saying what to check', () => {
   const { doc, report } = load();
-  const n = (x) => show.findByNumber(doc, x);
+  const n = (x: string) => show.findByNumber(doc, x)!;
   const film = n('1');
   assert.deepEqual([film.type, film.gainDb, film.from, film.cutAt, film.loop, film.holdEnd], ['video', -6, 2, 30, true, true]);
-  assert.match(film.file, /film\.mov$/);
+  assert.match(film.file!, /film\.mov$/);
   assert.deepEqual([film.opacity, film.x, film.y, film.scale, film.layer, film.fit], [50, 120, -40, 0.5, 7, 'natural']);
-  const why = (re) => report.issues.filter((i) => re.test(i.why)).map((i) => i.cue);
+  const why = (re: RegExp) => report.issues.filter((i) => re.test(i.why)).map((i) => i.cue);
   assert.deepEqual(why(/have not been checked against a real workspace/), ['1 Film']);
   assert.deepEqual(why(/was not found in the file, so it fits the stage/), ['2 Backdrop']);
   assert.deepEqual([n('2').type, n('2').fit, n('2').opacity], ['video', undefined, undefined]);

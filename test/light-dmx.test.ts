@@ -8,9 +8,10 @@ import * as sacn from '../core/light/sacn';
 import * as usb from '../core/light/usb';
 import { createLightOutput, broadcastAddresses, cidFor } from '../core/light/output';
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const listener = () => new Promise((res) => { const s = dgram.createSocket('udp4'); const got = []; s.on('message', (b, from) => got.push({ b, from })); s.bind(0, '127.0.0.1', () => res({ sock: s, got, port: s.address().port, close: () => s.close() })); });
-const until = async (fn, ms = 1500) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await sleep(10); } return false; };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+interface Listener { sock: dgram.Socket; got: { b: Buffer; from: dgram.RemoteInfo }[]; port: number; close: () => void }
+const listener = () => new Promise<Listener>((res) => { const s = dgram.createSocket('udp4'); const got: Listener['got'] = []; s.on('message', (b, from) => got.push({ b, from })); s.bind(0, '127.0.0.1', () => res({ sock: s, got, port: s.address().port, close: () => s.close() })); });
+const until = async (fn: () => unknown, ms = 1500) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; await sleep(10); } return false; };
 
 test('ArtDmx: the header, sequence, port address and length, to the byte (Art-Net 4, ArtDmx)', () => {
   const p = artnet.artDmx({ universe: 0x1234, sequence: 7, physical: 2, data: [255, 128, 1, 0] });
@@ -140,7 +141,7 @@ test('broadcast addresses come from each network’s address and mask; loopback 
     lo0: [{ address: '127.0.0.1', netmask: '255.0.0.0', family: 'IPv4', internal: true }],
     en0: [{ address: '192.168.1.20', netmask: '255.255.255.0', family: 'IPv4', internal: false, mac: 'aa:bb:cc:dd:ee:ff' }, { address: 'fe80::1', netmask: 'ffff::', family: 'IPv6', internal: false }],
     en5: [{ address: '2.0.0.9', netmask: '255.0.0.0', family: 'IPv4', internal: false }],
-  });
+  } as unknown as Parameters<typeof broadcastAddresses>[0]);
   assert.deepEqual(list.map((i) => i.broadcast), ['192.168.1.255', '2.255.255.255']);
   assert.equal(cidFor('a').length, 16);
   assert.deepEqual(cidFor('a'), cidFor('a'));
@@ -156,14 +157,14 @@ test('a dry run builds every packet and opens no socket', () => {
   assert.equal(out.send(frames), 2);
   assert.equal(out.send(frames), 2);
   assert.equal(opened, 0);
-  assert.equal(artnet.parseDmx(out.last(1)).data[0], 3);
-  assert.equal(artnet.parseDmx(out.last(1)).sequence, 2);
-  assert.equal(sacn.parse(out.last(2)).universe, 7);
-  assert.equal(sacn.parse(out.last(2)).sequence, 1);
+  assert.equal(artnet.parseDmx(out.last(1)!)!.data[0], 3);
+  assert.equal(artnet.parseDmx(out.last(1)!)!.sequence, 2);
+  assert.equal(sacn.parse(out.last(2)!)!.universe, 7);
+  assert.equal(sacn.parse(out.last(2)!)!.sequence, 1);
   assert.equal(out.status().packets, 4);
   assert.equal(out.status().dryRun, true);
   out.close();
-  assert.equal(sacn.parse(out.last(2)).terminated, true);
+  assert.equal(sacn.parse(out.last(2)!)!.terminated, true);
   assert.equal(opened, 0);
 });
 
@@ -179,8 +180,8 @@ test('nothing is made while the output is off, or with no universe set up', () =
 test('the Art-Net sequence runs 1 to 255 and never 0', () => {
   const out = createLightOutput({ dryRun: true });
   out.configure([{ id: 1, protocol: 'artnet', address: 0 }], { on: true });
-  const seen = [];
-  for (let i = 0; i < 257; i++) { out.send(new Map([[1, Buffer.alloc(2)]])); seen.push(artnet.parseDmx(out.last(1)).sequence); }
+  const seen: number[] = [];
+  for (let i = 0; i < 257; i++) { out.send(new Map([[1, Buffer.alloc(2)]])); seen.push(artnet.parseDmx(out.last(1)!)!.sequence); }
   assert.deepEqual(seen.slice(0, 3), [1, 2, 3]);
   assert.deepEqual(seen.slice(253), [254, 255, 1, 2]);
   assert.ok(!seen.includes(0));
@@ -196,13 +197,13 @@ test('on loopback: Art-Net and sACN universes arrive as sent, and an sACN stream
   out.send(new Map([[1, one], [2, two]]));
   assert.ok(await until(() => a.got.length >= 1 && s.got.length >= 1), 'both arrived');
   assert.deepEqual(artnet.parseDmx(a.got[0].b), { universe: 5, sequence: 1, physical: 0, data: one });
-  const got = sacn.parse(s.got[0].b);
+  const got = sacn.parse(s.got[0].b)!;
   assert.equal(got.universe, 300); assert.equal(got.name, 'Test'); assert.deepEqual(got.data, two);
-  assert.equal(out.status().universes.find((u) => u.id === 1).packets, 1);
+  assert.equal(out.status().universes.find((u) => u.id === 1)!.packets, 1);
   // the output is switched off: three terminated packets, then silence
   out.configure([{ id: 1, protocol: 'artnet', address: 5, host: '127.0.0.1' }, { id: 2, protocol: 'sacn', address: 300, host: '127.0.0.1' }], { on: false });
   assert.ok(await until(() => s.got.length >= 4), 'the stream was terminated');
-  assert.deepEqual(s.got.slice(1).map((g) => sacn.parse(g.b).terminated), [true, true, true]);
+  assert.deepEqual(s.got.slice(1).map((g) => sacn.parse(g.b)!.terminated), [true, true, true]);
   const before = a.got.length;
   assert.equal(out.send(new Map([[1, one]])), 0);
   await sleep(60);
@@ -221,7 +222,7 @@ test('on loopback: DMX held back for a rehearsal makes its packets and sends non
   await sleep(120);
   assert.equal(a.got.length, 0, 'nothing left the computer');
   assert.equal(out.status().held, true);
-  assert.equal(artnet.parseDmx(out.last(1)).data[0], 9, 'the packet was still made');
+  assert.equal(artnet.parseDmx(out.last(1)!)!.data[0], 9, 'the packet was still made');
   out.hold(false);
   out.send(new Map([[1, one]]));
   assert.ok(await until(() => a.got.length >= 1), 'sent again');
@@ -236,7 +237,7 @@ test('on loopback: another controller’s ArtPoll is answered, and a node’s re
   assert.ok(await until(() => out.status().listing), 'listening');
   other.sock.send(artnet.artPoll(), mine, '127.0.0.1');
   assert.ok(await until(() => other.got.some((g) => artnet.kindOf(g.b) === 'pollReply')), 'answered the poll');
-  const reply = other.got.find((g) => artnet.kindOf(g.b) === 'pollReply').b;
+  const reply = other.got.find((g) => artnet.kindOf(g.b) === 'pollReply')!.b;
   assert.equal(reply.length, 239);
   assert.equal(reply[200], 0x01);
   assert.equal(reply[186], 0x03);

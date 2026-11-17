@@ -30,14 +30,18 @@ import * as crypto from 'crypto';
 import * as artnet from './artnet';
 import * as sacn from './sacn';
 
+/** A universe as the output sends it (one with an address). */
+export interface OutUniverse { id: number; protocol: 'artnet' | 'sacn'; address: number; host: string }
+type ErrnoError = NodeJS.ErrnoException;
+
 const POLL_MS = 3000;
 const NODE_GONE_MS = 10000;
 
 /** The broadcast address of each network this computer is on (IPv4, not loopback): [{ address, broadcast, mac }]. */
-function broadcastAddresses(interfaces = os.networkInterfaces()) {
-  const out = [];
+function broadcastAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): { address: string; mac: string; broadcast: string }[] {
+  const out: { address: string; mac: string; broadcast: string }[] = [];
   for (const list of Object.values(interfaces || {})) for (const i of list || []) {
-    if (i.internal || (i.family !== 'IPv4' && i.family !== 4) || !i.netmask) continue;
+    if (i.internal || (i.family !== 'IPv4' && (i.family as unknown) !== 4) || !i.netmask) continue;
     const a = i.address.split('.').map(Number), m = i.netmask.split('.').map(Number);
     out.push({ address: i.address, mac: i.mac || '', broadcast: a.map((x, k) => (x | (~m[k] & 0xff)) & 0xff).join('.') });
   }
@@ -45,41 +49,44 @@ function broadcastAddresses(interfaces = os.networkInterfaces()) {
 }
 
 /** 16 bytes that name this sender for good (an sACN CID), made from any text that stays the same on this computer. */
-function cidFor(text) {
+function cidFor(text: string): Buffer {
   const b = crypto.createHash('sha256').update(`endless-cues:${text}`).digest().subarray(0, 16);
   b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;      // shaped as a UUID, as receivers expect to print it
   return Buffer.from(b);
 }
 
 function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, changed = () => {}, now = Date.now, cid = cidFor(os.hostname()), name = 'Endless Cues',
-                             ports = {}, listenPort = null, listen = true, bindAddress = undefined, interfaces = () => os.networkInterfaces() } = {}) {
+                             ports = {}, listenPort = null, listen = true, bindAddress = undefined, interfaces = () => os.networkInterfaces() }: {
+  dgram?: Pick<typeof nodeDgram, 'createSocket'>; dryRun?: boolean; log?: (line: string) => void; changed?: () => void; now?: () => number; cid?: Buffer; name?: string;
+  ports?: { artnet?: number; sacn?: number }; listenPort?: number | null; listen?: boolean; bindAddress?: string; interfaces?: () => NodeJS.Dict<os.NetworkInterfaceInfo[]>;
+} = {}) {
   const artPort = ports.artnet || artnet.PORT, sacnPort = ports.sacn || sacn.PORT;
-  let universes = [];                 // [{ id, protocol, address, host }]
+  let universes: OutUniverse[] = [];                 // [{ id, protocol, address, host }]
   let on = false;
   let held = false;                   // an override: packets are made and none is sent
-  let art = null, artBound = false, artError = '';
-  let acn = null;
-  let poller = null;
-  const seq = new Map();              // universe id -> the last sequence number sent
-  const stat = new Map();             // universe id -> { packets, error, to }
-  const last = new Map();             // universe id -> the last packet built
-  const nodes = new Map();            // ip -> { ip, shortName, longName, outputs, at }
+  let art: nodeDgram.Socket | null = null, artBound = false, artError = '';
+  let acn: nodeDgram.Socket | null = null;
+  let poller: NodeJS.Timeout | null = null;
+  const seq = new Map<number, number>();              // universe id -> the last sequence number sent
+  const stat = new Map<number, { packets: number; error: string; to: string }>();             // universe id -> { packets, error, to }
+  const last = new Map<number, Buffer>();             // universe id -> the last packet built
+  const nodes = new Map<string, NonNullable<ReturnType<typeof artnet.parsePollReply>> & { at: number }>();            // ip -> { ip, shortName, longName, outputs, at }
   let packets = 0;
 
-  const st = (id) => { if (!stat.has(id)) stat.set(id, { packets: 0, error: '', to: '' }); return stat.get(id); };
-  let own = null, ownAt = -Infinity;
-  const mine = () => { if (now() - ownAt > 5000) { own = new Set(broadcastAddresses(interfaces()).map((i) => i.address)); ownAt = now(); } return own; };
+  const st = (id: number) => { if (!stat.has(id)) stat.set(id, { packets: 0, error: '', to: '' }); return stat.get(id)!; };
+  let own: Set<string> | null = null, ownAt = -Infinity;
+  const mine = () => { if (now() - ownAt > 5000) { own = new Set(broadcastAddresses(interfaces()).map((i) => i.address)); ownAt = now(); } return own!; };
   /** A socket that has just been given its last packets is closed a moment later, so they leave first. */
-  const closeSoon = (sock) => { const t = setTimeout(() => { try { sock.close(); } catch { /* closed */ } }, 200); t.unref && t.unref(); };
-  const fail = (u, why) => { const s = st(u.id); if (s.error !== why) { s.error = why; log(`universe ${u.id}: ${why}`); changed(); } };
+  const closeSoon = (sock: nodeDgram.Socket) => { const t = setTimeout(() => { try { sock.close(); } catch { /* closed */ } }, 200); t.unref && t.unref(); };
+  const fail = (u: OutUniverse, why: string) => { const s = st(u.id); if (s.error !== why) { s.error = why; log(`universe ${u.id}: ${why}`); changed(); } };
 
-  function heardArt(buf, from) {
+  function heardArt(buf: Buffer, from: nodeDgram.RemoteInfo) {
     const kind = artnet.kindOf(buf);
     if (!kind || mine().has(from.address)) return;             // (our own broadcast, come back to us)
     if (kind === 'poll') {
       const me = broadcastAddresses(interfaces())[0] || { address: '0.0.0.0', mac: '' };
       const reply = artnet.artPollReply({ ip: me.address, mac: me.mac, shortName: name, longName: `${name} (show control)`, universes: universes.filter((u) => u.protocol === 'artnet' && u.address != null).map((u) => u.address) });
-      try { art.send(reply, artPort, from.address, () => {}); } catch { /* closed */ }
+      try { art!.send(reply, artPort, from.address, () => {}); } catch { /* closed */ }
     } else if (kind === 'pollReply') {
       const n = artnet.parsePollReply(buf);
       if (!n) return;
@@ -100,7 +107,7 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
     const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     art = sock; artBound = false; artError = '';
     sock.on('message', heardArt);
-    sock.on('error', (e) => {
+    sock.on('error', (e: ErrnoError) => {
       if (art !== sock) return;
       // the port is someone else's (another lighting program on this computer): send from any port instead
       if (!artBound && listen) {
@@ -122,7 +129,7 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
     if (listen) { poller = setInterval(poll, POLL_MS); poller.unref(); }
   }
   function closeArt() {
-    clearInterval(poller); poller = null;
+    clearInterval(poller ?? undefined); poller = null;
     if (art) { try { art.close(); } catch { /* closed */ } }
     art = null; artBound = false; nodes.clear();
   }
@@ -135,11 +142,11 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
     sock.unref();
   }
   /** E1.31: a source that stops says so three times. */
-  function terminate(list) {
+  function terminate(list: OutUniverse[]) {
     for (const u of list) {
       if (u.protocol !== 'sacn' || u.address == null || !seq.has(u.id)) continue;
       for (let i = 0; i < 3; i++) {
-        const n = (seq.get(u.id) + 1) & 0xff; seq.set(u.id, n);
+        const n = (seq.get(u.id)! + 1) & 0xff; seq.set(u.id, n);
         const packet = sacn.dataPacket({ universe: u.address, cid, sequence: n, data: Buffer.alloc(0), name, terminated: true });
         last.set(u.id, packet);
         if (acn && !dryRun) { try { acn.send(packet, sacnPort, u.host || sacn.multicastAddress(u.address), () => {}); } catch { /* closed */ } }
@@ -149,9 +156,9 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
   }
 
   return {
-    configure(list = [], { on: want = false } = {}) {
-      const next = (Array.isArray(list) ? list : []).filter((u) => u && u.address != null).map((u) => ({ id: u.id, protocol: u.protocol === 'sacn' ? 'sacn' : 'artnet', address: u.address, host: String(u.host || '').trim() }));
-      const key = (u) => `${u.id}|${u.protocol}|${u.address}|${u.host}`;
+    configure(list: { id: number; protocol?: string; address: number | null; host?: string }[] = [], { on: want = false } = {}) {
+      const next: OutUniverse[] = (Array.isArray(list) ? list : []).filter((u) => u && u.address != null).map((u) => ({ id: u.id, protocol: u.protocol === 'sacn' ? 'sacn' : 'artnet', address: u.address!, host: String(u.host || '').trim() }));
+      const key = (u: OutUniverse) => `${u.id}|${u.protocol}|${u.address}|${u.host}`;
       // whatever is no longer being sent as it was is let go of first
       terminate(universes.filter((u) => !want || !next.some((n) => key(n) === key(u))));
       for (const u of universes) if (!next.some((n) => n.id === u.id)) { stat.delete(u.id); last.delete(u.id); seq.delete(u.id); }
@@ -162,21 +169,21 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
     },
 
     /** One refresh. `frames`: Map(universe id → Buffer of up to 512 levels). Returns how many packets were made. */
-    send(frames) {
+    send(frames: Map<number, Buffer>): number {
       if (!on) return 0;
       let made = 0;
       for (const u of universes) {
         const data = frames.get(u.id);
         if (!data) continue;
         // 1–255, never 0 (in Art-Net a 0 says "ignore my sequence numbers")
-        const n = u.protocol === 'artnet' ? ((seq.get(u.id) || 0) % 255) + 1 : ((seq.has(u.id) ? seq.get(u.id) : -1) + 1) & 0xff;
+        const n = u.protocol === 'artnet' ? ((seq.get(u.id) || 0) % 255) + 1 : ((seq.has(u.id) ? seq.get(u.id)! : -1) + 1) & 0xff;
         seq.set(u.id, n);
         const s = st(u.id);
-        let packet, to, port, sock;
+        let packet: Buffer, to: string[], port: number, sock: nodeDgram.Socket | null;
         try {
           if (u.protocol === 'artnet') { packet = artnet.artDmx({ universe: u.address, sequence: n, data }); port = artPort; sock = art; to = u.host ? [u.host] : broadcastAddresses(interfaces()).map((i) => i.broadcast); }
           else { packet = sacn.dataPacket({ universe: u.address, cid, sequence: n, data, name }); port = sacnPort; sock = acn; to = [u.host || sacn.multicastAddress(u.address)]; }
-        } catch (err) { fail(u, err.message); continue; }
+        } catch (err) { fail(u, (err as Error).message); continue; }
         last.set(u.id, packet);
         made++; packets++; s.packets++;
         s.to = u.protocol === 'artnet' ? (u.host || 'broadcast') : (u.host || `multicast ${to[0]}`);
@@ -184,18 +191,18 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
         if (!to.length) { fail(u, 'this computer is on no network to broadcast on'); continue; }
         if (!sock) continue;
         for (const address of to) {
-          try { sock.send(packet, port, address, (err) => { if (err) fail(u, err.code === 'EHOSTUNREACH' || err.code === 'ENETUNREACH' ? `${address} cannot be reached from this computer` : err.message); else if (s.error) { s.error = ''; changed(); } }); }
-          catch (err) { fail(u, err.message); }
+          try { sock.send(packet, port, address, (err: ErrnoError | null) => { if (err) fail(u, err.code === 'EHOSTUNREACH' || err.code === 'ENETUNREACH' ? `${address} cannot be reached from this computer` : err.message); else if (s.error) { s.error = ''; changed(); } }); }
+          catch (err) { fail(u, (err as Error).message); }
         }
       }
       return made;
     },
 
     /** Held back (an override, for rehearsing without the rig): packets are still built, and none is sent. */
-    hold(on) { held = !!on; },
+    hold(on: unknown) { held = !!on; },
 
     /** The last packet built for a universe (a test run looks at this instead of a network). */
-    last: (id) => last.get(id) || null,
+    last: (id: number) => last.get(id) || null,
 
     status() {
       const t = now();
@@ -216,5 +223,7 @@ function createLightOutput({ dgram = nodeDgram, dryRun = false, log = () => {}, 
     },
   };
 }
+
+export type LightOutput = ReturnType<typeof createLightOutput>;
 
 export { createLightOutput, broadcastAddresses, cidFor, POLL_MS };

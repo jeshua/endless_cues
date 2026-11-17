@@ -1,6 +1,6 @@
 # 0001 · Electron, plain JavaScript, no build step
 
-**Status:** accepted for 0.x.
+**Status:** accepted for 0.x. Its "plain JavaScript, no build step" half is replaced by [0006](0006-typescript.md): the code is TypeScript, compiled by one script.
 
 ## Decision
 

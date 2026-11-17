@@ -12,16 +12,23 @@
  * OSC 1.1's arguments with no value are written as QLab writes them: \T true, \F false, \I impulse, \N null.
  */
 
-const pad = (b) => Buffer.concat([b, Buffer.alloc(4 - (b.length % 4))]);
-const str = (s) => pad(Buffer.from(String(s), 'utf8'));
+/** An argument with its OSC type tag: { type: 'i', value: 1 } (T, F, I and N have no value). */
+export interface OscTyped { type: string; value?: unknown }
+/** An argument as decoded off the wire. */
+export type OscValue = number | string | boolean | null | Buffer;
+/** A message as decoded: `types` (not enumerable) is the type tag of each argument. */
+export interface OscMessage { address: string; args: OscValue[]; types?: string }
+
+const pad = (b: Buffer) => Buffer.concat([b, Buffer.alloc(4 - (b.length % 4))]);
+const str = (s: unknown) => pad(Buffer.from(String(s), 'utf8'));
 
 /** "/address 1 2.5 word "two words"" -> { address, args } */
-function parseText(text) {
+function parseText(text: unknown): { address: string; args: OscTyped[] } {
   const parts = String(text).trim().match(/(?:[ifsd]:)?"[^"]*"|\S+/g) || [];
   const address = parts.shift();
   if (!address || !address.startsWith('/')) throw new Error(`not an OSC address: ${text}`);
-  const unquote = (p) => (p.startsWith('"') && p.endsWith('"') && p.length > 1 ? p.slice(1, -1) : p);
-  const args = parts.map((p) => {
+  const unquote = (p: string) => (p.startsWith('"') && p.endsWith('"') && p.length > 1 ? p.slice(1, -1) : p);
+  const args = parts.map((p): OscTyped => {
     const forced = p.match(/^([ifsd]):([\s\S]*)$/);
     if (forced) {
       if (forced[1] === 's') return { type: 's', value: unquote(forced[2]) };
@@ -37,27 +44,27 @@ function parseText(text) {
   return { address, args };
 }
 
-function encode(address, args = []) {
+function encode(address: string, args: unknown[] = []): Buffer {
   if (args.length === 0 && /\s/.test(address.trim())) ({ address, args } = parseText(address));
   let tags = ',';
-  const bufs = [];
+  const bufs: Buffer[] = [];
   for (const raw of args) {
-    const a = raw && typeof raw === 'object' && 'type' in raw ? raw
+    const a: OscTyped = raw && typeof raw === 'object' && 'type' in raw ? raw as OscTyped
       : typeof raw === 'number' ? (Number.isInteger(raw) ? { type: 'i', value: raw } : { type: 'f', value: raw })
       : typeof raw === 'boolean' ? { type: raw ? 'T' : 'F' } : { type: 's', value: String(raw) };
     tags += a.type;
-    if (a.type === 'i') { const b = Buffer.alloc(4); b.writeInt32BE(a.value); bufs.push(b); }
-    else if (a.type === 'f') { const b = Buffer.alloc(4); b.writeFloatBE(a.value); bufs.push(b); }
+    if (a.type === 'i') { const b = Buffer.alloc(4); b.writeInt32BE(a.value as number); bufs.push(b); }
+    else if (a.type === 'f') { const b = Buffer.alloc(4); b.writeFloatBE(a.value as number); bufs.push(b); }
     else if (a.type === 's') bufs.push(str(a.value));
-    else if (a.type === 'd') { const b = Buffer.alloc(8); b.writeDoubleBE(a.value); bufs.push(b); }
-    else if (a.type === 'h') { const b = Buffer.alloc(8); b.writeBigInt64BE(BigInt(a.value)); bufs.push(b); }
-    else if (a.type === 'b') { const data = Buffer.from(a.value); const n = Buffer.alloc(4); n.writeInt32BE(data.length); bufs.push(n, data, Buffer.alloc((4 - (data.length % 4)) % 4)); }
+    else if (a.type === 'd') { const b = Buffer.alloc(8); b.writeDoubleBE(a.value as number); bufs.push(b); }
+    else if (a.type === 'h') { const b = Buffer.alloc(8); b.writeBigInt64BE(BigInt(a.value as number | string | bigint)); bufs.push(b); }
+    else if (a.type === 'b') { const data = Buffer.from(a.value as Uint8Array | number[]); const n = Buffer.alloc(4); n.writeInt32BE(data.length); bufs.push(n, data, Buffer.alloc((4 - (data.length % 4)) % 4)); }
   }
   return Buffer.concat([str(address), str(tags), ...bufs]);
 }
 
-function decode(buf) {
-  const readStr = (at) => {
+function decode(buf: Buffer): OscMessage | null {
+  const readStr = (at: number) => {
     let end = at;
     while (end < buf.length && buf[end] !== 0) end++;
     return { value: buf.toString('utf8', at, end), next: (end + 4) & ~3 };
@@ -75,7 +82,7 @@ function decode(buf) {
     return null;
   }
   if (!head.value.startsWith('/')) return null;
-  const args = [];
+  const args: OscValue[] = [];
   if (head.next >= buf.length) return { address: head.value, args };
   const tags = readStr(head.next);
   let at = tags.next;
@@ -97,9 +104,9 @@ function decode(buf) {
 }
 
 /** Every message in a packet: one, or all of a bundle's (bundles inside bundles too), in order. */
-function decodeAll(buf) {
+function decodeAll(buf: Buffer): OscMessage[] {
   if (buf.length >= 16 && buf.toString('latin1', 0, 7) === '#bundle') {
-    const out = [];
+    const out: OscMessage[] = [];
     let at = 16;
     while (at + 4 <= buf.length) {
       const size = buf.readInt32BE(at);
@@ -114,15 +121,15 @@ function decodeAll(buf) {
 }
 
 /** A message as a person reads it: "/address 1 2.5 word". */
-function toText(msg) {
+function toText(msg: { address: string; args: OscValue[]; types?: string }): string {
   const types = msg.types || '';
   return [msg.address, ...msg.args.map((a, i) => ((types[i] === 'f' || types[i] === 'd') && Number.isInteger(a) ? `${a}.0` : typeof a === 'string' ? (/\s/.test(a) || a === '' ? `"${a}"` : a) : Buffer.isBuffer(a) ? `<${a.length} bytes>` : 'TFNI'.includes(types[i] || '-') ? `\\${types[i]}` : typeof a === 'number' && !Number.isInteger(a) ? String(Math.round(a * 10000) / 10000) : String(a)))].join(' ');
 }
 
 /** Whether an OSC address matches a pattern ("*", "?", "[abc]", "{a,b}", as OSC 1.0 defines them). */
-function matches(pattern, address) {
+function matches(pattern: string, address: string): boolean {
   if (pattern === address) return true;
-  const re = '^' + pattern.replace(/[.+^$()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\{([^}]*)\}/g, (_m, alts) => `(?:${alts.split(',').join('|')})`).replace(/\[!/g, '[^') + '$';
+  const re = '^' + pattern.replace(/[.+^$()|\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]').replace(/\{([^}]*)\}/g, (_m: string, alts: string) => `(?:${alts.split(',').join('|')})`).replace(/\[!/g, '[^') + '$';
   try { return new RegExp(re).test(address); } catch { return false; }
 }
 
@@ -130,7 +137,7 @@ function matches(pattern, address) {
 // SLIP (OSC 1.1; what Eos, QLab and most current gear use) wraps a packet in END bytes; the older
 // form (OSC 1.0) puts a 4-byte length before it.
 const END = 0xc0, ESC = 0xdb, ESC_END = 0xdc, ESC_ESC = 0xdd;
-function frame(packet, framing = 'slip') {
+function frame(packet: Buffer, framing = 'slip'): Buffer {
   if (framing === 'length') { const n = Buffer.alloc(4); n.writeInt32BE(packet.length); return Buffer.concat([n, packet]); }
   const out = [END];
   for (const b of packet) { if (b === END) out.push(ESC, ESC_END); else if (b === ESC) out.push(ESC, ESC_ESC); else out.push(b); }
@@ -140,9 +147,9 @@ function frame(packet, framing = 'slip') {
 /** A reader for one TCP connection: feed it chunks, get whole packets back. */
 function deframer(framing = 'slip') {
   let held = Buffer.alloc(0);
-  return (chunk) => {
+  return (chunk: Buffer): Buffer[] => {
     held = Buffer.concat([held, chunk]);
-    const packets = [];
+    const packets: Buffer[] = [];
     if (framing === 'length') {
       while (held.length >= 4) { const n = held.readInt32BE(0); if (n < 0 || n > 1 << 20) { held = Buffer.alloc(0); break; } if (held.length < 4 + n) break; packets.push(held.subarray(4, 4 + n)); held = held.subarray(4 + n); }
       return packets;
@@ -151,7 +158,7 @@ function deframer(framing = 'slip') {
     for (let i = 0; i < held.length; i++) {
       if (held[i] !== END) continue;
       if (i > start) {
-        const raw = held.subarray(start, i), out = [];
+        const raw = held.subarray(start, i), out: number[] = [];
         for (let k = 0; k < raw.length; k++) { if (raw[k] === ESC && k + 1 < raw.length) { out.push(raw[k + 1] === ESC_END ? END : ESC); k++; } else out.push(raw[k]); }
         packets.push(Buffer.from(out));
       }

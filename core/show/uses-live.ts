@@ -12,14 +12,15 @@
  * (a tempo is asked for on the sound's Time & Loops tab; Quantise is a field of a group).
  */
 import { settingsOf } from '../audio/strip';
+import type { ShowDoc, Cue } from './types';
 
-const many = (n, one, more) => (n === 1 ? one : `${n} ${more}`);
+const many = (n: number, one: string, more: string) => (n === 1 ? one : `${n} ${more}`);
 
-function usesLive(doc) {
-  const out = [];
+function usesLive(doc: Partial<ShowDoc> | null | undefined) {
+  const out: string[] = [];
   if (!doc || typeof doc !== 'object') return out;
   let warped = 0, desks = 0;
-  const walk = (cues) => {
+  const walk = (cues: Cue[] | undefined) => {
     for (const c of cues || []) {
       if (c.type === 'audio' && c.warp && c.tempo) warped++;
       if (c.type === 'mix' && c.desk && typeof c.desk === 'object' && Object.keys(c.desk).length) desks++;
@@ -27,7 +28,7 @@ function usesLive(doc) {
     }
   };
   for (const l of doc.lists || []) walk(l.cues);
-  const settings = doc.settings || {}, live = settings.live || {}, audio = settings.audio || {};
+  const settings: Partial<ShowDoc['settings']> = doc.settings || {}, live: Partial<ShowDoc['settings']['live']> = settings.live || {}, audio: Partial<ShowDoc['settings']['audio']> = settings.audio || {};
   if (warped) out.push(many(warped, 'a warped sound', 'warped sounds'));
   if (desks) out.push(many(desks, 'a Mix cue that recalls the desk', 'Mix cues that recall the desk'));
   if (Array.isArray(live.map) && live.map.length) out.push(many(live.map.length, 'a key or control mapped to the desk', 'keys or controls mapped to the desk'));

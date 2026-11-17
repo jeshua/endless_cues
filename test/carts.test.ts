@@ -9,8 +9,9 @@ import { applyOps } from '../core/show/ops';
 import { diffShows, describe } from '../core/show/diff';
 import { importQlab } from '../core/import/qlab';
 import { rig } from './helpers';
+import type { Op } from '../core/show/ops';
 
-const make = (ops) => applyOps(show.newShow('Test'), ops);
+const make = (ops: Op[]) => applyOps(show.newShow('Test'), ops);
 
 test('a cell is a row and a column from 1; anything else is not one', () => {
   assert.deepEqual(cart.parseCell('2,3'), [2, 3]);
@@ -31,7 +32,7 @@ test('a cart is a list with a size; its cues sit where they say, and the rest ta
   ]);
   const list = r.doc.lists[1];
   assert.deepEqual(list.cart, { rows: 2, columns: 3 });
-  assert.equal(show.index(r.doc).byId.get(r.refs.c).cell, '1,2', 'a cell is kept in one way of writing it');
+  assert.equal(show.index(r.doc).byId.get(r.refs.c)!.cell, '1,2', 'a cell is kept in one way of writing it');
   const l = cart.layout(list);
   assert.deepEqual(l.cells, [r.refs.b, r.refs.c, r.refs.d, r.refs.e, null, r.refs.a]);
   assert.deepEqual(l.extra, []);
@@ -77,7 +78,7 @@ test('a button starts its cue and the playhead of the list being run stays where
 test('a QLab cart is imported as a cart, each cue on the button it was on', () => {
   const file = path.join(__dirname, 'fixtures', 'small.qlab5');
   const { doc, report } = importQlab(fs.readFileSync(file), { file });
-  const stings = doc.lists.find((l) => l.name === 'Stings');
+  const stings = doc.lists.find((l) => l.name === 'Stings')!;
   assert.deepEqual(stings.cart, { rows: 2, columns: 3 });
   assert.deepEqual(stings.cues.map((c) => [c.name, c.cell]), [['Sting', '2,3'], ['Sting 2', undefined]]);
   const l = cart.layout(stings);

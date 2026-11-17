@@ -14,17 +14,21 @@
  */
 import * as folder from './folder';
 import * as show from '../show/show';
+import type { ShowDoc } from '../show/types';
+
+/** A mark in the script: where a cue is called. */
+export interface ScriptMark { line: number; number: string; name: string; quote: string; section: string }
 
 const MARK = /^\s*(?:<!--\s*)?@cue\s+(\S+?)(?:\s+(.*?))?\s*(?:-->)?\s*$/i;
 const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
 const SCENE = /^\s*((?:ACT|SCENE)\b.*?)\s*$/;
 
-function read(showDir, file) {
-  const none = { ok: false, why: '', lines: 0, marks: [], sections: [] };
+function read(showDir: string | null | undefined, file: string | null | undefined) {
+  const none = { ok: false, why: '', lines: 0, marks: [] as ScriptMark[], sections: [] as { line: number; name: string }[] };
   if (!file) return { ...none, why: 'This show names no script.' };
   const r = folder.readAll(showDir, file);
   if (!r.ok) return { ...none, why: r.why };
-  const marks = [], sections = [];
+  const marks: ScriptMark[] = [], sections: { line: number; name: string }[] = [];
   let section = '', quote = '';
   r.lines.forEach((text, i) => {
     const m = MARK.exec(text);
@@ -39,8 +43,8 @@ function read(showDir, file) {
 }
 
 /** The marks whose number no cue has (numbers are compared as cue numbers are: as text, whatever their case). */
-function compare(doc, marks) {
-  const have = new Set();
+function compare(doc: Pick<ShowDoc, 'lists'>, marks: ScriptMark[] | null | undefined) {
+  const have = new Set<string>();
   show.walk(doc, (c) => { if (c.number != null && c.number !== '') have.add(String(c.number).trim().toLowerCase()); });
   return { missing: (marks || []).filter((m) => !have.has(String(m.number).trim().toLowerCase())) };
 }

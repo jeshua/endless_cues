@@ -14,13 +14,16 @@ import { simulate, describe } from '../core/engine/dry-run';
 import { createHub } from '../core/net/hub';
 import * as devices from '../core/rig/devices';
 import { rig, build } from './helpers';
+import type { Op } from '../core/show/ops';
+import type { EngineCue } from '../core/engine/cue-engine';
+import type { ShowDoc } from '../core/show/types';
 
-const LANTERN = { op: 'device.add', device: { name: 'Lantern A', model: 'ec-prop-light', host: '10.0.0.42' } };
-const SAMPLER = { op: 'device.add', device: { name: 'Sampler', kind: 'instrument', via: 'midi', commands: [
+const LANTERN: Op = { op: 'device.add', device: { name: 'Lantern A', model: 'ec-prop-light', host: '10.0.0.42' } };
+const SAMPLER: Op = { op: 'device.add', device: { name: 'Sampler', kind: 'instrument', via: 'midi', commands: [
   { id: 'scene', label: 'Scene', template: 'pc {n} ch 10', params: [{ key: 'n', label: 'Program', kind: 'number', default: 1, min: 0, max: 127, whole: true }] },
   { id: 'volume', label: 'Volume', template: 'cc 7 {v} ch 10', fade: 'v', params: [{ key: 'v', label: 'Volume', kind: 'number', default: 100, min: 0, max: 127, whole: true }] }] } };
 /** An engine that keeps what it is asked to send, with the cue it came from. */
-const playing = (doc) => { const sent = [], midi = []; const r = rig(doc, { send: (m, cue) => sent.push({ m, patch: cue.patch, format: cue.format, sends: cue.sends }), midi: (cue) => midi.push(cue.midi) }); return { ...r, sent, midi }; };
+const playing = (doc: ShowDoc) => { const sent: { m: string; patch: EngineCue['patch']; format: EngineCue['format']; sends: EngineCue['sends'] }[] = [], midi: EngineCue['midi'][] = []; const r = rig(doc, { send: (m, cue) => sent.push({ m, patch: cue.patch, format: cue.format, sends: cue.sends }), midi: (cue) => midi.push(cue.midi) }); return { ...r, sent, midi }; };
 
 test('the Device cue is a cue type like any other: one table says what it is', () => {
   assert.deepEqual([TYPES.device.label, TYPES.device.glyph, TYPES.device.summary], ['Device', '◈', 'Sends a device’s command.']);
@@ -50,7 +53,7 @@ test('a Device cue fades a value: from the argument’s value to "Fade to", over
   r.advance(1);
   r.advance(1.1);
   assert.equal(r.sent[0].m, '/ec/level 0.0');
-  assert.equal(r.sent.at(-1).m, '/ec/level 1.0');
+  assert.equal(r.sent.at(-1)!.m, '/ec/level 1.0');
   assert.ok(r.sent.length > 30 && r.sent.some((x) => /level 0\.5/.test(x.m)), 'it moved through the values between');
   // out of the command's range, or on a command with nothing to fade
   const bad = build([LANTERN, { op: 'cue.add', ref: 'a', cue: { type: 'device', device: 'lantern_a', command: 'level', fadeTo: 3, duration: 2 } }, { op: 'cue.add', ref: 'b', cue: { type: 'device', device: 'lantern_a', command: 'identify', fadeTo: 1, duration: 2 } }]);
@@ -70,7 +73,7 @@ test('a Device cue is broken, never thrown, when its device or command is gone, 
     { op: 'cue.add', ref: 'addr', cue: { type: 'device', device: 'no_address_yet', command: 'on' } },
     { op: 'cue.add', ref: 'none', cue: { type: 'device' } },
     { op: 'cue.add', ref: 'ok', cue: { type: 'device', device: 'lantern_a', command: 'on' } }]);
-  const why = {};
+  const why: Record<string, string> = {};
   for (const p of show.problems(b.doc)) if (p.level === 'error' && !why[p.id]) why[p.id] = p.why;      // (the first thing wrong with each is what the list shows)
   assert.equal(why[b.id('gone')], 'its device is gone');
   assert.equal(why[b.id('cmd')], 'Lantern A has no command “blink” (it has: look, color, level, effect, on, off, identify)');
@@ -93,7 +96,7 @@ test('a MIDI device’s command is a MIDI message, and its value fades as a MIDI
   r.engine.go();
   assert.deepEqual(r.midi, ['pc 5 ch 10']);
   r.engine.go(); r.advance(1.2);
-  assert.match(r.midi.at(-1), /^cc 7 100/);
+  assert.match(r.midi.at(-1)!, /^cc 7 100/);
   assert.match(describe(simulate(b.doc, { gos: 1 })), /⇄ Sampler ▸ Scene \(5\) {2}pc 5 ch 10 {2}→ MIDI/);
 });
 

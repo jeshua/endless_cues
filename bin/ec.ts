@@ -31,25 +31,29 @@ import * as show from '../core/show/show';
 import { diffShows } from '../core/show/diff';
 import * as versions from '../core/show/versions';
 import { outline } from '../core/assistant/tools';
+import type { ShowDoc } from '../core/show/types';
 
-function load(p) {
+/** A change as these lines print it: whichever of its parts it has. */
+interface ChangeLine { kind: string; label?: string; path?: string; text?: string; to?: string; from?: string; fields?: { label: string; from: unknown; to: unknown }[] }
+
+function load(p: string) {
   const file = fs.statSync(p).isDirectory() ? path.join(p, 'show.json') : p;
   const r = show.normalise(JSON.parse(fs.readFileSync(file, 'utf8')));
   return { ...r, dir: path.dirname(file) };
 }
-const label = (doc, id) => { const c = show.index(doc).byId.get(id); return c ? `${c.number ? c.number + ' ' : ''}${c.name || c.type}` : id; };
+const label = (doc: ShowDoc, id: string) => { const c = show.index(doc).byId.get(id); return c ? `${c.number ? c.number + ' ' : ''}${c.name || c.type}` : id; };
 
-const MARK = { ready: '●', look: '◐', problem: '✕', unknown: '○' };
+const MARK: Record<string, string> = { ready: '●', look: '◐', problem: '✕', unknown: '○' };
 
 /** `ec check`: the Rig's rows as a folder can answer them, and, with --ask, each device asked once from here. */
-async function checkShow(a, ask) {
-  const check = require('../core/rig/check');
-  const rigDevices = require('../core/rig/devices');
+async function checkShow(a: string, ask: boolean) {
+  const check = require('../core/rig/check') as typeof import('../core/rig/check');
+  const rigDevices = require('../core/rig/devices') as typeof import('../core/rig/devices');
   const { doc, dir } = load(a);
   const facts = check.folderFacts(dir, doc);
   if (ask) {
-    const { createHub } = require('../core/net/hub');
-    const { createLiveness } = require('../core/rig/liveness');
+    const { createHub } = require('../core/net/hub') as typeof import('../core/net/hub');
+    const { createLiveness } = require('../core/rig/liveness') as typeof import('../core/rig/liveness');
     const hub = createHub();
     const live = createLiveness({ send: (d, text) => hub.send(d.id, text, { format: rigDevices.viaOf(d), quiet: true, ask: true }) });
     hub.onHeard((msg, _from, patch) => { if (patch) live.heard(patch.id, msg); });
@@ -59,7 +63,7 @@ async function checkShow(a, ask) {
     const awake = setInterval(() => {}, 1000);        // (the hub's sockets and the wait for an answer do not hold a process open by themselves)
     await Promise.all(asked.map((d) => live.ask(d.id)));
     clearInterval(awake);
-    facts.liveness = Object.fromEntries(asked.map((d) => { const st = live.state(d.id); return [d.id, st.state === 'unknown' ? { ...st, state: 'problem', text: 'not answering' } : st]; }));
+    facts.liveness = Object.fromEntries(asked.map((d) => { const st = live.state(d.id)!; return [d.id, st.state === 'unknown' ? { ...st, state: 'problem', text: 'not answering' } : st]; }));
     live.close(); hub.close();
   }
   const items = check.items(doc, facts);
@@ -69,7 +73,7 @@ async function checkShow(a, ask) {
   let group = '';
   for (const i of items) {
     if (i.group !== group) { group = i.group; console.log(`\n${i.groupLabel.toUpperCase()}`); }
-    const reports = i.device && facts.liveness && facts.liveness[i.device] ? (facts.liveness[i.device].reports || []).filter((r) => r.key !== 'state').map((r) => `${r.label} ${r.value}${r.unit ? ` ${r.unit}` : ''}`).join(' · ') : '';
+    const reports = i.device && facts.liveness && facts.liveness[i.device] ? (facts.liveness[i.device]!.reports || []).filter((r) => r.key !== 'state').map((r) => `${r.label} ${r.value}${r.unit ? ` ${r.unit}` : ''}`).join(' · ') : '';
     console.log(`${MARK[i.state]} ${i.label.padEnd(wide)}  ${[i.text, reports].filter(Boolean).join(' · ')}`.trimEnd());
     if (i.fix) console.log(`    ${i.fix}`);
   }
@@ -79,12 +83,12 @@ async function checkShow(a, ask) {
 }
 
 /** `ec try`: one of a device's commands, composed, printed and sent once. */
-async function tryCommand(a, deviceId, commandId, pairs) {
-  const rigDevices = require('../core/rig/devices');
+async function tryCommand(a: string, deviceId: string, commandId: string, pairs: string[]) {
+  const rigDevices = require('../core/rig/devices') as typeof import('../core/rig/devices');
   const { doc } = load(a);
   const d = rigDevices.find(doc, deviceId) || rigDevices.list(doc).find((x) => x.name.toLowerCase() === String(deviceId || '').toLowerCase());
   if (!d) { console.error(`No device ${deviceId || ''} in this show (it has: ${rigDevices.list(doc).map((x) => x.id).join(', ') || 'none'}).`); return 1; }
-  const args = {};
+  const args: Record<string, string> = {};
   for (const p of pairs) { const m = /^(\w+)=(.*)$/.exec(p); if (!m) { console.error(`${p} is not key=value`); return 2; } args[m[1]] = m[2]; }
   const r = rigDevices.compose(d, commandId, args);
   if (!r.ok) { console.error(r.why); return 1; }
@@ -92,11 +96,11 @@ async function tryCommand(a, deviceId, commandId, pairs) {
   console.log(`  ${r.message}`);
   if (!rigDevices.isNetwork(d)) { console.error(`${d.name} is a MIDI device: its commands are sent by the app, which has the MIDI output.`); return 1; }
   if (!d.host || !d.port) { console.error(`${d.name} has no address yet.`); return 1; }
-  const { createHub } = require('../core/net/hub');
+  const { createHub } = require('../core/net/hub') as typeof import('../core/net/hub');
   const hub = createHub();
   hub.configure({ devices: rigDevices.patchesOf(doc) });
-  let answer = null;
-  hub.onHeard((msg, _from, patch) => { if (patch && patch.id === d.id && !answer) answer = require('../core/net/osc').toText(msg); });
+  let answer: string | null = null;
+  hub.onHeard((msg, _from, patch) => { if (patch && patch.id === d.id && !answer) answer = (require('../core/net/osc') as typeof import('../core/net/osc')).toText(msg); });
   if ((d.protocol || 'udp') === 'tcp') await new Promise((done) => setTimeout(done, 600));        // (a TCP device: time to connect)
   const e = hub.send(d.id, r.message, { format: rigDevices.viaOf(d), label: 'ec try' });
   await new Promise((done) => setTimeout(done, 400));
@@ -106,7 +110,7 @@ async function tryCommand(a, deviceId, commandId, pairs) {
   return 0;
 }
 
-function main([cmd, a, b, ...more]) {
+function main([cmd, a, b, ...more]: string[]): number | Promise<number> {
   switch (cmd) {
     case 'validate': {
       const { doc, warnings, dir } = load(a);
@@ -121,37 +125,37 @@ function main([cmd, a, b, ...more]) {
     }
     case 'outline': { const r = load(a); console.log(outline(r.doc, { showDir: path.basename(a) === 'show.json' || fs.statSync(a).isDirectory() ? r.dir : null })); return 0; }
     case 'diff': {
-      const changes = diffShows(load(a).doc, load(b).doc);
+      const changes: ChangeLine[] = diffShows(load(a).doc, load(b).doc);
       if (!changes.length) console.log('no differences');
       for (const c of changes) {
-        const sign = { added: '+', removed: '-', moved: '>', 'device-added': '+', 'device-removed': '-' }[c.kind] || '~';
+        const sign = ({ added: '+', removed: '-', moved: '>', 'device-added': '+', 'device-removed': '-' } as Record<string, string>)[c.kind] || '~';
         console.log(`${sign} ${c.kind.startsWith('device-') ? 'device ' : ''}${c.label || c.path}${c.text ? `  ${c.text}` : ''}${c.kind === 'moved' ? `  moved ${c.to}` : c.kind === 'setting' ? `  ${c.from} -> ${c.to}` : c.kind === 'added' || c.kind === 'removed' ? `  ${c.kind}` : ''}`);
         for (const f of c.fields || []) console.log(`    ${f.label}: ${f.from} -> ${f.to}`);
       }
       return 0;
     }
-    case 'simulate': { const { simulate, describe } = require('../core/engine/dry-run'); const l = load(a); const { wavInfo } = require('../core/engine/waveform'); const durations = {};
+    case 'simulate': { const { simulate, describe } = require('../core/engine/dry-run') as typeof import('../core/engine/dry-run'); const l = load(a); const { wavInfo } = require('../core/engine/waveform') as typeof import('../core/engine/waveform'); const durations: Record<string, number> = {};
       show.walk(l.doc, (c) => { if (c.type === 'audio' && c.file) { const i = wavInfo(path.isAbsolute(c.file) ? c.file : path.join(l.dir, c.file)); if (i) durations[c.file] = Math.round(i.seconds * 100) / 100; } });
       const r = simulate(l.doc, { from: b || null, gos: Number(process.argv[5]) || 1, durations }); console.log(describe(r)); return r.error ? 1 : 0; }
     case 'versions': { for (const v of versions.list(load(a).dir)) console.log(`${v.id.padEnd(5)} ${v.at.slice(0, 16).replace('T', ' ')}  ${String(v.author).padEnd(9)} ${v.note}`); return 0; }
     case 'apply': {
-      const { ShowDocument } = require('../core/show/document');
+      const { ShowDocument } = require('../core/show/document') as typeof import('../core/show/document');
       const dir = fs.statSync(a).isDirectory() ? a : path.dirname(a);
       if (fs.existsSync(ShowDocument.journalPath(dir))) { console.error('This show has unsaved changes from the app (is it open there?). Save or revert them first.'); return 1; }
       let ops;
-      try { ops = JSON.parse(fs.readFileSync(b === '-' || !b ? 0 : b, 'utf8')); } catch (err) { console.error(`The operations could not be read: ${err.message}`); return 2; }
+      try { ops = JSON.parse(fs.readFileSync(b === '-' || !b ? 0 : b, 'utf8')); } catch (err) { console.error(`The operations could not be read: ${(err as Error).message}`); return 2; }
       const d = ShowDocument.open(dir);
       // (ops.js refuses what does not fit, with the operation's place in the list and what to send instead)
-      try { d.edit(ops, { label: 'command line' }); } catch (err) { if (err.name !== 'OpError') throw err; console.error(`Refused, nothing applied. ${err.message}`); return 1; }
-      const changes = d.unsaved();
+      try { d.edit(ops, { label: 'command line' }); } catch (e) { const err = e as Error; if (err.name !== 'OpError') throw err; console.error(`Refused, nothing applied. ${err.message}`); return 1; }
+      const changes: ChangeLine[] = d.unsaved();
       if (!changes.length) { console.log('Applied, but it changed nothing.'); return 0; }
-      for (const c of changes) console.log(`${{ added: '+', removed: '-', moved: '>', 'device-added': '+', 'device-removed': '-' }[c.kind] || '~'} ${c.kind.startsWith('device-') ? 'device ' : ''}${c.label || c.path}${c.text ? `  ${c.text}` : ''}${(c.fields || []).map((f) => `  ${f.label}: ${f.from} -> ${f.to}`).join('')}`);
-      const v = d.save({ note: process.argv[5] || '' });
+      for (const c of changes) console.log(`${({ added: '+', removed: '-', moved: '>', 'device-added': '+', 'device-removed': '-' } as Record<string, string>)[c.kind] || '~'} ${c.kind.startsWith('device-') ? 'device ' : ''}${c.label || c.path}${c.text ? `  ${c.text}` : ''}${(c.fields || []).map((f) => `  ${f.label}: ${f.from} -> ${f.to}`).join('')}`);
+      const v = d.save({ note: process.argv[5] || '' })!;
       console.log(`Saved as ${v.id}: ${v.note}`);
       return 0;
     }
     case 'import-qlab': {
-      const { importQlab } = require('../core/import/qlab');
+      const { importQlab } = require('../core/import/qlab') as typeof import('../core/import/qlab');
       const file = path.resolve(a);
       const { doc, report } = importQlab(fs.readFileSync(file), { file });
       console.log(`${report.title} (QLab ${report.qlabVersion || '5'}): ${report.counts.cues} cues in ${report.counts.lists} list${report.counts.lists === 1 ? '' : 's'}`);
@@ -161,7 +165,7 @@ function main([cmd, a, b, ...more]) {
       if (fs.existsSync(path.join(dir, 'show.json'))) { console.error(`There is already a show at ${dir}`); return 1; }
       fs.mkdirSync(path.join(dir, 'media'), { recursive: true });
       // the sounds that can be found come into the show's folder; the rest keep the path QLab had
-      const taken = new Map();
+      const taken = new Map<string, string>();
       show.walk(doc, (c) => {
         if (c.type !== 'audio' || !c.file || !fs.existsSync(c.file)) return;
         if (!taken.has(c.file)) {
@@ -177,7 +181,7 @@ function main([cmd, a, b, ...more]) {
       return 0;
     }
     case 'devices': {
-      const rigDevices = require('../core/rig/devices');
+      const rigDevices = require('../core/rig/devices') as typeof import('../core/rig/devices');
       const list = rigDevices.list(load(a).doc);
       if (!list.length) console.log('This show has no devices. (A device is a piece of equipment the show talks to: the Rig page adds one, or the assistant does.)');
       for (const d of list) {
@@ -189,13 +193,13 @@ function main([cmd, a, b, ...more]) {
     }
     case 'check': { const rest = [b, ...more].filter(Boolean); return checkShow(a, rest.includes('--ask') || a === '--ask'); }
     case 'try': return tryCommand(a, b, more[0], more.slice(1));
-    case 'fake-prop': return require('./ec-fake-prop').main([a, b, ...more].filter((x) => x !== undefined));
+    case 'fake-prop': return (require('./ec-fake-prop') as typeof import('./ec-fake-prop')).main([a, b, ...more].filter((x) => x !== undefined));
     case 'sounds': {
       // six plain tones under names a real folder has (a running-order number, a "FINAL", a "v2", a "loop"): something to start from a folder with
       const dir = path.resolve(a || 'Six Sounds');
       if (fs.existsSync(path.join(dir, 'show.json'))) { console.error(`${dir} is already a show: choose a new folder`); return 2; }
       fs.mkdirSync(dir, { recursive: true });
-      const { writeWav } = require('../examples/make-demo');
+      const { writeWav } = require('../examples/make-demo') as typeof import('../examples/make-demo');
       const names = { '01 sea wash': [110, 8], '02 gulls FINAL': [880, 4], '03 foghorn': [147, 3], '04 lamp hum loop': [220, 6], '05 storm v2': [98, 8], '06 bows': [330, 5] };
       for (const [name, [hz, secs]] of Object.entries(names)) {
         const n = Math.round(44100 * secs), x = new Float32Array(n);
@@ -205,9 +209,9 @@ function main([cmd, a, b, ...more]) {
       console.log(`Six sounds written to ${dir}\nIn Endless Cues: File ▸ Start from a Folder…, and choose that folder.`);
       return 0;
     }
-    case 'demo': { const dir = path.resolve(a || 'Demo.ecshow'); require('../examples/make-demo').makeDemo(dir); console.log(`Demo show written to ${dir}`); return 0; }
+    case 'demo': { const dir = path.resolve(a || 'Demo.ecshow'); (require('../examples/make-demo') as typeof import('../examples/make-demo')).makeDemo(dir); console.log(`Demo show written to ${dir}`); return 0; }
     default: console.log(fs.readFileSync(__filename, 'utf8').split('/*!')[1].split('*/')[0].split('\n').slice(1).map((l) => l.replace(/^ \* ?/, '')).join('\n')); return cmd ? 2 : 0;
   }
 }
 // (some commands wait for the network: they answer with a promise)
-try { Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; }, (err) => { console.error(err.message); process.exitCode = 2; }); } catch (err) { console.error(err.message); process.exitCode = 2; }
+try { Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; }, (err: Error) => { console.error(err.message); process.exitCode = 2; }); } catch (err) { console.error((err as Error).message); process.exitCode = 2; }

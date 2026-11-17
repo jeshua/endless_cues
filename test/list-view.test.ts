@@ -6,10 +6,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as LV from '../app/renderer/list-view';
 import { rig, build } from './helpers';
-const flatten = (cues, shut) => flattenRows(cues, shut);
+const flatten = (cues: LV.ListCue[], shut: Set<string>) => flattenRows(cues, shut);
 
 // the rows as the window draws them (app/renderer/lib.js `flatten`, which is an ES module there)
-function flattenRows(cues, collapsed, depth = 0, out = []) {
+function flattenRows(cues: LV.ListCue[] | undefined, collapsed: Set<string>, depth = 0, out: LV.ListRow[] = []) {
   let shut = false;
   for (const c of cues || []) {
     if (!depth && c.type === 'section') { shut = collapsed.has(c.id); out.push({ cue: c, depth, heading: true }); continue; }
@@ -20,9 +20,9 @@ function flattenRows(cues, collapsed, depth = 0, out = []) {
   return out;
 }
 
-const cue = (id, more = {}) => ({ id, type: 'memo', ...more });
-const ac = (id, more = {}) => cue(id, { continue: 'auto-continue', ...more });
-const af = (id, more = {}) => cue(id, { continue: 'auto-follow', ...more });
+const cue = (id: string, more: Partial<LV.ListCue> = {}): LV.ListCue => ({ id, type: 'memo', ...more });
+const ac = (id: string, more: Partial<LV.ListCue> = {}) => cue(id, { continue: 'auto-continue', ...more });
+const af = (id: string, more: Partial<LV.ListCue> = {}) => cue(id, { continue: 'auto-follow', ...more });
 
 test('a chain: each continue links a cue to the next GO would stand by on, past a section heading', () => {
   const cues = [ac('a'), af('b'), cue('c'), cue('d'), { id: 's', type: 'section' }, ac('e'), { id: 's2', type: 'section' }, cue('f')];
@@ -76,9 +76,9 @@ test('the line down a chain: up into a linked cue, down out of it, through the r
   assert.equal(marks.has('x'), false, 'a cue in no chain carries nothing');
   assert.deepEqual(marks.get('a'), { depth: 0, up: null, down: 'auto-continue', through: [], tick: true });
   assert.deepEqual(marks.get('g'), { depth: 0, up: 'auto-continue', down: 'auto-follow', through: [], tick: true });
-  assert.deepEqual(marks.get('k1').through, [{ depth: 0, kind: 'auto-follow' }], 'a group’s children between two linked cues: the line passes them');
-  assert.equal(marks.get('k1').tick, false);
-  assert.deepEqual(marks.get('s').through, [{ depth: 0, kind: 'auto-follow' }], 'and a heading between two linked cues');
+  assert.deepEqual(marks.get('k1')!.through, [{ depth: 0, kind: 'auto-follow' }], 'a group’s children between two linked cues: the line passes them');
+  assert.equal(marks.get('k1')!.tick, false);
+  assert.deepEqual(marks.get('s')!.through, [{ depth: 0, kind: 'auto-follow' }], 'and a heading between two linked cues');
   assert.deepEqual(marks.get('b'), { depth: 0, up: 'auto-follow', down: null, through: [], tick: true });
   assert.equal(marks.has('c'), false);
 });
@@ -88,13 +88,13 @@ test('a folded section stands for the chain it hides: a chain that goes into it 
   const links = LV.linksOf(cues), shut = new Set(['s']);
   const marks = LV.chainMarks(cues, flatten(cues, shut), shut, links);
   assert.deepEqual(marks.get('s'), { depth: 0, up: 'auto-continue', down: 'auto-follow', through: [], tick: true });
-  assert.deepEqual(marks.get('s2').through, [{ depth: 0, kind: 'auto-follow' }]);
-  assert.equal(marks.get('d').up, 'auto-follow');
+  assert.deepEqual(marks.get('s2')!.through, [{ depth: 0, kind: 'auto-follow' }]);
+  assert.equal(marks.get('d')!.up, 'auto-follow');
   // an empty folded section hands the line on
   const e = [ac('a'), { id: 'z', type: 'section' }, { id: 'y', type: 'section' }, cue('b')];
   const em = LV.chainMarks(e, flatten(e, new Set(['z'])), new Set(['z']), LV.linksOf(e));
-  assert.deepEqual(em.get('z').through, [{ depth: 0, kind: 'auto-continue' }]);
-  assert.equal(em.get('b').up, 'auto-continue');
+  assert.deepEqual(em.get('z')!.through, [{ depth: 0, kind: 'auto-continue' }]);
+  assert.equal(em.get('b')!.up, 'auto-continue');
 });
 
 test('a chain inside a group is drawn at the group’s depth, beside the line of the list', () => {
@@ -109,7 +109,7 @@ test('a light cue passed over carries the line by it', () => {
   const cues = [ac('a'), { id: 'lq', type: 'light' }, cue('b')];
   const m = LV.chainMarks(cues, flatten(cues, new Set()), new Set(), LV.linksOf(cues, { skipLights: true }), { skipLights: true });
   assert.deepEqual(m.get('lq'), { depth: 0, up: null, down: null, through: [{ depth: 0, kind: 'auto-continue' }], tick: false });
-  assert.equal(m.get('b').up, 'auto-continue');
+  assert.equal(m.get('b')!.up, 'auto-continue');
 });
 
 test('deleting a cue in the middle of a chain: the cue before it now continues into the next, and says so', () => {
@@ -146,6 +146,6 @@ test('zoom: from the normal row to the row that fits the whole list, on a log sc
   const kept = LV.keepZoom({ '/old': 0.2 }, '/show', 0.31234);
   assert.deepEqual(kept, { '/old': 0.2, '/show': 0.312 });
   assert.deepEqual(LV.keepZoom(kept, '/show', 1), { '/old': 0.2 }, 'back at normal: forgotten');
-  const many = {}; for (let i = 0; i < 45; i++) many[`/s${i}`] = 0.5;
+  const many: Record<string, number> = {}; for (let i = 0; i < 45; i++) many[`/s${i}`] = 0.5;
   assert.equal(Object.keys(LV.keepZoom(many, '/new', 0.5)).length, 40);
 });

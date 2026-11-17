@@ -7,8 +7,9 @@ import assert from 'node:assert/strict';
 import * as show from '../core/show/show';
 import { plan, parsePath, along } from '../core/net/network-cue';
 import { rig, build } from './helpers';
+import type { CueSpec } from '../core/show/ops';
 
-const one = (cue) => { const s = build([{ op: 'cue.add', ref: 'n', cue: { type: 'network', ...cue } }]); return { ...s, r: rig(s.doc) }; };
+const one = (cue: Partial<CueSpec>) => { const s = build([{ op: 'cue.add', ref: 'n', cue: { type: 'network', ...cue } }]); return { ...s, r: rig(s.doc) }; };
 
 test('a Network cue with a duration and no value to fade is sent again and again for that long', () => {
   const { r } = one({ message: '/keepalive 1', duration: 1, fps: 4 });
@@ -69,7 +70,7 @@ test('text and hex messages are sent once, as written, and the show says what is
   const { r, doc } = one({ message: 'PLAY #v#\\r', format: 'text', duration: 3 });
   r.engine.go(); r.advance(5);
   assert.deepEqual(r.sent, ['PLAY #v#\\r'], 'once, whatever its duration, and no token is filled in');
-  const why = (cue) => show.problems(one(cue).doc).map((p) => `${p.level}: ${p.why}`);
+  const why = (cue: Partial<CueSpec>) => show.problems(one(cue).doc).map((p) => `${p.level}: ${p.why}`);
   assert.deepEqual(show.problems(doc).map((p) => p.level), ['warning']);
   assert.match(why({ message: 'hello' })[0], /an OSC message starts with \//);
   assert.deepEqual(why({ message: 'hello', format: 'text' }), []);

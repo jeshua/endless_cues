@@ -80,7 +80,7 @@ Masters, in `build/mark/`:
 Made from them: `build/icon.png` (1024) and `build/icon.icns`, which `electron-builder` uses (16 px is the tiny
 drawing, 32 and 64 the small, 128 and up the plain); `build/document.icns` and `build/document.ico` (the icon of
 an `.ecshow` show: `build.fileAssociations` in `package.json`); `app/renderer/images/mark.svg` (the start screen
-and Settings ▸ About: the bone figure on the app's own ground); and on the site (`site/` in the service repository, `../endless_cues_service`, found by `bin/site-dir.js`; skipped if it is not there) `images/mark.svg`,
+and Settings ▸ About: the bone figure on the app's own ground); and on the site (`site/` in the service repository, `../endless_cues_service`, found by `bin/site-dir.ts`; skipped if it is not there) `images/mark.svg`,
 `images/mark-small.svg` (header and footer), `images/mark-mono.svg`, `images/favicon.svg`,
 `images/favicon-32.png`, `images/favicon-192.png`, `images/apple-touch-icon.png`, `favicon.ico`. The site's `og.png` is
 a photograph of a small page with the badge on it (see the site's `README.md`).
@@ -115,7 +115,7 @@ node build/mark.js --svg  # the SVGs only
 node site/stamp.js        # in ../endless_cues_service, after it, so the site's pages point at the new files
 ```
 
-`build/mark.js` is the one source: it reads the cut figure from `build/mark/buck-source.svg` and holds the three
+`build/mark.ts` is the one source: it reads the cut figure from `build/mark/buck-source.svg` and holds the three
 drawings (the crop, how much heavier, how far the holes are opened), the colours, the screen and the list of
 files. Never edit a generated file, and never edit the figure. After changing a drawing, look at the result at
 its true size before keeping it.

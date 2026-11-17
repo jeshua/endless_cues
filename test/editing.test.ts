@@ -8,6 +8,7 @@ import { applyOps } from '../core/show/ops';
 import * as clipboard from '../core/show/clipboard';
 import * as templates from '../core/show/templates';
 import { build, rig } from './helpers';
+import type { Built } from './helpers';
 
 const scene = () => build([
   { op: 'cue.add', ref: 'rain', cue: { type: 'audio', number: '1', name: 'Rain', file: 'media/rain.wav', gainDb: -6, bus: 'music' } },
@@ -32,8 +33,8 @@ test('clipboard: a copy pasted into the same show is made again, its inner targe
   assert.notEqual(rain2.id, s.id('rain'));
   assert.equal(rain2.number, undefined, 'a number the show already has is not pasted');
   assert.equal(rain2.file, 'media/rain.wav'); assert.equal(rain2.gainDb, -6);
-  assert.equal(storm2.children[1].target, rain2.id, 'a target inside the clip follows the copy');
-  assert.equal(storm2.children[2].target, storm2.children[0].id);
+  assert.equal(storm2.children![1].target, rain2.id, 'a target inside the clip follows the copy');
+  assert.equal(storm2.children![2].target, storm2.children![0].id);
   assert.deepEqual(show.problems(r.doc).filter((x) => x.level === 'error'), []);
 });
 
@@ -41,7 +42,7 @@ test('clipboard: a target outside the clip is kept in the same show; a cut paste
   const s = scene();
   const copy = clipboard.pasteOps(clipboard.take(s.doc, [s.id('g')]), s.doc, { after: s.id('memo') });
   const r = applyOps(s.doc, copy.ops);
-  assert.equal(r.doc.lists[0].cues[3].children[1].target, s.id('rain'));
+  assert.equal(r.doc.lists[0].cues[3].children![1].target, s.id('rain'));
   const cut = clipboard.pasteOps(clipboard.take(s.doc, [s.id('rain')], { cut: true }), s.doc, { after: s.id('memo') });
   assert.equal(cut.moved, true);
   assert.deepEqual(applyOps(s.doc, cut.ops).doc.lists[0].cues.map((c) => c.id), [s.id('g'), s.id('memo'), s.id('rain')]);
@@ -50,7 +51,7 @@ test('clipboard: a target outside the clip is kept in the same show; a cut paste
 test('clipboard: pasted into another show, sounds are found from the first show’s folder and lost targets are dropped', () => {
   const a = scene();
   const b = build([{ op: 'cue.add', cue: { type: 'memo', number: '1', name: 'Top' } }]);
-  const asked = [];
+  const asked: string[] = [];
   const clip = clipboard.take(a.doc, [s2(a, 'g'), s2(a, 'memo')], { showDir: path.join(path.sep, 'shows', 'A.ecshow'), cut: true });
   const p = clipboard.pasteOps(clip, b.doc, { list: b.doc.lists[0].id }, { fileFor: (abs) => { asked.push(abs); return `media/${path.basename(abs)}`; } });
   assert.equal(p.moved, false, 'a cut cannot be a move in another show');
@@ -58,14 +59,14 @@ test('clipboard: pasted into another show, sounds are found from the first show�
   const [top, storm, interval] = r.doc.lists[0].cues;
   assert.equal(top.name, 'Top');
   assert.deepEqual(asked, [path.join(path.sep, 'shows', 'A.ecshow', 'media', 'thunder.wav')]);
-  assert.equal(storm.children[0].file, 'media/thunder.wav');
+  assert.equal(storm.children![0].file, 'media/thunder.wav');
   assert.equal(storm.number, '2', 'a number that is free here comes across');
-  assert.equal(storm.children[1].target, undefined, 'the rain is not in this show');
-  assert.equal(storm.children[2].target, storm.children[0].id);
+  assert.equal(storm.children![1].target, undefined, 'the rain is not in this show');
+  assert.equal(storm.children![2].target, storm.children![0].id);
   assert.equal(interval.notes, 'house lights'); assert.equal(interval.number, '3');
-  assert.ok(show.problems(r.doc).some((x) => x.id === storm.children[1].id && /no target/.test(x.why)), 'and the cue says so');
+  assert.ok(show.problems(r.doc).some((x) => x.id === storm.children![1].id && /no target/.test(x.why)), 'and the cue says so');
 });
-function s2(s, ref) { return s.id(ref); }
+function s2(s: Built, ref: string) { return s.id(ref); }
 
 test('clipboard: a cue aimed at one pasted after it still finds it', () => {
   const s = build([
@@ -87,7 +88,7 @@ test('paste cue properties: the chosen fields only, and only onto cues that have
     { op: 'cue.add', ref: 'f', cue: { type: 'fade', target: '@a', duration: 7 } },
     { op: 'cue.add', ref: 'w', cue: { type: 'wait', duration: 1 } },
   ]);
-  const cue = (ref, doc = s.doc) => show.index(doc).byId.get(s.id(ref));
+  const cue = (ref: string, doc = s.doc) => show.index(doc).byId.get(s.id(ref))!;
   const offered = clipboard.properties(cue('a'));
   assert.ok(offered.some((p) => p.key === 'gainDb' && p.set) && offered.some((p) => p.key === 'fadeOut' && !p.set));
   assert.ok(!offered.some((p) => p.key === 'number'), 'a number is one cue’s');
@@ -114,7 +115,7 @@ test('templates: a new cue starts from its type’s template; what belongs to th
   const made = applyOps(doc, [{ op: 'cue.add', cue: templates.withTemplate(doc, { type: 'fade' }) }]).doc.lists[0].cues[1];
   assert.equal(made.stopTarget, true); assert.equal(made.name, undefined); assert.equal(made.number, undefined);
   // it is kept by the show file, and a show without any reads as none
-  assert.deepEqual(show.normalise(JSON.parse(show.stringify(doc))).doc.settings.templates.fade.db, -30);
+  assert.deepEqual(show.normalise(JSON.parse(show.stringify(doc))).doc.settings.templates.fade!.db, -30);
   assert.deepEqual(show.newShow('x').settings.templates, {});
   assert.deepEqual(show.newShow('x').settings.editing, { autoNumber: true, numberStep: 1, lockPlayhead: true, longSoundsToMusic: false });
 });

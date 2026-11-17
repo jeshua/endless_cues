@@ -8,13 +8,17 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { Smoke, Snap } from './smoke';
 
-async function run({ host, win, check, until, page, sleep, shot: take }) {
-  const shot = async (name) => { try { if (take) await take(name); } catch { /* no picture */ } };
-  const snap = () => host.snapshot();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
+/** The pointing ring as `ringed` finds it. */
+interface Ring { near: boolean; say: string; pulse: string; pointer: string; still: boolean }
+
+async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const shot = async (name: string) => { try { if (take) await take(name); } catch { /* no picture */ } };
+  const snap = () => host.snapshot() as Snap;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
   // whether the ring is drawn around the element `sel` finds (within a few pixels), and its words
-  const ringed = (sel) => page(`(() => {
+  const ringed = (sel: string) => page<Ring | null>(`(() => {
     const ring = document.querySelector('[data-point-ring]'), el = [...document.querySelectorAll(${JSON.stringify(sel)})].find((e) => e.getBoundingClientRect().width > 0);
     if (!ring || !el) return null;
     const a = ring.getBoundingClientRect(), b = el.getBoundingClientRect();
@@ -41,12 +45,12 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   // ── the built-in helper: where a cue's colour is changed, and the key for Panic ──
   await page(`window.ec.cmd({ op: 'ask', text: 'Where do I change the colour of a cue?' })`);
   await until(() => /Colour/.test(lastSaid().text || ''), 4000);
-  check('the helper says where a cue’s colour is changed, from the app’s guide', /Basics ▸ Colour/.test(lastSaid().text || '') && (lastSaid().points || [])[0] && lastSaid().points[0].target === 'inspector-field:color', lastSaid());
+  check('the helper says where a cue’s colour is changed, from the app’s guide', /Basics ▸ Colour/.test(lastSaid().text || '') && (lastSaid().points || [])[0] && lastSaid().points![0].target === 'inspector-field:color', lastSaid());
   const colour = await until(async () => { const r = await ringed('[data-field="color"]'); return r && r.near; }, 3000);
-  check('…and the Colour field is ringed in the inspector (a cue selected, Basics brought forward)', colour && (await has('[data-insp-tab="basics"].on')) && snap().assistant && (await ringed('[data-field="color"]')).pointer === 'none', await ringed('[data-field="color"]'));
+  check('…and the Colour field is ringed in the inspector (a cue selected, Basics brought forward)', colour && (await has('[data-insp-tab="basics"].on')) && snap().assistant && (await ringed('[data-field="color"]'))!.pointer === 'none', await ringed('[data-field="color"]'));
   // (a computer with animations off, as Windows Server is, asks for reduced motion: then the ring holds still)
-  const rung = (await ringed('[data-field="color"]')) || {};
-  check('…its words beside it, and the ring breathes in the accent (or holds still when the computer asks for less motion)', /Colour/.test(rung.say) && rung.pulse === (rung.still ? 'none' : 'point-pulse'), rung);
+  const rung: Partial<Ring> = (await ringed('[data-field="color"]')) || {};
+  check('…its words beside it, and the ring breathes in the accent (or holds still when the computer asks for less motion)', /Colour/.test(rung.say!) && rung.pulse === (rung.still ? 'none' : 'point-pulse'), rung);
   check('…and the reply has a “Show me”', await until(() => has('[data-assistant] [data-show-me="inspector-field:color"]'), 2000));
   check('…while nothing was changed: the show has no unsaved edit', !snap().show.dirty, snap().show.unsaved);
   await shot('guide-1-colour');
@@ -65,8 +69,8 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   check('pointing at the inspector’s Triggers tab brings it forward, and the window says it could', trig && trig.ok === true && (await has('[data-insp-tab="triggers"].on')), trig);
   check('…the tab is ringed, with the words given', await until(async () => { const r = await ringed('[data-insp-tab="triggers"]'); return r && r.near && r.say === 'Hotkeys and MIDI notes'; }, 2000), await ringed('[data-insp-tab="triggers"]'));
   await shot('guide-3-triggers');
-  const rain = host.document.doc.lists[0].cues.find((c) => c.children && c.children.some((k) => k.name === 'Rain'));
-  const inner = rain.children.find((k) => k.name === 'Rain');
+  const rain = host.document.doc.lists[0].cues.find((c) => c.children && c.children.some((k) => k.name === 'Rain'))!;
+  const inner = rain.children!.find((k) => k.name === 'Rain')!;
   // (a cue inside a group, folded away first: pointing unfolds it and selects it)
   await page(`window.ec.cmd({ op: 'state' })`);
   const row = await host.cmd({ op: 'point', target: `cue:${inner.id}`, say: 'This one' });

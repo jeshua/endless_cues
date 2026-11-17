@@ -5,9 +5,14 @@ import { stripOf, filterOf, crossGain, cleanSetting, withSetting } from '../core
 import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import { rig, build } from './helpers';
+import type { Bus } from '../core/show/types';
+import type { CueEngine } from '../core/engine/cue-engine';
+
+/** A line of Active Cues that is a sound (it has the loops armed on it). */
+type SoundRow = Extract<ReturnType<CueEngine['active']>[number], { armed: unknown }>;
 
 test('a bus at rest changes nothing', () => {
-  assert.deepStrictEqual(stripOf({ id: 'music', name: 'Music', db: -3 }), { name: 'music', low: 0, mid: 0, high: 0, filter: null, pan: 0, gate: 1 });
+  assert.deepStrictEqual(stripOf({ id: 'music', name: 'Music', db: -3 } as Bus), { name: 'music', low: 0, mid: 0, high: 0, filter: null, pan: 0, gate: 1 });
 });
 
 test('the filter knob: a low-pass to the left, a high-pass to the right, out in the middle', () => {
@@ -15,8 +20,8 @@ test('the filter knob: a low-pass to the left, a high-pass to the right, out in 
   assert.strictEqual(filterOf(0.01), null);
   assert.deepStrictEqual(filterOf(-1), { type: 'lowpass', hz: 80 });
   assert.deepStrictEqual(filterOf(1), { type: 'highpass', hz: 8000 });
-  assert.ok(filterOf(-0.5).hz > 80 && filterOf(-0.5).hz < 20000);
-  assert.ok(filterOf(0.25).hz < filterOf(0.75).hz);
+  assert.ok(filterOf(-0.5)!.hz > 80 && filterOf(-0.5)!.hz < 20000);
+  assert.ok(filterOf(0.25)!.hz < filterOf(0.75)!.hz);
 });
 
 test('the crossfader: both sides full in the middle, one gone at the other end', () => {
@@ -68,6 +73,6 @@ test('a loop of any length can be held from where the track is, and let go', () 
   const a = id('a');
   assert.strictEqual(r.engine.toggleHold(a, { start: 10, end: 14 }), null);            // not one of the track's own loops: refused…
   assert.strictEqual(r.engine.toggleHold(a, { start: 10, end: 14 }, true), 'armed');   // …unless it is asked for as a free loop
-  const armed = r.engine.active().find((x) => x.id === a).armed;
+  const armed = (r.engine.active().find((x) => x.id === a) as SoundRow).armed;
   assert.deepStrictEqual(armed, [{ start: 10, end: 14 }]);
 });

@@ -9,18 +9,23 @@
  * `entries` are the hub's monitor entries. `every` is the usual number of seconds between two of that message
  * (null with fewer than two). Pure: it reads what was heard and sends nothing.
  */
-function senders(entries = [], { devices = [], patches = [] } = {}) {
+import type { MonitorEntry } from '../net/hub';
+
+/** Someone heard on the network: the messages it sent, and how often. */
+export interface Sender { address: string; port: number; count: number; lastAt: number; messages: { address: string; count: number; every: number | null }[] }
+
+function senders(entries: MonitorEntry[] = [], { devices = [] as { host?: string }[], patches = [] as { host?: string }[] } = {}): Sender[] {
   const ours = new Set([...devices, ...patches].map((x) => x && x.host).filter(Boolean));
-  const by = new Map();
+  const by = new Map<string, { address: string; port: number; count: number; lastAt: number; seen: Map<string, number[]> }>();
   for (const e of entries) {
     if (!e || e.dir !== 'in' || !e.from || e.patch || e.via === 'midi' || ours.has(e.from.address)) continue;
     const key = `${e.from.address}:${e.from.port}`;
     if (!by.has(key)) by.set(key, { address: e.from.address, port: e.from.port, count: 0, lastAt: 0, seen: new Map() });
-    const s = by.get(key);
+    const s = by.get(key)!;
     s.count++; s.lastAt = Math.max(s.lastAt, e.at || 0);
     const address = String(e.text || '').split(/\s+/)[0];
     if (!s.seen.has(address)) s.seen.set(address, []);
-    s.seen.get(address).push(e.at || 0);
+    s.seen.get(address)!.push(e.at || 0);
   }
   return [...by.values()].sort((a, b) => b.lastAt - a.lastAt).map((s) => ({
     address: s.address, port: s.port, count: s.count, lastAt: s.lastAt,

@@ -12,10 +12,21 @@
  * resumes and ends, and is handed each finished entry to write down. Plain
  * node, no clock of its own but the one it is given.
  */
+/** What the host says of a sound as it starts. */
+export interface PlayInfo { file?: string; number?: string; name?: string; mode?: string }
+/** One sound that played: when it started (ISO, and ms), what it was, and the seconds it sounded. */
+export interface PlayEntry { at: string; startedMs: number; file: string; number: string; name: string; secs: number; mode: string }
+
 const COLUMNS = ['date', 'started', 'cue', 'name', 'file', 'seconds', 'length', 'mode'];
 
 class PlayLog {
-  constructor({ now = () => Date.now(), onEntry = null, max = 2000 } = {}) {
+  now: () => number;
+  onEntry: ((entry: PlayEntry) => void) | null;
+  max: number;
+  open: Map<string, { at: number; info: PlayInfo; pausedAt: number | null; pausedFor: number }>;
+  done: PlayEntry[];
+
+  constructor({ now = () => Date.now(), onEntry = null, max = 2000 }: { now?: () => number; onEntry?: ((entry: PlayEntry) => void) | null; max?: number } = {}) {
     this.now = now;
     this.onEntry = onEntry;
     this.max = max;
@@ -24,15 +35,15 @@ class PlayLog {
   }
 
   /** A sound starts. `info`: { file, number, name, mode }. A key that is already playing is ended first (a retrigger is two plays). */
-  started(key, info = {}) {
+  started(key: string, info: PlayInfo = {}) {
     if (this.open.has(key)) this.ended(key);
     this.open.set(key, { at: this.now(), info, pausedAt: null, pausedFor: 0 });
   }
-  paused(key) { const o = this.open.get(key); if (o && o.pausedAt == null) o.pausedAt = this.now(); }
-  resumed(key) { const o = this.open.get(key); if (o && o.pausedAt != null) { o.pausedFor += this.now() - o.pausedAt; o.pausedAt = null; } }
+  paused(key: string) { const o = this.open.get(key); if (o && o.pausedAt == null) o.pausedAt = this.now(); }
+  resumed(key: string) { const o = this.open.get(key); if (o && o.pausedAt != null) { o.pausedFor += this.now() - o.pausedAt; o.pausedAt = null; } }
 
   /** A sound has ended (played out, stopped, faded out). Returns its entry, or null when it was not playing. */
-  ended(key) {
+  ended(key: string): PlayEntry | null {
     const o = this.open.get(key);
     if (!o) return null;
     this.open.delete(key);
@@ -50,16 +61,16 @@ class PlayLog {
   entries() { return this.done.slice(); }
 }
 
-const p2 = (n) => String(n).padStart(2, '0');
-const cell = (v) => { const s = String(v ?? ''); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const p2 = (n: number) => String(n).padStart(2, '0');
+const cell = (v: unknown) => { const s = String(v ?? ''); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 /** An entry as a line of CSV: the date and time are this computer's local ones, as a person would report them. */
-function csvLine(e) {
+function csvLine(e: PlayEntry) {
   const d = new Date(e.startedMs != null ? e.startedMs : e.at);
   const m = Math.floor(e.secs / 60), s = Math.round(e.secs - m * 60);
   return [`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`, `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`,
           e.number, e.name, e.file, e.secs.toFixed(1), `${m}:${p2(s === 60 ? 59 : s)}`, e.mode].map(cell).join(',');
 }
 const CSV_HEAD = COLUMNS.join(',');
-const toCsv = (entries) => [CSV_HEAD, ...entries.map(csvLine)].join('\n') + '\n';
+const toCsv = (entries: PlayEntry[]) => [CSV_HEAD, ...entries.map(csvLine)].join('\n') + '\n';
 
 export { PlayLog, COLUMNS, CSV_HEAD, csvLine, toCsv };

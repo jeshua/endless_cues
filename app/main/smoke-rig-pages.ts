@@ -13,6 +13,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { Smoke, Snap } from './smoke';
+import type { Op } from '../../core/show/ops';
 
 const NOW = 1731700000000;
 const FIXTURES = {
@@ -50,22 +52,22 @@ const FIXTURES = {
       { label: 'Is everything ready?', text: 'Is everything ready?', offline: true }, { label: 'Write firmware for Lantern', text: 'Write firmware for Lantern.', offline: true }], next: { label: 'Next: ask me to hand the show over.', text: '' }, setup: null },
   },
 };
-const DEVICES = [
+const DEVICES: Op[] = [
   { op: 'device.add', device: { id: 'lantern', name: 'Lantern', model: 'ec-prop-light', host: '127.0.0.1', notes: 'In the stage-left wing. Always-on power bank.' } },
   { op: 'device.add', device: { id: 'desk_a', name: 'Lighting desk', model: 'etc-eos', host: '10.0.0.20' } },
   { op: 'device.add', device: { id: 'projector', name: 'The projector that hangs over the centre aisle, upstage rail 2', kind: 'media', via: 'text', host: '10.0.0.77', port: 4352, protocol: 'tcp',
     commands: [{ id: 'power_on', label: 'Power on and open the shutter slowly now', template: '%1POWR {on}', params: [{ key: 'on', label: 'On', kind: 'enum', options: ['0', '1'], default: '1' }] }] } },
 ];
 
-async function run({ host, win, check, until, page, sleep, shot }) {
-  const snap = () => host.snapshot();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
-  const text = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? el.innerText : null; })()`);
-  const fixture = (f) => page(`window.ecFixture ? (window.ecFixture(${JSON.stringify(f)}), true) : false`);
-  const theme = (t) => page(`document.documentElement.dataset.theme = ${JSON.stringify(t)}`);
+async function run({ host, win, check, until, page, sleep, shot }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const snap = () => host.snapshot() as Snap;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+  const text = (sel: string) => page<string | null>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); return el ? el.innerText : null; })()`);
+  const fixture = (f: unknown) => page(`window.ecFixture ? (window.ecFixture(${JSON.stringify(f)}), true) : false`);
+  const theme = (t: string) => page(`document.documentElement.dataset.theme = ${JSON.stringify(t)}`);
   // nothing on the page may be wider than the box it is in (a long name must wrap or be cut with its title, never push out)
-  const overflow = () => page(`(() => { const root = document.querySelector('[data-rig]'); if (!root) return ['no rig']; const out = []; const lim = root.getBoundingClientRect().right + 1;
+  const overflow = () => page<string[]>(`(() => { const root = document.querySelector('[data-rig]'); if (!root) return ['no rig']; const out = []; const lim = root.getBoundingClientRect().right + 1;
     for (const el of root.querySelectorAll('*')) { const r = el.getBoundingClientRect(); if (r.width && r.right > lim && getComputedStyle(el).position !== 'fixed') out.push((el.className || el.tagName) + ' ' + Math.round(r.right - lim)); }
     return out.slice(0, 5); })()`);
 
@@ -78,7 +80,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   // ── the view switch, and a plain show's Rig ──
   check('the tabs are always there, with Rig in them', await has('.titlebar [data-tabs] [data-tab="rig"][data-view-rig]'));
   const { Menu } = require('electron');
-  const rigItem = (() => { const walk = (m) => { for (const i of m.items) { if (i.label === 'Rig') return i; if (i.submenu) { const x = walk(i.submenu); if (x) return x; } } return null; }; return walk(Menu.getApplicationMenu()); })();
+  const rigItem = (() => { const walk = (m: Electron.Menu): Electron.MenuItem | null => { for (const i of m.items) { if (i.label === 'Rig') return i; if (i.submenu) { const x = walk(i.submenu); if (x) return x; } } return null; }; return walk(Menu.getApplicationMenu()); })();
   check('View ▸ Rig is in the menu, on ⇧⌘R', !!rigItem && /Shift\+R$/i.test(String(rigItem.accelerator || '').replace('CmdOrCtrl+', '')), rigItem && rigItem.accelerator);
   win.webContents.send('ec-menu', 'view-rig');
   check('…and goes to the Rig page', await until(() => has('[data-rig]'), 3000));
@@ -98,7 +100,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   await shot('rig-2-add-from-a-model');
   await click('[data-rig-model="ec-prop-light"]');
   const added = () => (host.document.doc.settings.rig.devices || []).find((d) => d.model === 'ec-prop-light');
-  check('choosing one adds that device with its commands, as one edit', await until(() => added() && added().commands.length >= 5 && snap().show.canUndo, 3000), added());
+  check('choosing one adds that device with its commands, as one edit', await until(() => added() && added()!.commands.length >= 5 && snap().show.canUndo, 3000), added());
   check('…selects it, with its editor open and its name ready to type', await until(() => page(`(() => { const e = document.querySelector('[data-rig-editor]'); return !!e && document.activeElement === e.querySelector('[data-rig-name] input'); })()`), 3000));
   host.cmd({ op: 'undo' });
   await until(() => !added(), 2000);
@@ -171,7 +173,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   check('a prop that answered is offered, by name and address', await until(async () => /lantern_b answered at 10\.0\.0\.43/.test((await text('.rig-found')) || ''), 2000), await text('.rig-found'));
   await click('.rig-found button');
   const b = () => (host.document.doc.settings.rig.devices || []).find((d) => d.id === 'lantern_b');
-  check('…Add it makes it a device with the id it answers by (so the next look knows it), named to be read', await until(() => !!b() && b().name === 'Lantern b' && b().host === '10.0.0.43' && b().model === 'ec-prop-light', 3000), b());
+  check('…Add it makes it a device with the id it answers by (so the next look knows it), named to be read', await until(() => !!b() && b()!.name === 'Lantern b' && b()!.host === '10.0.0.43' && b()!.model === 'ec-prop-light', 3000), b());
   check('…and it is not offered a second time', await until(async () => !(await has('.rig-found')), 2000), await text('.rig-found'));
   host.cmd({ op: 'undo' });
   await fixture(null);
@@ -192,7 +194,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   if (!(await has('[data-rig-editor="lantern"]'))) { await click('[data-rig-row="device.lantern"]'); await until(() => has('[data-rig-editor="lantern"]'), 2000); }
   await click('[data-rig-cue="identify"]');
   const cueOf = () => host.document.doc.lists[0].cues.find((c) => c.type === 'device');
-  check('+cue adds a Device cue for that command, and says so', await until(() => !!cueOf() && cueOf().device === 'lantern' && cueOf().command === 'identify', 3000) && await until(async () => /Added “Lantern ▸ Identify”/.test((await text('.toast')) || ''), 3000), [cueOf(), await text('.toast')]);
+  check('+cue adds a Device cue for that command, and says so', await until(() => !!cueOf() && cueOf()!.device === 'lantern' && cueOf()!.command === 'identify', 3000) && await until(async () => /Added “Lantern ▸ Identify”/.test((await text('.toast')) || ''), 3000), [cueOf(), await text('.toast')]);
   win.webContents.send('ec-menu', 'view-rig');
   await until(() => has('.list table'), 3000);
   check('a Device cue’s row reads “Lantern ▸ Identify”, with its glyph', await until(() => page(`[...document.querySelectorAll('.list tbody tr')].some((r) => /Lantern ▸ Identify/.test(r.innerText) && /◈/.test(r.querySelector('.c-type').innerText))`), 3000));
@@ -202,13 +204,13 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   check('its inspector offers the show’s devices and that device’s commands', await until(() => page(`(() => { const d = document.querySelector('[data-field="device"] select'), c = document.querySelector('[data-field="command"] select'); return !!d && !!c && d.value === 'lantern' && c.value === 'identify' && [...d.options].some((o) => o.textContent === 'Lighting desk') && [...c.options].some((o) => o.textContent === 'Effect'); })()`), 3000));
   check('…and no Fade to for a command with nothing to fade', !(await has('[data-field="fadeTo"]')));
   await page(`(() => { const c = document.querySelector('[data-field="command"] select'); c.value = 'effect'; c.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  check('choosing another command changes the cue, and its values are a control each (a list for a choice)', await until(() => cueOf().command === 'effect', 2000) && await until(() => page(`(() => { const s = document.querySelector('[data-field="args"] select'); return !!s && [...s.options].some((o) => o.value === 'flicker'); })()`), 2000));
+  check('choosing another command changes the cue, and its values are a control each (a list for a choice)', await until(() => cueOf()!.command === 'effect', 2000) && await until(() => page(`(() => { const s = document.querySelector('[data-field="args"] select'); return !!s && [...s.options].some((o) => o.value === 'flicker'); })()`), 2000));
   await page(`(() => { const s = document.querySelector('[data-field="args"] select'); s.value = 'flicker'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  check('…a value chosen there is the cue’s, and the row says it', await until(() => (cueOf().args || {}).name === 'flicker', 2000) && await until(() => page(`[...document.querySelectorAll('.list tbody tr')].some((r) => /Lantern ▸ Effect \\(flicker\\)/.test(r.innerText))`), 2000), cueOf());
+  check('…a value chosen there is the cue’s, and the row says it', await until(() => (cueOf()!.args || {}).name === 'flicker', 2000) && await until(() => page(`[...document.querySelectorAll('.list tbody tr')].some((r) => /Lantern ▸ Effect \\(flicker\\)/.test(r.innerText))`), 2000), cueOf());
   await page(`(() => { const c = document.querySelector('[data-field="command"] select'); c.value = 'level'; c.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   check('a command with a value that fades offers Fade to and Duration', await until(() => has('[data-field="fadeTo"]'), 2000) && await has('[data-field="duration"]'));
   await shot('rig-8-device-cue-inspector');
-  host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: cueOf().id, props: { command: 'identify', args: null } }], label: 'back to identify' });
+  host.cmd({ op: 'edit', ops: [{ op: 'cue.set', id: cueOf()!.id, props: { command: 'identify', args: null } }], label: 'back to identify' });
 
   // ── Space on the Rig page is still GO ──
   win.webContents.send('ec-menu', 'view-rig');
@@ -268,28 +270,28 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   await shot('rig-10b-write-firmware');
   await page(`(() => { const b = document.querySelector('[data-rig-fw-field="board"] select'); b.value = 'esp32-c3'; b.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await click('[data-rig-fw-write]');
-  check('…Write the files stages the kit’s files for this prop, set up as chosen, in the assistant’s drawer', await until(() => snap().proposal && (snap().proposal.files || []).some((f) => f.path === 'props/lantern/lantern.ino'), 3000) && /BOARD_LABEL +"esp32-c3"/.test(((snap().proposal.files || []).find((f) => f.path === 'props/lantern/config.h') || {}).text || '') && await until(() => has('[data-review-files]'), 3000),
-    snap().proposal && snap().proposal.files.map((f) => f.path));
+  check('…Write the files stages the kit’s files for this prop, set up as chosen, in the assistant’s drawer', await until(() => snap().proposal && (snap().proposal!.files || []).some((f) => f.path === 'props/lantern/lantern.ino'), 3000) && /BOARD_LABEL +"esp32-c3"/.test(((snap().proposal!.files || []).find((f) => f.path === 'props/lantern/config.h') || {}).text || '') && await until(() => has('[data-review-files]'), 3000),
+    snap().proposal && snap().proposal!.files.map((f) => f.path));
   check('…the README of a file already there is marked as replacing it', await until(async () => /replaces/.test((await text('[data-review-file="props/lantern/README.md"]')) || ''), 2000), await text('[data-review-file="props/lantern/README.md"]'));
   await click('[data-review] [data-accept]');
   check('accepted, the drawer says where the firmware is and what to open', await until(async () => /README\.md/.test((await text('[data-written="props/lantern"]')) || ''), 3000) && fs.existsSync(path.join(dir, 'props/lantern/lantern.ino')), await text('[data-assistant] .drawer-body'));
 
   // ── the assistant's first screen: what the host really says of this show ──
   await page(`window.ec.cmd({ op: 'assistant-reset' })`);
-  const first = () => snap().assistant.first || {};
-  check('before the first message the drawer is about this show: its line, and its asks as buttons', await until(() => page(`(() => { const f = document.querySelector('[data-first]'); return !!f && f.querySelector('.fline').innerText === ${JSON.stringify(first().line || '?')} && f.querySelectorAll('[data-ask]').length === ${(first().asks || []).length} && !!document.querySelector('.compose textarea'); })()`), 3000) && first().state === 'devices' && first().asks.length >= 2, [first(), await text('[data-assistant] .drawer-body')]);
+  const first = (): Partial<NonNullable<Snap['assistant']['first']>> => snap().assistant.first || {};
+  check('before the first message the drawer is about this show: its line, and its asks as buttons', await until(() => page(`(() => { const f = document.querySelector('[data-first]'); return !!f && f.querySelector('.fline').innerText === ${JSON.stringify(first().line || '?')} && f.querySelectorAll('[data-ask]').length === ${(first().asks || []).length} && !!document.querySelector('.compose textarea'); })()`), 3000) && first().state === 'devices' && first().asks!.length >= 2, [first(), await text('[data-assistant] .drawer-body')]);
   await shot('rig-11-drawer-first-screen');
-  for (const k of ['folder', 'imported', 'cues']) { await fixture({ first: FIXTURES.first[k] }); await shot(`rig-12-drawer-${k}`); }
+  for (const k of ['folder', 'imported', 'cues'] as const) { await fixture({ first: FIXTURES.first[k] }); await shot(`rig-12-drawer-${k}`); }
   await fixture(null);
   // every ask the built-in helper offers here does its job when pressed (none falls through to "here is what I can do")
-  const labels = first().asks.map((k) => k.label);
+  const labels = first().asks!.map((k) => k.label);
   for (let i = 0; i < labels.length; i++) {
     const n = (snap().assistant.transcript || []).length;
     await page(`[...document.querySelectorAll('[data-first] [data-ask], [data-first-after] [data-ask]')].find((b) => b.textContent === ${JSON.stringify(labels[i])}).click()`);
     await until(() => (snap().assistant.transcript || []).length >= n + 2 && !snap().assistant.busy, 8000);
-    const said = ((snap().assistant.transcript || []).at(-1) || {});
+    const said: Partial<NonNullable<Snap['assistant']['transcript']>[number]> = ((snap().assistant.transcript || []).at(-1) || {});
     check(`pressing “${labels[i]}” sends it, and the helper does that job`, said.role === 'assistant' && !said.error && !/^The built-in helper has no model/.test(said.text || '') && !/^I could not/.test(said.text || ''), said.text);
-    if (snap().proposal) host.cmd({ op: 'reject', id: snap().proposal.id });
+    if (snap().proposal) host.cmd({ op: 'reject', id: snap().proposal!.id });
     await page(`window.ec.cmd({ op: 'assistant-reset' })`);
     await until(() => has('[data-first]'), 2000);
   }
@@ -302,7 +304,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   await until(() => snap().assistant.available === false, 3000);
   const rows = ((first().setup || {}).rows || []).map((r) => r.id);
   check('with the provider off the drawer shows who could answer (the host’s rows, the built-in helper last), and no composer', rows.length >= 3 && rows.at(-1) === 'helper' && await until(() => page(`(() => { const w = document.querySelector('[data-who]'); return !!w && [...w.querySelectorAll('[data-provider]')].map((b) => b.dataset.provider).join() === ${JSON.stringify(rows.join())} && !document.querySelector('.compose textarea'); })()`), 3000), [rows, await text('[data-assistant] .drawer-body')]);
-  check('…and only the asks the built-in helper can do', first().asks.every((k) => k.offline) && (await page(`document.querySelectorAll('[data-first] [data-ask]').length`)) === first().asks.length, first().asks);
+  check('…and only the asks the built-in helper can do', first().asks!.every((k) => k.offline) && (await page(`document.querySelectorAll('[data-first] [data-ask]').length`)) === first().asks!.length, first().asks);
   await shot('rig-13-drawer-no-model');
   // an ask the helper can do, pressed with nobody answering: the helper is switched on, and it is sent
   await page(`[...document.querySelectorAll('[data-first] [data-ask]')].find((b) => b.textContent === 'Is everything ready?').click()`);
@@ -323,13 +325,13 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   check('Settings ▸ Assistant offers the guide for coding agents, and says what is sent', await until(async () => (await has('[data-agent-guide]')) && /each device’s name, address and commands/.test((await text('.modal .pane')) || '') && /Built-in helper/.test((await text('.modal .pane')) || ''), 3000));
   // the guide, with no model: Settings hands over to the drawer, where its two files wait to be read and accepted
   await click('[data-agent-guide]');
-  check('Write the guide… closes Settings and shows its two files for review in the assistant’s drawer', await until(async () => !(await has('.modal')) && /AGENTS\.md/.test((await text('[data-review-files] ~ [data-review-file]')) || '') && (snap().proposal.files || []).length === 2, 4000), snap().proposal && snap().proposal.files);
+  check('Write the guide… closes Settings and shows its two files for review in the assistant’s drawer', await until(async () => !(await has('.modal')) && /AGENTS\.md/.test((await text('[data-review-files] ~ [data-review-file]')) || '') && (snap().proposal!.files || []).length === 2, 4000), snap().proposal && snap().proposal!.files);
   // (from source: node and the repository's bin; installed: the app's own program run as Node, on the bin in its archive)
   const packaged = require('electron').app.isPackaged;
   check(`…with command lines for this computer (${packaged ? 'installed: the app’s own program as Node' : 'run from source: node and the repository’s bin'})`, (packaged
     ? /claude mcp add endless-cues --env ELECTRON_RUN_AS_NODE=1 -- "[^"\n]+" "[^"\n]*app\.asar[\\/]bin[\\/]ec-mcp\.js"/
-    : /claude mcp add endless-cues -- node "?[^"\n]*bin[\\/]ec-mcp\.js/).test(((snap().proposal.files || [])[0] || {}).text || ''), (((snap().proposal.files || [])[0] || {}).text || '').split('\n').find((l) => /claude mcp add/.test(l)));
-  if (snap().proposal) host.cmd({ op: 'reject', id: snap().proposal.id });
+    : /claude mcp add endless-cues -- node "?[^"\n]*bin[\\/]ec-mcp\.js/).test(((snap().proposal!.files || [])[0] || {}).text || ''), (((snap().proposal!.files || [])[0] || {}).text || '').split('\n').find((l) => /claude mcp add/.test(l)));
+  if (snap().proposal) host.cmd({ op: 'reject', id: snap().proposal!.id });
   win.webContents.send('ec-menu', 'assistant');
   await until(async () => !(await has('[data-assistant]')), 2000);
   await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: ${process.platform === 'darwin'}, ctrlKey: ${process.platform !== 'darwin'}, bubbles: true }))`);
@@ -350,7 +352,7 @@ async function run({ host, win, check, until, page, sleep, shot }) {
   const sounds = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-folder-')), 'Spring Concert');
   fs.mkdirSync(sounds, { recursive: true });
   require('../../examples/make-demo').writeWav(path.join(sounds, '01 Overture.wav'), new Float32Array(4410));
-  const r = await page(`window.ec.app({ op: 'start-in-folder', path: ${JSON.stringify(sounds)} })`);
+  const r = await page<{ ok?: boolean }>(`window.ec.app({ op: 'start-in-folder', path: ${JSON.stringify(sounds)} })`);
   check('Start from a folder makes that folder the show: a show.json beside the sounds, named for the folder, and no cues made', r && r.ok && await until(() => snap().show.dir === sounds && snap().show.title === 'Spring Concert', 3000) && fs.existsSync(path.join(sounds, 'show.json')) && fs.existsSync(path.join(sounds, '01 Overture.wav')) && snap().rows.length === 0, [r, snap().show]);
   check('…and nothing else is put in the folder (no empty media folder beside their sounds)', fs.readdirSync(sounds).sort().join() === '01 Overture.wav,show.json', fs.readdirSync(sounds));
   check('…and the assistant’s drawer opens on it, saying what is in the folder', await until(async () => /^1 sound not in a cue yet\./.test((await text('[data-first] .fline')) || ''), 3000), await text('[data-assistant] .drawer-body'));

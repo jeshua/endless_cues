@@ -16,44 +16,52 @@ import * as show from './show';
 import * as midi from '../net/midi';
 import * as timecode from '../timecode/timecode';
 import { defaultName } from './cue-types';
+import type { MidiMessage } from '../net/midi';
+import type { ShowDoc, Cue } from './types';
 
-const COMMAND_LABELS = { go: 'GO', panic: 'Panic', pause: 'Pause all', resume: 'Resume all', next: 'Playhead down', previous: 'Playhead up' };
-const KINDS = [['hotkey', 'hotkey'], ['osc', 'oscTrigger'], ['midi', 'midiTrigger'], ['clock', 'clockTrigger'], ['timecode', 'timecodeTrigger']];
-const same = (a, b) => a === undefined || b === undefined || a === b;
+export type TriggerKind = 'hotkey' | 'osc' | 'midi' | 'clock' | 'timecode';
+/** One trigger: a cue's (`id`), or a show command's (`what`: "GO"), with whatever else it would set off and why it cannot work. */
+export interface TriggerRow { kind: TriggerKind; text: string; id: string | null; number: string; name: string; list: string; what: string; clash: string[]; bad: string }
+/** A row as it is compared: the key or message it answers to. */
+interface Compared extends TriggerRow { key?: string | null; msg?: MidiMessage; clock?: ReturnType<typeof show.parseClock> }
+
+const COMMAND_LABELS: Record<string, string> = { go: 'GO', panic: 'Panic', pause: 'Pause all', resume: 'Resume all', next: 'Playhead down', previous: 'Playhead up' };
+const KINDS: [TriggerKind, string][] = [['hotkey', 'hotkey'], ['osc', 'oscTrigger'], ['midi', 'midiTrigger'], ['clock', 'clockTrigger'], ['timecode', 'timecodeTrigger']];
+const same = (a: unknown, b: unknown) => a === undefined || b === undefined || a === b;
 /** Whether one arriving MIDI message could be both of these. */
-function midiOverlap(a, b) {
+function midiOverlap(a: MidiMessage | undefined, b: MidiMessage | undefined): boolean {
   if (!a || !b || a.kind !== b.kind) return false;
-  if (a.kind === 'raw') return midi.hex(a.bytes) === midi.hex(b.bytes);
+  if (a.kind === 'raw') return midi.hex(a.bytes) === midi.hex(b.bytes!);
   if (a.kind === 'msc') return a.command === b.command && same(a.cue, b.cue) && same(a.list, b.list);
   return a.number === b.number && same(a.channel, b.channel) && (a.kind === 'noteoff' || same(a.value, b.value));
 }
 
-function triggersOf(doc) {
+function triggersOf(doc: ShowDoc): TriggerRow[] {
   const rate = ((doc.settings || {}).timecode || {}).rate || '30';
   const { byId } = show.index(doc);
-  const rows = [];
-  const add = (kind, text, c, list) => {
-    const row = { kind, text: String(text).trim(), id: c ? c.id : null, number: c ? c.number || '' : '', name: c ? c.name || defaultName(c, byId) : '', list: list || '', what: '', clash: [], bad: '' };
+  const rows: Compared[] = [];
+  const add = (kind: TriggerKind, text: unknown, c: Cue | null, list?: string) => {
+    const row: Compared = { kind, text: String(text).trim(), id: c ? c.id : null, number: c ? c.number || '' : '', name: c ? c.name || defaultName(c, byId) : '', list: list || '', what: '', clash: [], bad: '' };
     if (kind === 'hotkey') { row.key = show.normaliseHotkey(text); if (!row.key) row.bad = 'not a key a cue can have'; else if (show.APP_KEYS.has(row.key)) row.bad = 'one of the app’s own keys'; }
     if (kind === 'osc') { row.key = row.text.split(/\s+/).join(' '); if (!row.text.startsWith('/')) row.bad = 'not an OSC address'; }
-    if (kind === 'midi') { try { row.msg = midi.parseText(text); } catch (err) { row.bad = err.message; } }
+    if (kind === 'midi') { try { row.msg = midi.parseText(text); } catch (err) { row.bad = (err as Error).message; } }
     if (kind === 'clock') { row.clock = show.parseClock(text); if (!row.clock) row.bad = 'not a time of day'; }
-    if (kind === 'timecode') { const tc = timecode.parse(text); row.bad = timecode.whyNot(tc, rate); if (!row.bad) row.key = String(timecode.toFrames(tc, rate)); }
+    if (kind === 'timecode') { const tc = timecode.parse(text); row.bad = timecode.whyNot(tc, rate); if (!row.bad) row.key = String(timecode.toFrames(tc!, rate)); }
     rows.push(row);
     return row;
   };
   for (const l of doc.lists || []) {
-    const walk = (cues) => { for (const c of cues) { for (const [kind, field] of KINDS) if (c[field] !== undefined && String(c[field]).trim() !== '') add(kind, c[field], c, l.name); if (c.children) walk(c.children); } };
+    const walk = (cues: Cue[]) => { for (const c of cues) { for (const [kind, field] of KINDS) if (c[field] !== undefined && String(c[field]).trim() !== '') add(kind, c[field], c, l.name); if (c.children) walk(c.children); } };
     walk(l.cues || []);
   }
   for (const [k, text] of Object.entries(((doc.settings || {}).midi || {}).commands || {})) if (text && COMMAND_LABELS[k]) add('midi', text, null).what = COMMAND_LABELS[k];
   // (and the OSC messages set to run it: Settings ▸ Integrations ▸ Network ▸ Incoming OSC)
   for (const [k, text] of Object.entries(((doc.settings || {}).network || {}).commands || {})) if (text && COMMAND_LABELS[k]) add('osc', text, null).what = COMMAND_LABELS[k];
-  const label = (r) => (r.id ? `${r.number ? `${r.number} · ` : ''}${r.name}` : r.what);
-  const clashes = (a, b) => {
+  const label = (r: TriggerRow) => (r.id ? `${r.number ? `${r.number} · ` : ''}${r.name}` : r.what);
+  const clashes = (a: Compared, b: Compared) => {
     if (a.kind !== b.kind || a.bad || b.bad) return false;
     if (a.kind === 'midi') return midiOverlap(a.msg, b.msg);
-    if (a.kind === 'clock') return a.clock.secs === b.clock.secs && (!a.clock.days || !b.clock.days || [...a.clock.days].some((d) => b.clock.days.has(d)));
+    if (a.kind === 'clock') { const x = a.clock!, y = b.clock!; return x.secs === y.secs && (!x.days || !y.days || [...x.days].some((d) => y.days!.has(d))); }
     return a.key === b.key;
   };
   for (let i = 0; i < rows.length; i++) for (let j = i + 1; j < rows.length; j++) if (clashes(rows[i], rows[j])) { rows[i].clash.push(label(rows[j])); rows[j].clash.push(label(rows[i])); }
@@ -63,8 +71,8 @@ function triggersOf(doc) {
 /** The cues whose clock trigger falls at `date` (by this computer's clock), less those in `fired`, which each is
  *  added to as it is returned. A time is due from its second until three seconds after: one long past, because the
  *  app was opened late, is not. The caller empties `fired` when the day changes. */
-function clockDue(doc, date, fired) {
-  const secs = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds(), out = [];
+function clockDue(doc: ShowDoc, date: Date, fired: Set<string>): Cue[] {
+  const secs = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds(), out: Cue[] = [];
   show.walk(doc, (c) => {
     const t = c.clockTrigger && show.parseClock(c.clockTrigger);
     const key = `${c.id}@${c.clockTrigger}`;

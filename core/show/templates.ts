@@ -10,22 +10,23 @@
  * duplicate and the assistant do not: they say what the cue is themselves.
  */
 import { TYPES, fieldsOf, coerce } from './cue-types';
+import type { ShowDoc, Cue } from './types';
 
 const OWN = new Set(['number', 'name', 'notes', 'flagged', 'file', 'target', 'hotkey', 'oscTrigger', 'midiTrigger', 'clockTrigger', 'timecodeTrigger', 'cell',
   'markers', 'loops', 'tempo', 'beats', 'downbeats', 'message', 'midi', 'lightCue', 'from', 'cutAt', 'to', 'end', 'at']);
 
 /** The template a cue would make: its settings that a new cue of its type could start with. */
-function templateOf(cue) {
-  const out = {};
+function templateOf(cue: Cue | null | undefined) {
+  const out: Record<string, unknown> = {};
   if (!cue || !TYPES[cue.type]) return out;
   for (const f of fieldsOf(cue.type)) if (!OWN.has(f.key) && cue[f.key] !== undefined) out[f.key] = JSON.parse(JSON.stringify(cue[f.key]));
   return out;
 }
 
 /** A show's template for a type, with anything this version cannot use left out (a hand-edited file, a field since removed). */
-function templateFor(doc, type) {
-  const raw = ((doc && doc.settings && doc.settings.templates) || {})[type];
-  const out = {};
+function templateFor(doc: ShowDoc | null | undefined, type: string) {
+  const raw: Record<string, unknown> | undefined = ((doc && doc.settings && doc.settings.templates) || {})[type as Cue['type']];
+  const out: Record<string, unknown> = {};
   if (!raw || typeof raw !== 'object' || !TYPES[type]) return out;
   for (const f of fieldsOf(type)) {
     if (OWN.has(f.key) || raw[f.key] === undefined) continue;
@@ -36,6 +37,6 @@ function templateFor(doc, type) {
 }
 
 /** A new cue's fields over its type's template: what was asked for wins. */
-function withTemplate(doc, spec) { return { ...templateFor(doc, spec.type), ...spec }; }
+function withTemplate<T extends { type: string }>(doc: ShowDoc | null | undefined, spec: T): Record<string, unknown> & T { return { ...templateFor(doc, spec.type), ...spec }; }
 
 export { templateOf, templateFor, withTemplate, OWN };

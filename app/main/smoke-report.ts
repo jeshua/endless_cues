@@ -10,30 +10,34 @@
  */
 import * as os from 'os';
 import { webpInfo } from '../../core/report/report';
+import type { Smoke } from './smoke';
 
-async function run({ win, check, until, page, sleep, shot: take }) {
-  const shot = async (name) => { try { if (take) await take(name); } catch { /* no picture */ } };
+/** A report as the stand-in service was sent it. */
+interface Sent { url: string; headers?: Record<string, string>; fields: Record<string, string>; files: Record<string, Uint8Array> }
+
+async function run({ win, check, until, page, sleep, shot: take }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const shot = async (name: string) => { try { if (take) await take(name); } catch { /* no picture */ } };
   const reports = require('./report').current();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
-  const type = (sel, text) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  const tick = (sel, on) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (el.checked !== ${on}) el.click(); return el.checked; })()`);
-  const status = () => page(`(() => { const el = document.querySelector('[data-report-status]'); return el ? el.dataset.reportStatus : null; })()`);
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+  const type = (sel: string, text: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.value = ${JSON.stringify(text)}; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  const tick = (sel: string, on: boolean) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (el.checked !== ${on}) el.click(); return el.checked; })()`);
+  const status = () => page<string | null>(`(() => { const el = document.querySelector('[data-report-status]'); return el ? el.dataset.reportStatus : null; })()`);
   const closeForm = async () => { await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`); await until(async () => !(await has('[data-report]')), 2000); };
 
   // (a resize first: a window nothing has redrawn for a while gives an empty picture in a test run, as in smoke.js's own pictures)
   win.setContentSize(1480, 940); await sleep(350);
-  const first = await page(`window.ec.app({ op: 'report-capture' }).then((r) => ({ sends: r.sends, png: !!r.png }))`);
+  const first = await page<{ sends: boolean; png: boolean }>(`window.ec.app({ op: 'report-capture' }).then((r) => ({ sends: r.sends, png: !!r.png }))`);
   check('a test run has nowhere to send a report until it is given one', first.sends === false && first.png, first);
 
   // a fake service in this process: what it was sent, and what it answers
-  const got = [];
+  const got: Sent[] = [];
   let answer = () => new Response(JSON.stringify({ id: 100 + got.length, status: 'open', created_at: new Date().toISOString(), created: true }), { status: 201, headers: { 'content-type': 'application/json' } });
-  reports.testHooks({ url: 'https://reports.invalid/v1/reports', fetch: async (url, init) => {
+  reports.testHooks({ url: 'https://reports.invalid/v1/reports', fetch: async (url: string, init: RequestInit) => {
     const form = await new Request(url, init).formData();
-    const fields = {}, files = {};
+    const fields: Record<string, string> = {}, files: Record<string, Uint8Array> = {};
     for (const [k, v] of form.entries()) { if (typeof v === 'string') fields[k] = v; else files[k] = new Uint8Array(await v.arrayBuffer()); }
-    got.push({ url, headers: init.headers, fields, files });
+    got.push({ url, headers: init.headers as Record<string, string> | undefined, fields, files });
     return answer();
   } });
 
@@ -53,7 +57,7 @@ async function run({ win, check, until, page, sleep, shot: take }) {
   await shot('report-1480');
   await click('[data-report-send]');
   check('Send sends one report and says so', await until(async () => got.length === 1 && (await status()) === 'sent', 5000), [got.length, await status()]);
-  const r = got[0] || { fields: {}, files: {}, headers: {} };
+  const r: Omit<Sent, 'url'> = got[0] || { fields: {}, files: {}, headers: {} };
   const shotInfo = r.files.screenshot && webpInfo(r.files.screenshot), thumbInfo = r.files.thumbnail && webpInfo(r.files.thumbnail);
   check('…in the protocol’s fields', r.fields.category === 'bug' && r.fields.comment === 'Smoke test: the fade did not finish.' && /^[0-9a-f-]{36}$/.test(r.fields.client_id) && /^[0-9a-f-]{36}$/.test(r.fields.submission_id) && /^\d+\.\d+\.\d+/.test(r.fields.app_version) && !!r.fields.os && !!r.fields.captured_at && !r.fields.email, r.fields);
   check('…with a WebP within 2400 px and a thumbnail within 480 px and 256 KB', !!shotInfo && Math.max(shotInfo.width, shotInfo.height) <= 2400 && !shotInfo.animated && !!thumbInfo && Math.max(thumbInfo.width, thumbInfo.height) <= 480 && r.files.thumbnail.length <= 256 * 1024 && r.files.screenshot.length <= 8 * 1024 * 1024, [shotInfo, thumbInfo, r.files.thumbnail && r.files.thumbnail.length]);
@@ -97,7 +101,7 @@ async function run({ win, check, until, page, sleep, shot: take }) {
     win.setContentSize(w, h); await sleep(300);
     await click('[data-report-details]');
     await sleep(150);
-    const fit = await page(`(() => { const s = document.querySelector('[data-report]').getBoundingClientRect(), b = document.querySelector('[data-report-send]').getBoundingClientRect(); return { fits: s.left >= 0 && s.right <= innerWidth && s.top >= 0 && s.bottom <= innerHeight, send: b.bottom <= innerHeight && b.right <= innerWidth && b.width > 0 }; })()`);
+    const fit = await page<{ fits: boolean }>(`(() => { const s = document.querySelector('[data-report]').getBoundingClientRect(), b = document.querySelector('[data-report-send]').getBoundingClientRect(); return { fits: s.left >= 0 && s.right <= innerWidth && s.top >= 0 && s.bottom <= innerHeight, send: b.bottom <= innerHeight && b.right <= innerWidth && b.width > 0 }; })()`);
     await shot(`report-${w}x${h}`);
     await click('[data-report-details]');
     check(`at ${w} × ${h} the form fits in the window`, fit.fits, fit);

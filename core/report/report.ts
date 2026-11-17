@@ -24,13 +24,45 @@ const CATEGORIES = ['bug', 'idea', 'other'];
 const ID = /^[A-Za-z0-9_.:-]{8,80}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** A picture as it may arrive: bytes, a Buffer that went through JSON, or base64. */
+export type Bytes = Uint8Array | ArrayBuffer | string | { type?: string; data?: number[] };
+/** What the app gathers for one report (app/main/report.js): buildReport's input. */
+export interface ReportInput {
+  clientId?: string; submissionId?: string; category?: string; comment?: string; appVersion?: string; os?: string; email?: string;
+  capturedAt?: string | number | Date; context?: Context | null; screenshot?: Bytes | null; thumbnail?: Bytes | null;
+}
+/** The protocol's form fields, by their names there (client_id, submission_id, category, comment, app_version, os, email, captured_at, context). */
+export type ReportFields = Record<string, string>;
+/** One report checked and in the protocol's words, ready for `formOf`. */
+export interface Built { fields: ReportFields; files: Record<string, Uint8Array>; size?: number }
+/** What the app knew at the moment of the picture (makeContext's input). */
+export interface About {
+  view?: string; mode?: string; selected?: { number?: string; type?: string } | null; cueCount?: number;
+  audio?: { device?: string; sampleRate?: number; ok?: boolean } | null; locale?: string; log?: unknown[];
+  issue?: string | null; includeShowName?: boolean; showName?: string;
+}
+/** The `context` field, before it is written as JSON. */
+export interface Context {
+  view?: string; mode?: string; selected_cue?: { number: string; type: string }; cue_count?: number;
+  audio?: { device?: string; sample_rate?: number; ok?: boolean }; locale?: string; errors?: string[]; issue?: string; show_name?: string;
+}
+/** What an answer means for the app (outcomeOf). `kept`: the outbox has it on disk for later. */
+export interface Outcome {
+  sent?: boolean; id?: number; created?: boolean; status?: string;
+  held?: string; retryAfter?: number; refused?: string; message?: string; detail?: string; kept?: boolean;
+}
+export interface SendOptions { url?: string; fetch?: typeof globalThis.fetch; userAgent?: string; token?: string; timeoutMs?: number }
+/** The service's answer, as JSON (any of it may be missing). */
+interface Answer { id?: unknown; created?: boolean; status?: string; retry_after?: unknown; error?: string; message?: string }
+export type Scrub = (text: unknown) => string;
+
 /** "macOS 15.1 arm64", "Windows 10.0.22631 x64", "Linux 6.8.0 x64": the `os` field. */
-function osName(platform, version, arch) {
-  const name = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }[platform] || String(platform || 'unknown');
+function osName(platform: string, version?: string, arch?: string) {
+  const name = ({ darwin: 'macOS', win32: 'Windows', linux: 'Linux' } as Record<string, string>)[platform] || String(platform || 'unknown');
   return `${name} ${version || ''} ${arch || ''}`.replace(/\s+/g, ' ').trim().slice(0, LIMITS.os);
 }
 
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * A function that takes the personal out of a line of text: this computer's home folder (and any other user's
@@ -38,8 +70,8 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * that looks like a key or token `<key>`. Used on everything in `context` the app wrote (error lines, the audio
  * output's name), never on what the person typed themselves.
  */
-function scrubber({ home = '', user = '' } = {}) {
-  const homes = [];
+function scrubber({ home = '', user = '' } = {}): Scrub {
+  const homes: string[] = [];
   if (home && home.length > 1) { homes.push(home); if (home.includes('\\')) homes.push(home.replace(/\\/g, '/')); }
   const homeRe = homes.length ? new RegExp(homes.map(escapeRe).join('|'), 'gi') : null;
   // (a name of one or two letters would eat ordinary words: such a name is left to the folder rules above)
@@ -64,7 +96,7 @@ function scrubber({ home = '', user = '' } = {}) {
 }
 
 /** Of the app's own log, the lines that say something went wrong: the last `LIMITS.errors`, each cut, each scrubbed. */
-function errorLines(lines, scrub) {
+function errorLines(lines: unknown[] | null | undefined, scrub: Scrub) {
   const bad = (lines || []).filter((l) => /\b(error|uncaught|could not|cannot|failed|exception|refused)\b|\[page\]/i.test(String(l)));
   return bad.slice(-LIMITS.errors).map((l) => scrub(String(l)).slice(0, LIMITS.errorLength));
 }
@@ -73,15 +105,15 @@ function errorLines(lines, scrub) {
  * The `context` object: what the app knew at the moment of the picture, small and with nothing personal in it.
  * `selected` is the one selected cue ({ number, type }) or nothing; `showName` goes in only with `includeShowName`.
  */
-function makeContext(about = {}, scrub = scrubber()) {
-  const out = {};
+function makeContext(about: About = {}, scrub = scrubber()) {
+  const out: Context = {};
   if (about.view) out.view = String(about.view).slice(0, 60);
   if (about.mode === 'edit' || about.mode === 'show') out.mode = about.mode;
   const sel = about.selected;
   if (sel && typeof sel === 'object' && sel.type) out.selected_cue = { number: String(sel.number || '').slice(0, 24), type: String(sel.type).slice(0, 24) };
-  if (Number.isFinite(about.cueCount)) out.cue_count = Math.max(0, Math.round(about.cueCount));
+  if (Number.isFinite(about.cueCount)) out.cue_count = Math.max(0, Math.round(about.cueCount!));
   if (about.audio && typeof about.audio === 'object') {
-    const a = {};
+    const a: NonNullable<Context['audio']> = {};
     if (about.audio.device) a.device = scrub(about.audio.device).slice(0, 80);
     if (Number.isFinite(about.audio.sampleRate)) a.sample_rate = about.audio.sampleRate;
     if (about.audio.ok === false) a.ok = false;
@@ -99,13 +131,13 @@ function makeContext(about = {}, scrub = scrubber()) {
 }
 
 /** A WebP file's own header: { width, height, animated }, or null when the bytes are not a WebP. */
-function webpInfo(bytes) {
+function webpInfo(bytes: unknown) {
   const b = bytes instanceof Uint8Array ? bytes : null;
   if (!b || b.length < 30) return null;
-  const str = (at, n) => String.fromCharCode(...b.subarray(at, at + n));
+  const str = (at: number, n: number) => String.fromCharCode(...b.subarray(at, at + n));
   if (str(0, 4) !== 'RIFF' || str(8, 4) !== 'WEBP') return null;
   const kind = str(12, 4);
-  const u24 = (at) => b[at] | (b[at + 1] << 8) | (b[at + 2] << 16);
+  const u24 = (at: number) => b[at] | (b[at + 1] << 8) | (b[at + 2] << 16);
   if (kind === 'VP8 ') {
     if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return null;
     return { width: (b[26] | (b[27] << 8)) & 0x3fff, height: (b[28] | (b[29] << 8)) & 0x3fff, animated: false };
@@ -120,7 +152,7 @@ function webpInfo(bytes) {
 }
 
 /** A picture checked against its limits: null when it is fine, or the reason it is not. */
-function pictureProblem(bytes, side, max) {
+function pictureProblem(bytes: Uint8Array, side: number, max: number) {
   const info = webpInfo(bytes);
   if (!info) return 'not a WebP still';
   if (info.animated) return 'an animated WebP';
@@ -134,10 +166,10 @@ function pictureProblem(bytes, side, max) {
  * it cannot be sent as it is. A comment over the limit is cut (the service would cut it too); everything else that
  * is wrong is an error, because sending it would only be refused.
  */
-function buildReport(r = {}) {
-  const fields = {};
+function buildReport(r: ReportInput = {}): Built | { error: string; why?: string } {
+  const fields: ReportFields = {};
   if (!ID.test(String(r.clientId || ''))) return { error: 'bad_client_id' };
-  fields.client_id = r.clientId;
+  fields.client_id = r.clientId!;
   if (r.submissionId) { if (!ID.test(String(r.submissionId))) return { error: 'bad_submission_id' }; fields.submission_id = r.submissionId; }
   const category = r.category || 'bug';
   if (!CATEGORIES.includes(category)) return { error: 'bad_category' };
@@ -156,7 +188,7 @@ function buildReport(r = {}) {
     if (text.length > LIMITS.context) return { error: 'bad_context' };
     fields.context = text;
   }
-  const files = {};
+  const files: Record<string, Uint8Array> = {};
   if (r.screenshot) {
     const shot = toBytes(r.screenshot);
     const why = pictureProblem(shot, LIMITS.screenshotSide, LIMITS.screenshot);
@@ -176,19 +208,19 @@ function buildReport(r = {}) {
   return { fields, files, size };
 }
 
-function toBytes(x) {
+function toBytes(x: Bytes) {
   if (x instanceof Uint8Array) return x;
   if (x instanceof ArrayBuffer) return new Uint8Array(x);
-  if (x && x.type === 'Buffer' && Array.isArray(x.data)) return Uint8Array.from(x.data);
+  if (x && typeof x === 'object' && x.type === 'Buffer' && Array.isArray(x.data)) return Uint8Array.from(x.data);
   if (typeof x === 'string') return new Uint8Array(Buffer.from(x, 'base64'));
   return new Uint8Array(0);
 }
 
 /** The multipart body. */
-function formOf({ fields, files }) {
+function formOf({ fields, files }: Built) {
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) form.append(k, v);
-  for (const [k, bytes] of Object.entries(files || {})) form.append(k, new Blob([bytes], { type: 'image/webp' }), `${k}.webp`);
+  for (const [k, bytes] of Object.entries(files || {})) form.append(k, new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/webp' }), `${k}.webp`);
   return form;
 }
 
@@ -197,8 +229,8 @@ function formOf({ fields, files }) {
  * reports, the service's own trouble; `retryAfter` in seconds when it said), or `refused` (sending the same again will
  * not help). The app decides from `error`, never from `message`; `message` is shown as it is.
  */
-function outcomeOf(status, body) {
-  const b = body && typeof body === 'object' ? body : {};
+function outcomeOf(status: number, body: unknown): Outcome {
+  const b: Answer = body && typeof body === 'object' ? body : {};
   if ((status === 200 || status === 201) && Number.isFinite(Number(b.id))) return { sent: true, id: Number(b.id), created: b.created !== false, status: b.status || 'open' };
   if (status === 429) return { held: 'rate_limited', retryAfter: Number(b.retry_after) > 0 ? Number(b.retry_after) : 3600, message: b.message || '' };
   if (status >= 500 || status === 0) return { held: b.error || 'server_error', retryAfter: Number(b.retry_after) > 0 ? Number(b.retry_after) : 0, message: b.message || '' };
@@ -209,18 +241,19 @@ function outcomeOf(status, body) {
  * Send one built report. Never throws: a network failure (or no answer within `timeoutMs`) is `held: 'offline'`.
  * `url` is required: a test run has none unless it is given a fake one (main.js), so it can never reach the service.
  */
-async function send(built, { url, fetch: fetchImpl = globalThis.fetch, userAgent = '', token = '', timeoutMs = 30000 } = {}) {
+async function send(built: Built, { url, fetch: fetchImpl = globalThis.fetch, userAgent = '', token = '', timeoutMs = 30000 }: SendOptions = {}): Promise<Outcome> {
   if (!url) return { refused: 'no_endpoint', message: 'Reports are not sent from a test run.' };
-  const headers = {};
+  const headers: Record<string, string> = {};
   if (userAgent) headers['User-Agent'] = userAgent;
   if (token) headers.Authorization = `Bearer ${token}`;
-  let res;
+  let res: Response;
   try {
     res = await fetchImpl(url, { method: 'POST', headers, body: formOf(built), signal: AbortSignal.timeout(timeoutMs) });
-  } catch (err) {
+  } catch (e) {
+    const err = e as { cause?: { code?: string }; name?: string } | null;
     return { held: 'offline', retryAfter: 0, message: '', detail: String((err && (err.cause && err.cause.code)) || (err && err.name) || err) };
   }
-  let body = null;
+  let body: Answer | null = null;
   try { body = await res.json(); } catch { /* not JSON: judged by the status alone */ }
   const out = outcomeOf(res.status, body);
   // (the header is the protocol's too; it wins when the body did not say)
@@ -231,7 +264,7 @@ async function send(built, { url, fetch: fetchImpl = globalThis.fetch, userAgent
 /** How long to wait before trying a held report again (section 2): at least 30 s, then 2 and 10 minutes, and never
  *  sooner than the service asked. null after the third: no more tries until the app is opened again or Send is pressed. */
 const DELAYS = [30, 120, 600];
-function retryDelay(tries, retryAfter = 0) {
+function retryDelay(tries: number, retryAfter: number | null = 0) {
   if (tries >= DELAYS.length) return null;
   return Math.max(DELAYS[tries], Number(retryAfter) || 0) * 1000;
 }

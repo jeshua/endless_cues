@@ -9,16 +9,39 @@ import { html, useState, useEffect, useRef, ec, cx, keys } from './lib.js';
 const SHOT = { side: 2400, quality: 0.84, max: 8 * 1024 * 1024 };
 const THUMB = { side: 480, quality: 0.72, max: 256 * 1024 };
 
+type Category = 'bug' | 'idea' | 'other';
+interface Draft { category: Category; comment: string; email: string; picture: boolean; showName: boolean; showLog: boolean; submissionId: string | null }
+/** A picture made for the report: the WebP, its bytes and its size. */
+interface Webp { blob: Blob; bytes: Uint8Array; width: number; height: number }
+/** The picture of the window and what goes with it (app/main/report.js `capture`), shown in the form before it is sent. */
+export interface Taken {
+  png: Uint8Array<ArrayBuffer> | null;
+  width?: number;
+  height?: number;
+  capturedAt: string;
+  context?: { issue?: string | string[]; errors?: string[]; [k: string]: unknown };
+  logTail?: string[];
+  showName?: string;
+  os: string;
+  version: string;
+  waiting?: number;
+  sends?: boolean;
+  /** opened from the status bar's "Something went wrong" */
+  fromIssue?: boolean;
+}
+/** What is on screen as the report is opened, and how Settings is closed first. */
+export interface ReportAbout { view?: string; selected?: { number: string; type: string } | null; closeSettings?: () => void }
+
 // What was written is kept here until it is sent: closing the form, or a failure, never loses it.
-let draft = { category: 'bug', comment: '', email: '', picture: true, showName: false, showLog: false, submissionId: null };
+let draft: Draft = { category: 'bug', comment: '', email: '', picture: true, showName: false, showLog: false, submissionId: null };
 
 /** A PNG made into a WebP that fits `side` and `max`, a little less fine each time it is too big. */
-async function webpOf(png, { side, quality, max }) {
+async function webpOf(png: Uint8Array<ArrayBuffer>, { side, quality, max }: { side: number; quality: number; max: number }): Promise<Webp | null> {
   const bmp = await createImageBitmap(new Blob([png], { type: 'image/png' }));
   const k = Math.min(1, side / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
   const canvas = new OffscreenCanvas(w, h);
-  const g = canvas.getContext('2d');
+  const g = canvas.getContext('2d')!;
   g.imageSmoothingQuality = 'high';
   g.drawImage(bmp, 0, 0, w, h);
   bmp.close();
@@ -29,35 +52,35 @@ async function webpOf(png, { side, quality, max }) {
   }
   return null;
 }
-const dataUrlOf = (blob) => new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => resolve(null); r.readAsDataURL(blob); });
+const dataUrlOf = (blob: Blob) => new Promise<string | null>((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result as string); r.onerror = () => resolve(null); r.readAsDataURL(blob); });
 
 /**
  * The form's opening: `open()` takes the picture first (from Settings, once Settings has closed), then shows the
  * form with it. `about()` says what is on screen: { view, selected, closeSettings }.
  */
-export function useReport(about) {
-  const [taken, setTaken] = useState(null);
+export function useReport(about: () => ReportAbout | null) {
+  const [taken, setTaken] = useState<Taken | null>(null);
   const latest = useRef(about); latest.current = about;
   const busy = useRef(false);
   // `issue`: the line the status bar offered ("Something went wrong. Report it?"), attached to this report
-  const open = async ({ fromSettings = false, issue = null } = {}) => {
+  const open = async ({ fromSettings = false, issue = null }: { fromSettings?: boolean; issue?: string | null } = {}) => {
     if (busy.current) return;
     busy.current = true;
     try {
-      const a = latest.current() || {};
+      const a: ReportAbout = latest.current() || {};
       if (fromSettings && a.closeSettings) {
         a.closeSettings();
         // (two frames and a little: the window is drawn without Settings before its picture is taken)
         await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
         await new Promise((r) => setTimeout(r, 80));
       }
-      const b = latest.current() || {};
-      const r = await ec.app({ op: 'report-capture', view: b.view, selected: b.selected, issue: issue || undefined });
+      const b: ReportAbout = latest.current() || {};
+      const r = await ec.app({ op: 'report-capture', view: b.view, selected: b.selected, issue: issue || undefined }) as Taken & { error?: string };
       if (r && !r.error) setTaken(issue ? { ...r, fromIssue: true } : r);
     } finally { busy.current = false; }
   };
   useEffect(() => {
-    ec.onMenu((action) => { if (action === 'report') open(); });
+    ec.onMenu((action: string) => { if (action === 'report') open(); });
     const fromAbout = () => open({ fromSettings: true });
     window.addEventListener('ec-report', fromAbout);
     return () => window.removeEventListener('ec-report', fromAbout);
@@ -68,22 +91,22 @@ export function useReport(about) {
 /** Settings ▸ About's link asks for the form this way (it has no say over Settings being open). */
 export const askForReport = () => window.dispatchEvent(new Event('ec-report'));
 
-const PLACEHOLDER = { bug: 'What happened, and what did you expect?', idea: 'What would help?', other: 'Your message' };
+const PLACEHOLDER: Record<Category, string> = { bug: 'What happened, and what did you expect?', idea: 'What would help?', other: 'Your message' };
 
-export function ReportForm({ taken, close }) {
+export function ReportForm({ taken, close }: { taken: Taken; close: () => void }) {
   // (opened from "Something went wrong": a bug, with the show log's tail ticked; both shown, both can be changed)
   const [d, setD] = useState(() => (taken.fromIssue ? (draft = { ...draft, showLog: !!(taken.logTail || []).length, ...(draft.comment ? {} : { category: 'bug' }) }) : draft));
   // what is attached (the error the status bar offered, the app's recent error lines), each can be left out
-  const [leaveOut, setLeaveOut] = useState([]);
-  const attached = [['issue', 'The error'], ['errors', 'Recent error messages']].filter(([k]) => taken.context && taken.context[k] && taken.context[k].length);
+  const [leaveOut, setLeaveOut] = useState<string[]>([]);
+  const attached = ([['issue', 'The error'], ['errors', 'Recent error messages']] as const).filter(([k]) => taken.context && taken.context[k] && taken.context[k].length);
   const [seeAttached, setSeeAttached] = useState(false);
-  const set = (change) => { draft = { ...draft, ...change }; setD(draft); };
-  const [pic, setPic] = useState(null);            // { shot, thumb, url } once made; false: none could be made
+  const set = (change: Partial<Draft>) => { draft = { ...draft, ...change }; setD(draft); };
+  const [pic, setPic] = useState<{ shot: Webp; thumb: Webp; url: string | null } | false | null>(null);            // { shot, thumb, url } once made; false: none could be made
   const [big, setBig] = useState(false);
   const [details, setDetails] = useState(false);
-  const [state, setState] = useState(null);        // null | 'sending' | { sent } | { held, message } | { refused, message }
+  const [state, setState] = useState<null | 'sending' | { sent?: string; held?: string; refused?: string; message?: string }>(null);        // null | 'sending' | { sent } | { held, message } | { refused, message }
   const [waiting, setWaiting] = useState(taken.waiting || 0);
-  const text = useRef();
+  const text = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let gone = false;
@@ -100,8 +123,9 @@ export function ReportForm({ taken, close }) {
   }, [taken]);
 
   const sending = state === 'sending';
+  const outcome = state === 'sending' ? null : state;
   const withPicture = d.picture && !!pic;
-  const canSend = !sending && !(state && state.sent) && (d.comment.trim() || withPicture);
+  const canSend = !sending && !(outcome && outcome.sent) && (d.comment.trim() || withPicture);
   const send = async () => {
     if (!canSend) return;
     // (one id per report, kept until it is sent: pressing Send again after a failure is the same report, so the
@@ -109,7 +133,7 @@ export function ReportForm({ taken, close }) {
     if (!draft.submissionId) set({ submissionId: crypto.randomUUID() });
     setState('sending');
     const r = await ec.app({ op: 'report-send', category: draft.category, comment: draft.comment, email: draft.email, showName: draft.showName, submissionId: draft.submissionId,
-      leaveOut, showLog: draft.showLog && !!(taken.logTail || []).length, picture: withPicture, screenshot: withPicture ? pic.shot.bytes : null, thumbnail: withPicture ? pic.thumb.bytes : null });
+      leaveOut, showLog: draft.showLog && !!(taken.logTail || []).length, picture: withPicture, screenshot: withPicture && pic ? pic.shot.bytes : null, thumbnail: withPicture && pic ? pic.thumb.bytes : null });
     if (r && r.sent) {
       draft = { ...draft, comment: '', submissionId: null };
       setState({ sent: r.id });
@@ -120,7 +144,7 @@ export function ReportForm({ taken, close }) {
   };
 
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
       else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); send(); }
     };
@@ -129,40 +153,40 @@ export function ReportForm({ taken, close }) {
   });
 
   const logTail = taken.logTail || [];
-  const context = { ...taken.context, ...(d.showName && taken.showName ? { show_name: taken.showName } : {}), ...(d.showLog && logTail.length ? { show_log: logTail } : {}) };
+  const context: Record<string, unknown> = { ...taken.context, ...(d.showName && taken.showName ? { show_name: taken.showName } : {}), ...(d.showLog && logTail.length ? { show_log: logTail } : {}) };
   for (const k of leaveOut) delete context[k];
   const sent = { app_version: taken.version, os: taken.os, category: d.category, ...(d.email.trim() ? { email: d.email.trim() } : {}), captured_at: taken.capturedAt, context };
-  return html`<div class="scrim" onMouseDown=${(e) => { if (e.target === e.currentTarget) close(); }}><div class="sheet report" data-report role="dialog" aria-label="Report a problem">
+  return html`<div class="scrim" onMouseDown=${(e: MouseEvent) => { if (e.target === e.currentTarget) close(); }}><div class="sheet report" data-report role="dialog" aria-label="Report a problem">
     <h2>Report a problem</h2>
-    <div class="seg report-kind">${[['bug', 'Bug'], ['idea', 'Idea'], ['other', 'Other']].map(([k, l]) => html`<button key=${k} data-report-kind=${k} class=${cx(d.category === k && 'on')} onClick=${() => set({ category: k })}>${l}</button>`)}</div>
-    <textarea ref=${text} data-report-text rows="5" maxlength="5000" placeholder=${PLACEHOLDER[d.category]} value=${d.comment} onInput=${(e) => set({ comment: e.target.value })}></textarea>
+    <div class="seg report-kind">${[['bug', 'Bug'], ['idea', 'Idea'], ['other', 'Other']].map(([k, l]) => html`<button key=${k} data-report-kind=${k} class=${cx(d.category === k && 'on')} onClick=${() => set({ category: k as Category })}>${l}</button>`)}</div>
+    <textarea ref=${text} data-report-text rows="5" maxlength="5000" placeholder=${PLACEHOLDER[d.category]} value=${d.comment} onInput=${(e: Event) => set({ comment: (e.target as HTMLTextAreaElement).value })}></textarea>
     <div class="report-picture">
-      <label class="check"><input type="checkbox" data-report-picture checked=${d.picture} disabled=${pic === false} onChange=${(e) => set({ picture: e.target.checked })} />Include a picture of the window</label>
+      <label class="check"><input type="checkbox" data-report-picture checked=${d.picture} disabled=${pic === false} onChange=${(e: Event) => set({ picture: (e.target as HTMLInputElement).checked })} />Include a picture of the window</label>
       ${pic ? html`<button class=${cx('report-shot', big && 'big', !d.picture && 'off')} data-report-shot onClick=${() => setBig(!big)} title=${big ? 'Smaller' : 'Larger'}><img src=${pic.url} alt="The picture that is sent" /></button>`
         : pic === false ? html`<span class="dim">No picture could be made.</span>` : html`<span class="dim">Making the picture…</span>`}
     </div>
     ${attached.length ? html`<div class="report-attached" data-report-attached>
       <span class="dim">Attached:</span>
       ${attached.map(([k, label]) => html`<label class="check" key=${k}><input type="checkbox" data-report-attach=${k} checked=${!leaveOut.includes(k)}
-        onChange=${(e) => setLeaveOut((l) => (e.target.checked ? l.filter((x) => x !== k) : [...l, k]))} />${label}${k === 'errors' ? ` (${taken.context.errors.length})` : ''}</label>`)}
+        onChange=${(e: Event) => setLeaveOut((l) => ((e.target as HTMLInputElement).checked ? l.filter((x) => x !== k) : [...l, k]))} />${label}${k === 'errors' ? ` (${taken.context!.errors!.length})` : ''}</label>`)}
       <button class="linkish" data-report-attached-see onClick=${() => setSeeAttached(!seeAttached)}>${seeAttached ? 'Hide' : 'Show'}</button>
-      ${seeAttached ? html`<pre class="mono report-json">${attached.map(([k]) => [].concat(taken.context[k]).join('\n')).join('\n\n')}</pre>` : null}
+      ${seeAttached ? html`<pre class="mono report-json">${attached.map(([k]) => ([] as string[]).concat(taken.context![k] || []).join('\n')).join('\n\n')}</pre>` : null}
     </div>` : null}
-    <label class="report-line">Email, if you’d like a reply<input type="text" data-report-email inputmode="email" autocomplete="email" value=${d.email} onInput=${(e) => set({ email: e.target.value })} /></label>
-    <label class="check"><input type="checkbox" data-report-showname checked=${d.showName} onChange=${(e) => set({ showName: e.target.checked })} />Include the show’s name${taken.showName ? ` (“${taken.showName}”)` : ''}</label>
-    <label class="check"><input type="checkbox" data-report-log checked=${d.showLog} disabled=${!logTail.length} onChange=${(e) => set({ showLog: e.target.checked })} />Include the show log’s last${logTail.length ? ` ${logTail.length}` : ''} lines (times, cue numbers and what happened; no names)</label>
+    <label class="report-line">Email, if you’d like a reply<input type="text" data-report-email inputmode="email" autocomplete="email" value=${d.email} onInput=${(e: Event) => set({ email: (e.target as HTMLInputElement).value })} /></label>
+    <label class="check"><input type="checkbox" data-report-showname checked=${d.showName} onChange=${(e: Event) => set({ showName: (e.target as HTMLInputElement).checked })} />Include the show’s name${taken.showName ? ` (“${taken.showName}”)` : ''}</label>
+    <label class="check"><input type="checkbox" data-report-log checked=${d.showLog} disabled=${!logTail.length} onChange=${(e: Event) => set({ showLog: (e.target as HTMLInputElement).checked })} />Include the show log’s last${logTail.length ? ` ${logTail.length}` : ''} lines (times, cue numbers and what happened; no names)</label>
     <p class="report-what dim" data-report-what>Sent with it: the app’s version, your system, what was on screen, the selected cue’s number and type, the number of cues, the sound output, your language and recent error messages. Never: show files, sounds, paths with your name, keys.${' '}
       <button class="linkish" data-report-details onClick=${() => setDetails(!details)}>${details ? 'Hide' : 'Exactly what is sent'}</button></p>
     ${details ? html`<pre class="mono report-json" data-report-json>${JSON.stringify(sent, null, 2)}${withPicture ? `\n+ the picture above (${pic.shot.width} × ${pic.shot.height}, ${Math.round(pic.shot.bytes.length / 1024)} KB) and a small copy of it` : ''}${d.comment.trim() ? '\n+ what you wrote' : ''}</pre>` : null}
-    ${waiting > 0 && !(state && state.sent) ? html`<p class="dim" data-report-waiting>${waiting === 1 ? 'An earlier report is' : `${waiting} earlier reports are`} waiting to be sent: they go with this one.</p>` : null}
-    ${state && state.sent ? html`<p class="report-status" data-report-status="sent">Sent. Thank you.</p>`
-      : state && state.held ? html`<p class="report-status standby" data-report-status="held">${state.message} It is kept on this computer and sent when the app next opens, or when you press Send again.</p>`
-      : state && state.refused ? html`<p class="report-status danger" data-report-status="refused">${state.message}</p>` : null}
+    ${waiting > 0 && !(outcome && outcome.sent) ? html`<p class="dim" data-report-waiting>${waiting === 1 ? 'An earlier report is' : `${waiting} earlier reports are`} waiting to be sent: they go with this one.</p>` : null}
+    ${outcome && outcome.sent ? html`<p class="report-status" data-report-status="sent">Sent. Thank you.</p>`
+      : outcome && outcome.held ? html`<p class="report-status standby" data-report-status="held">${outcome.message} It is kept on this computer and sent when the app next opens, or when you press Send again.</p>`
+      : outcome && outcome.refused ? html`<p class="report-status danger" data-report-status="refused">${outcome.message}</p>` : null}
     ${!taken.sends ? html`<p class="dim">A test run: reports go nowhere.</p>` : null}
     <div class="acts">
       <span class="grow"></span>
-      ${state && state.held ? html`<button class="btn" data-report-later onClick=${close}>Send later</button>` : html`<button class="btn" onClick=${close}>${state && state.sent ? 'Close' : 'Cancel'}</button>`}
-      <button class="btn primary" data-report-send disabled=${!canSend} onClick=${send} title=${keys('Send (⌘Enter)')}>${sending ? 'Sending…' : state && state.held ? 'Send again' : 'Send'}</button>
+      ${outcome && outcome.held ? html`<button class="btn" data-report-later onClick=${close}>Send later</button>` : html`<button class="btn" onClick=${close}>${outcome && outcome.sent ? 'Close' : 'Cancel'}</button>`}
+      <button class="btn primary" data-report-send disabled=${!canSend} onClick=${send} title=${keys('Send (⌘Enter)')}>${sending ? 'Sending…' : outcome && outcome.held ? 'Send again' : 'Send'}</button>
     </div>
   </div></div>`;
 }

@@ -5,13 +5,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { importQlab, envelopeOf } from '../core/import/qlab';
 import * as show from '../core/show/show';
+import type { Cue } from '../core/show/types';
 
 test('an Audio cue’s rate comes across, with a note to check its pitch', () => {
   const file = path.join(__dirname, 'fixtures/small.qlab5');
   const { doc, report } = importQlab(fs.readFileSync(file), { file });
-  let walk = null;
+  let walk = null as Cue | null;
   show.walk(doc, (c) => { if (c.name === 'Walk-in 1') walk = c; });
-  assert.equal(walk.rate, 1.1);
+  assert.equal(walk!.rate, 1.1);
   assert.ok(report.issues.some((i) => i.cue.includes('Walk-in 1') && /plays at rate 1\.1/.test(i.why)));
   assert.equal(show.normalise(doc).warnings.length, 0, 'and the show it makes is a clean one');
 });

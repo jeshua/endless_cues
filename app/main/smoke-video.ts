@@ -6,35 +6,36 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { png, webm } from './test-media';
+import type { Smoke, Snap } from './smoke';
 
 const GREEN = [20, 200, 60], BLUE = [30, 60, 220], ORANGE = [240, 140, 20];
 
-async function run({ host, check, until, sleep, shot, log }) {
-  const snap = () => host.snapshot();
+async function run({ host, check, until, sleep, shot, log }: Pick<Smoke, 'host' | 'check' | 'until' | 'sleep' | 'shot' | 'log'>) {
+  const snap = () => host.snapshot() as Snap;
   const st = () => host.stage.status();
-  const stagePage = (js) => host.stage.window().webContents.executeJavaScript(js, true);
-  const audioPage = (js) => host.audioWindow().webContents.executeJavaScript(js, true);
+  const stagePage = (js: string) => host.stage.window()!.webContents.executeJavaScript(js, true);
+  const audioPage = (js: string) => host.audioWindow()!.webContents.executeJavaScript(js, true);
   /** The colour of the stage at a place (0–1 across and down), as the window is drawn. */
   const pixel = async (fx = 0.5, fy = 0.5) => {
-    const img = await host.stage.window().webContents.capturePage();
+    const img = await host.stage.window()!.webContents.capturePage();
     const { width, height } = img.getSize();
     const b = img.toBitmap();
     const i = (Math.min(height - 1, Math.floor(fy * height)) * width + Math.min(width - 1, Math.floor(fx * width))) * 4;
     return [b[i + 2], b[i + 1], b[i]];
   };
-  const near = (p, c, tol = 50) => p.every((v, i) => Math.abs(v - c[i]) <= tol);
-  const dark = (p) => p.every((v) => v < 24);
-  const sees = (c, fx, fy, ms = 4000) => until(async () => near(await pixel(fx, fy), c), ms);
-  const black = (fx, fy, ms = 4000) => until(async () => dark(await pixel(fx, fy)), ms);
+  const near = (p: number[], c: readonly number[], tol = 50) => p.every((v, i) => Math.abs(v - c[i]) <= tol);
+  const dark = (p: number[]) => p.every((v) => v < 24);
+  const sees = (c: readonly number[], fx?: number, fy?: number, ms = 4000) => until(async () => near(await pixel(fx, fy), c), ms);
+  const black = (fx?: number, fy?: number, ms = 4000) => until(async () => dark(await pixel(fx, fy)), ms);
 
   // the stage opens offscreen, black
   check('the stage is closed until it is opened', st().open === false);
   host.cmd({ op: 'stage-open' });
-  check('the stage opens (offscreen in a test run) without becoming the front window', await until(() => st().ready) && !host.stage.window().isVisible() && !host.stage.window().isFocused(), st());
+  check('the stage opens (offscreen in a test run) without becoming the front window', await until(() => st().ready) && !host.stage.window()!.isVisible() && !host.stage.window()!.isFocused(), st());
   check('an empty stage is black', await black());
 
   // media, made by code
-  const media = path.join(host.document.showDir, 'media');
+  const media = path.join(host.document.showDir!, 'media');
   const film = await webm(stagePage, { secs: 4, colours: [GREEN, BLUE] });
   fs.writeFileSync(path.join(media, 'smoke-film.webm'), film.bytes);
   fs.writeFileSync(path.join(media, 'smoke-card.png'), png(64, 36, ORANGE));
@@ -49,7 +50,7 @@ async function run({ host, check, until, sleep, shot, log }) {
     { op: 'cue.add', ref: 'cam', cue: { type: 'camera', fit: 'fill' } },
     { op: 'cue.add', ref: 'late', cue: { type: 'load', target: '@film', at: 3.3 } },
   ] });
-  const id = (ref) => r.refs && r.refs[ref];
+  const id = (ref: string) => r.refs && r.refs[ref];
   check('Video, Text and Camera cues can be added', !!(id('film') && id('cam')) && !r.error, r);
   check('a video is measured like a sound, and a still is not asked to be', await until(() => Math.abs((snap().engine.durations['media/smoke-film.webm'] || 0) - 4) < 0.3), snap().engine.durations);
   check('none of them is a problem', !snap().problems.some((p) => Object.values(r.refs || {}).includes(p.id)), snap().problems);
@@ -60,7 +61,7 @@ async function run({ host, check, until, sleep, shot, log }) {
   check('…and its sound plays in the audio window', await until(async () => (await audioPage(`voices.has(${JSON.stringify(id('film'))})`))));
   if (film.sound) check('…on the cue’s bus', await until(() => ((snap().mixer.buses.find((b) => b.id === 'vocals') || {}).peak ?? -60) > -40, 3000), snap().mixer.buses.map((b) => [b.id, b.peak]));
   const a = () => snap().engine.active.find((x) => x.id === id('film'));
-  check('it runs as a sound does in Active Cues, marked as a picture', !!a() && a().picture === 'video' && a().total > 3.5, a());
+  check('it runs as a sound does in Active Cues, marked as a picture', !!a() && a()!.picture === 'video' && a()!.total > 3.5, a());
   await sleep(1200);
   const drift = async () => Math.abs((await stagePage(`layers.get(${JSON.stringify(id('film'))}).media.currentTime`)) - (await audioPage(`voices.get(${JSON.stringify(id('film'))}).el.currentTime`)));
   check('the picture keeps step with its sound (within a tenth of a second)', await until(async () => (await drift()) < 0.1, 3000), await drift().catch(() => null));
@@ -82,7 +83,7 @@ async function run({ host, check, until, sleep, shot, log }) {
   check('a Fade aimed at a video scales it (the corner of the stage goes black, the middle stays)', (await black(0.1, 0.1)) && near(await pixel(), GREEN), [await pixel(0.1, 0.1), await pixel()]);
   host.cmd({ op: 'fire', id: id('dim') });
   check('…and fades its opacity to nothing over a time, the cue still running', (await black(0.5, 0.5, 3000)) && !!a(), [await pixel(), !!a()]);
-  check('a Fade that names no level leaves the video’s sound where it was', a() && a().db === 0 && !a().fadingTo, a() && [a().db, a().fadingTo]);
+  check('a Fade that names no level leaves the video’s sound where it was', a() && a()!.db === 0 && !a()!.fadingTo, a() && [a()!.db, a()!.fadingTo]);
   host.cmd({ op: 'stop', id: id('film') });
   check('Stop clears it from the stage', await until(async () => (await stagePage('layers.size')) === 0));
 
@@ -107,7 +108,7 @@ async function run({ host, check, until, sleep, shot, log }) {
   host.cmd({ op: 'fire', id: id('title') });
   const white = () => stagePage(`(() => { const r = document.querySelector('.title').getBoundingClientRect(); return r.width > 200 && r.height > 50 ? [r.width, r.height] : null; })()`);
   check('a Text cue draws its title over it, on its own layer', !!(await until(white)) && (await until(async () => {
-    const img = await host.stage.window().webContents.capturePage(); const b = img.toBitmap(); let n = 0;
+    const img = await host.stage.window()!.webContents.capturePage(); const b = img.toBitmap(); let n = 0;
     for (let i = 0; i < b.length; i += 4) if (b[i] > 230 && b[i + 1] > 230 && b[i + 2] > 230) n++;
     return n > 500;
   }, 3000)));

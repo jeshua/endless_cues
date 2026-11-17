@@ -44,8 +44,8 @@ test('an ⌥-drag up bulges a segment up whichever way it runs; the bend stays b
 test('a marker moved stays inside the sound and the markers stay in time order; null removes it', () => {
   const ms = [{ at: 1, name: 'A' }, { at: 3, name: 'B' }];
   assert.deepEqual(E.moveMarker(ms, 0, 4, 10).map((m) => m.name), ['B', 'A']);
-  assert.strictEqual(E.moveMarker(ms, 1, 12, 10).find((m) => m.name === 'B').at, 10);
-  assert.strictEqual(E.moveMarker(ms, 1, -1, 10).find((m) => m.name === 'B').at, 0);
+  assert.strictEqual(E.moveMarker(ms, 1, 12, 10).find((m) => m.name === 'B')!.at, 10);
+  assert.strictEqual(E.moveMarker(ms, 1, -1, 10).find((m) => m.name === 'B')!.at, 0);
   assert.deepEqual(E.moveMarker(ms, 0, null, 10), [{ at: 3, name: 'B' }]);
   assert.strictEqual(ms[0].at, 1, 'the cue’s own list is left alone');
 });

@@ -6,7 +6,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createAssistant } from '../core/assistant/assistant';
+import type { Call, Reply, ToolUseBlock } from '../core/assistant/assistant';
 import { TOOLS, SYSTEM, reference, lookup, outline, execute, LONG_SHOW, OP_KEYS } from '../core/assistant/tools';
+import type { AtOnce, EngineView, ToolContext, ToolInput, ToolResult } from '../core/assistant/tools';
+import type { Op } from '../core/show/ops';
+import type { Change } from '../core/show/diff';
+import type { ShowDoc } from '../core/show/types';
 import { TYPES, TYPE_ORDER, COMMON } from '../core/show/cue-types';
 import * as show from '../core/show/show';
 import { ShowDocument } from '../core/show/document';
@@ -21,28 +26,29 @@ const doc = () => new ShowDocument({ doc: build([
   { op: 'cue.add', cue: { type: 'memo', number: '13', name: 'Act two' } },
   { op: 'cue.add', cue: { type: 'memo', number: '14', name: 'Storm' } },
 ]).doc });
-const session = (d = doc()) => { const ctx = { document: d, draft: null }; return { d, ctx, run: (name, input) => execute(name, input, ctx), edit: (ops) => execute('edit_show', { ops }, ctx) }; };
-const cueNumbered = (document, n) => show.findByNumber(document, n);
+const session = (d = doc()) => { const ctx: ToolContext = { document: d, draft: null }; return { d, ctx, run: (name: AtOnce, input: ToolInput) => execute(name, input, ctx), edit: (ops: Op[]) => execute('edit_show', { ops }, ctx) }; };
+const cueNumbered = (document: ShowDoc, n: string) => show.findByNumber(document, n);
 
-function scripted(replies) {
-  const seen = [];
-  return { name: 'scripted', seen, async create(req) { seen.push(JSON.parse(JSON.stringify(req.messages))); const r = replies.shift(); if (typeof r === 'function') return r(); return r; } };
+type Scripted = Omit<Reply, 'role'>;
+function scripted(replies: (Scripted | (() => Scripted))[]) {
+  const seen: any[] = [];   // the messages as sent, through JSON
+  return { name: 'scripted', seen, async create(req: Call) { seen.push(JSON.parse(JSON.stringify(req.messages))); const r = replies.shift(); if (typeof r === 'function') return r() as Reply; return r as Reply; } };
 }
-const use = (id, name, input) => ({ type: 'tool_use', id, name, input });
-const say = (text) => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
+const use = (id: string, name: string, input: unknown): ToolUseBlock => ({ type: 'tool_use', id, name, input });
+const say = (text: string): Scripted => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] });
 
 test('the reference is the cue-type table: every type and field in brief, each in full through read_reference, and a field added to the table is in both', () => {
   const ref = reference();
   for (const t of TYPE_ORDER) {
     // the brief names every type and every field it has
     assert.match(ref, new RegExp(`^${t}( \\(${TYPES[t].label}\\))? — `, 'm'), `type ${t}`);
-    for (const f of TYPES[t].fields) if (!f.hidden) assert.match(ref.split('\n').find((l) => l.startsWith(`${t} `)), new RegExp(`[ ;]${f.key}([*: =(;]|$)`), `${t}.${f.key} in brief`);
+    for (const f of TYPES[t].fields) if (!f.hidden) assert.match(ref.split('\n').find((l) => l.startsWith(`${t} `))!, new RegExp(`[ ;]${f.key}([*: =(;]|$)`), `${t}.${f.key} in brief`);
     // and read_reference has each in full: its kind, its options, its help
     const full = lookup(t).text;
     assert.ok(full.startsWith(`${t} — ${TYPES[t].label}:`), `type ${t} in full`);
     for (const f of TYPES[t].fields) if (!f.hidden) assert.ok(new RegExp(`^    ${f.key} \\(${f.kind}`, 'm').test(full), `${t}.${f.key} in full`);
   }
-  for (const f of COMMON) if (!f.hidden) assert.ok(ref.split('\n').find((l) => l.startsWith('Every cue:')).includes(f.key), `common ${f.key} in brief`);
+  for (const f of COMMON) if (!f.hidden) assert.ok(ref.split('\n').find((l) => l.startsWith('Every cue:'))!.includes(f.key), `common ${f.key} in brief`);
   for (const f of COMMON) assert.ok(new RegExp(`^    ${f.key} \\(`, 'm').test(lookup('every').text), `common ${f.key} in full`);
   // the ones a hand-copied reference would not know: they are in because the table has them
   for (const word of ['midi — ', 'midifile (MIDI File) — ', 'music (Jump) — ', 'mic — ', 'mode:timeline|playlist|enter', 'shuffle:bool(mode playlist)', 'crossfade:s(mode playlist)', 'plays:number=1', 'fps:24|25|29.97df|30=30']) assert.ok(ref.includes(word), word);
@@ -81,26 +87,26 @@ test('read_reference is a tool that looks: it answers from the tables and touche
 test('there is no tool that plays, stops or saves, and no tool touches the running engine', () => {
   for (const t of TOOLS) assert.doesNotMatch(t.name, /play|go|fire|stop|panic|save|accept|undo/);
   // an engine that allows reading what is known (lengths, the playhead) and nothing else
-  const touched = [];
-  const engine = new Proxy({ durations: new Map([['media/a.wav', 10]]), running: new Map(), playhead: null }, {
-    get(target, key) { if (!(key in target)) touched.push(String(key)); return target[key]; },
+  const touched: string[] = [];
+  const engine = new Proxy<EngineView>({ durations: new Map([['media/a.wav', 10]]), running: new Map(), playhead: null }, {
+    get(target, key) { if (!(key in target)) touched.push(String(key)); return (target as unknown as Record<string | symbol, unknown>)[key]; },
     set(target, key) { touched.push(`set ${String(key)}`); return true; },
   });
   const d = doc();
-  const ctx = { document: d, engine, draft: null };
+  const ctx: ToolContext = { document: d, engine, draft: null };
   const before = show.hash(d.doc);
   for (const [name, input] of [['read_show', {}], ['read_show', { cue: '#1' }], ['read_show', { from: '#1' }], ['find_cues', { text: 'rain' }], ['list_media', {}],
-    ['edit_show', { ops: [{ op: 'cue.set', id: '#1', props: { gainDb: -3 } }] }], ['check_show', {}], ['simulate', { from: '#1', gos: 3 }], ['propose_changes', { summary: 'x' }]]) {
+    ['edit_show', { ops: [{ op: 'cue.set', id: '#1', props: { gainDb: -3 } }] }], ['check_show', {}], ['simulate', { from: '#1', gos: 3 }], ['propose_changes', { summary: 'x' }]] as [AtOnce, ToolInput][]) {
     assert.ok(!execute(name, input, ctx).is_error, name);
   }
   assert.deepEqual(touched, []);
   assert.equal(show.hash(d.doc), before, 'and the show itself is as it was: a proposal is not an edit');
-  assert.equal(execute('go', {}, ctx).is_error, true);
+  assert.equal((execute('go', {}, ctx) as ToolResult).is_error, true);
 });
 
 test('what a designer asks for can be said in operations, and reads back in the outline', () => {
   const { ctx, edit, run } = session();
-  const ok = (r) => { assert.ok(!r.is_error, r.content); return r.content; };
+  const ok = (r: ToolResult) => { assert.ok(!r.is_error, r.content); return r.content; };
   ok(edit([{ op: 'cue.add', after: '#4', cue: { type: 'fade', number: '4.5', target: '#4', db: -60, duration: 3, stopTarget: true } }]));
   ok(edit([{ op: 'cue.set', id: '#12', props: { continue: 'auto-follow', loops: [{ start: 10, end: 20, name: 'vamp', count: 4 }] } }]));
   ok(edit([{ op: 'cue.renumber', ids: ['#13', '#14'], start: 20 }]));
@@ -109,7 +115,7 @@ test('what a designer asks for can be said in operations, and reads back in the 
   ok(edit([{ op: 'cue.set', id: '#7', props: { hotkey: 'F5', midiTrigger: 'note 60', oscTrigger: '/sm/places', color: 'red' } }]));
   // routing is a bus setting, and a bus is named by its id
   ok(edit([{ op: 'show.set', path: 'settings.audio.buses.music.out', value: 3 }, { op: 'show.set', path: 'settings.midi.output', value: 'IAC Driver' }, { op: 'show.set', path: 'modules.osc-control.passcode', value: 'hunter2' }]));
-  assert.equal(ctx.draft.settings.audio.buses[0].out, 3);
+  assert.equal(ctx.draft!.settings.audio.buses[0].out, 3);
   assert.match(ok(run('check_show', {})), /Nothing wrong/);
   const text = ok(run('read_show', {}));
   assert.match(text, /#0 Group: Walk-in · mode=playlist shuffle=true crossfade=3s/);
@@ -128,7 +134,7 @@ test('what a designer asks for can be said in operations, and reads back in the 
 
 test('an operation that would do nothing, or something else, is refused with what to send instead', () => {
   const { ctx, edit } = session();
-  const refused = (ops, why) => { const r = edit(ops); assert.equal(r.is_error, true, JSON.stringify(ops)); assert.match(r.content, /^Refused, nothing applied\./); assert.match(r.content, why); };
+  const refused = (ops: unknown[], why: RegExp) => { const r = edit(ops as Op[]); assert.equal(r.is_error, true, JSON.stringify(ops)); assert.match(r.content, /^Refused, nothing applied\./); assert.match(r.content, why); };
   refused([{ op: 'cue.set', id: '#12', gainDb: -3 }], /“gainDb” is not something a cue\.set takes \(it takes: id, props\)/);
   refused([{ op: 'cue.set', id: '#12' }], /"props" is required/);
   refused([{ op: 'cue.move', ids: ['#12'], to: '#1' }], /“to” is not something a cue\.move takes/);
@@ -148,7 +154,7 @@ test('an operation that would do nothing, or something else, is refused with wha
 
 test('a setting of the wrong kind is refused, not written into the show', () => {
   const { ctx, edit } = session();
-  const refused = (ops, why) => { const r = edit(ops); assert.equal(r.is_error, true, JSON.stringify(ops)); assert.match(r.content, why); };
+  const refused = (ops: unknown[], why: RegExp) => { const r = edit(ops as Op[]); assert.equal(r.is_error, true, JSON.stringify(ops)); assert.match(r.content, why); };
   refused([{ op: 'show.set', path: 'settings.go.panicFade', value: 'fast' }], /settings\.go\.panicFade is a number \(it was given "fast"\)/);
   refused([{ op: 'show.set', path: 'settings.audio.buses.7.out', value: 3 }], /no bus at 7 \(3 in the show: music, effects, vocals\)/);
   refused([{ op: 'show.set', path: 'settings.audio.buses.foh.out', value: 3 }], /no bus with the id “foh”/);
@@ -183,21 +189,21 @@ test('an edit says what it has broken, so the model need not think to ask', () =
 test('the person edits the show while the agent works: the draft follows, and their edit is not undone', () => {
   const { d, ctx, edit, run } = session();
   const made = edit([{ op: 'cue.add', after: '#4', cue: { type: 'fade', number: '4.5', target: '#4', duration: 3, stopTarget: true } }]);
-  const fadeId = /\[(c_[0-9a-f]+)\] #4\.5/.exec(made.content)[1];
+  const fadeId = /\[(c_[0-9a-f]+)\] #4\.5/.exec(made.content)![1];
   edit([{ op: 'cue.set', id: fadeId, props: { name: 'Rain out' } }]);          // a later batch names the new cue by the id it was given
   d.edit([{ op: 'cue.set', id: '#1', props: { gainDb: -20 } }]);               // meanwhile, the person rides a level
   const r = run('propose_changes', { summary: 'Fade the rain out', ops: [{ op: 'cue.set', id: '#4.5', props: { duration: 5 } }] });
   assert.ok(!r.is_error, r.content);
   assert.match(r.content, /^NOTE: the person changed the show while you were working/);
   assert.match(r.content, new RegExp(`${fadeId} is now c_`), 'the model is told the new id of the cue it added');
-  assert.deepEqual(d.proposal.changes.map((c) => `${c.kind} ${c.label}`), ['added 4.5 Rain out'], 'the review shows the assistant’s change and only that');
-  d.accept(d.proposal.id);
-  assert.equal(cueNumbered(d.doc, '1').gainDb, -20, 'the level the person set is still theirs');
-  assert.deepEqual([cueNumbered(d.doc, '4.5').name, cueNumbered(d.doc, '4.5').duration], ['Rain out', 5]);
+  assert.deepEqual(d.proposal!.changes.map((c) => `${c.kind} ${(c as Extract<Change, { label: string }>).label}`), ['added 4.5 Rain out'], 'the review shows the assistant’s change and only that');
+  d.accept(d.proposal!.id);
+  assert.equal(cueNumbered(d.doc, '1')!.gainDb, -20, 'the level the person set is still theirs');
+  assert.deepEqual([cueNumbered(d.doc, '4.5')!.name, cueNumbered(d.doc, '4.5')!.duration], ['Rain out', 5]);
   // undo takes the proposal back in one step and leaves the person's own edit
   d.undo();
   assert.equal(cueNumbered(d.doc, '4.5'), null);
-  assert.equal(cueNumbered(d.doc, '1').gainDb, -20);
+  assert.equal(cueNumbered(d.doc, '1')!.gainDb, -20);
 });
 
 test('a draft that no longer fits the show is dropped, said so, and never half-proposed', () => {
@@ -211,7 +217,7 @@ test('a draft that no longer fits the show is dropped, said so, and never half-p
   assert.equal(ctx.draft, null);
   // and the agent can carry on from the show as it is
   assert.ok(!edit([{ op: 'cue.set', id: '#1', props: { name: 'A' } }]).is_error);
-  assert.equal(run('propose_changes', { summary: 'Rename' }).proposal, d.proposal.id);
+  assert.equal(run('propose_changes', { summary: 'Rename' }).proposal, d.proposal!.id);
   // an undo that puts the show back exactly as the draft knew it disturbs nothing
   const s2 = session();
   s2.edit([{ op: 'cue.set', id: '#1', props: { name: 'B' } }]);
@@ -222,20 +228,20 @@ test('a draft that no longer fits the show is dropped, said so, and never half-p
 test('a proposal cannot land on a show that changed after it was made, and an empty one does not displace one that is waiting', () => {
   const { d, run } = session();
   run('propose_changes', { summary: 'Quieter', ops: [{ op: 'cue.set', id: '#1', props: { gainDb: -9 } }] });
-  const waiting = d.proposal.id;
-  const other = { document: d, draft: null };
+  const waiting = d.proposal!.id;
+  const other: ToolContext = { document: d, draft: null };
   assert.match(execute('propose_changes', { summary: 'Nothing', ops: [{ op: 'cue.set', id: '#2', props: { name: 'Walk-in B' } }] }, other).content, /same as the show/);
-  assert.equal(d.proposal.id, waiting, 'the proposal on the screen is still there');
+  assert.equal(d.proposal!.id, waiting, 'the proposal on the screen is still there');
   d.edit([{ op: 'cue.set', id: '#2', props: { name: 'Edited since' } }]);
   assert.throws(() => d.accept(waiting), /the show changed since this was proposed/);
-  assert.equal(cueNumbered(d.doc, '1').gainDb, undefined);
+  assert.equal(cueNumbered(d.doc, '1')!.gainDb, undefined);
 });
 
 test('simulate starts from a cue named by number or id, and says why a cue inside a group cannot start one', () => {
   const { d, edit, run } = session();
   edit([{ op: 'cue.add', ref: 'g', before: '#1', cue: { type: 'group', number: '0', name: 'Walk-in' } }, { op: 'cue.move', ids: ['#1', '#2'], parent: '@g' }]);
   assert.match(run('simulate', { from: '#0' }).content, /GO 0 Walk-in[\s\S]*Walk-in A plays[\s\S]*Walk-in B plays/);
-  assert.match(run('simulate', { from: cueNumbered(d.doc, '4').id }).content, /GO 4 Rain/);
+  assert.match(run('simulate', { from: cueNumbered(d.doc, '4')!.id }).content, /GO 4 Rain/);
   assert.match(run('simulate', { from: '4' }).content, /GO 4 Rain/);
   const inside = run('simulate', { from: '#2' });
   assert.equal(inside.is_error, true);
@@ -244,7 +250,7 @@ test('simulate starts from a cue named by number or id, and says why a cue insid
 });
 
 test('a long show: the outline is the short one, a run of cues can be read in full, and old outlines leave the conversation', async () => {
-  const ops = [];
+  const ops: Op[] = [];
   for (let i = 1; i <= 400; i++) ops.push({ op: 'cue.add', cue: i % 10 === 0
     ? { type: 'group', number: String(i), name: `Scene ${i}`, children: Array.from({ length: 5 }, (_, k) => ({ type: 'audio', name: `Layer ${k}`, file: `media/scene${i}-${k}.wav`, gainDb: -6, notes: 'a note about this layer that runs on for a while' })) }
     : { type: 'audio', number: String(i), name: `Sound ${i}`, file: `media/sound-${i}.wav`, gainDb: -3 } });
@@ -257,7 +263,7 @@ test('a long show: the outline is the short one, a run of cues can be read in fu
   assert.match(short, /#10 Group: Scene 10 \(5 inside\)/);
   assert.match(short, /#399 Audio: Sound 399/, 'every top-level cue is still named');
   assert.ok(!short.includes('Layer 3'));
-  const ctx = { document: d, draft: null };
+  const ctx: ToolContext = { document: d, draft: null };
   const run = execute('read_show', { from: '#198', count: 4 }, ctx).content;
   assert.match(run, /4 cues from #198 in list "Main" \(199 more after these\)/);
   assert.match(run, /#200 Group: Scene 200\n\s+- \[c_\w+\] Audio: Layer 0 · file=media\/scene200-0\.wav gainDb=-6/);
@@ -288,16 +294,16 @@ test('a follow-up while a proposal waits builds on it, and the result carries bo
   ]);
   const a = createAssistant({ provider: p });
   await a.ask('add a 3 second fade out of the rain after cue 4', { document: d });
-  const first = d.proposal.id;
+  const first = d.proposal!.id;
   const r = await a.ask('make it 5 seconds', { document: d });
   assert.equal(r.ok, true);
   const asked = p.seen[2].at(-1).content[0].text;
   assert.match(asked, /#4\.5 Fade: fade Rain out/, 'the outline it is given includes the change that is waiting');
   assert.match(asked, /<waiting_for_review>.*“Fade the rain out after 4”/);
-  assert.notEqual(d.proposal.id, first);
-  assert.deepEqual(d.proposal.changes.map((c) => `${c.kind} ${c.label}`), ['added 4.5 fade Rain out']);
-  d.accept(d.proposal.id);
-  assert.equal(cueNumbered(d.doc, '4.5').duration, 5);
+  assert.notEqual(d.proposal!.id, first);
+  assert.deepEqual(d.proposal!.changes.map((c) => `${c.kind} ${(c as Extract<Change, { label: string }>).label}`), ['added 4.5 fade Rain out']);
+  d.accept(d.proposal!.id);
+  assert.equal(cueNumbered(d.doc, '4.5')!.duration, 5);
   // once it is in the show, the next question starts from the show, with nothing said to be waiting
   await a.ask('anything else?', { document: d });
   assert.doesNotMatch(p.seen[4].at(-1).content[0].text, /waiting_for_review/);

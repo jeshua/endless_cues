@@ -7,11 +7,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import type { AddressInfo } from 'net';
 import * as R from '../core/report/report';
 import { createOutbox } from '../core/report/outbox';
+import type { Built, ReportInput, SendOptions } from '../core/report/report';
+
+/** A report built, as these tests read it: its fields and files, or the error it was refused with. */
+const buildReport = (r: ReportInput) => R.buildReport(r) as Built & { error?: string; why?: string };
+/** A timer as the fake clock keeps it. */
+interface FakeTimer { fn: () => void; at: number; unref?(): unknown }
 
 /** The header of a WebP still (VP8L) of the given size, padded to `bytes`: all the service and `webpInfo` read. */
-function webp(w, h, bytes = 64, { animated = false } = {}) {
+function webp(w: number, h: number, bytes = 64, { animated = false } = {}) {
   const b = Buffer.alloc(Math.max(bytes, 40));
   b.write('RIFF', 0); b.writeUInt32LE(b.length - 8, 4); b.write('WEBP', 8);
   if (animated) {
@@ -27,60 +34,60 @@ function webp(w, h, bytes = 64, { animated = false } = {}) {
 const base = () => ({ clientId: '6f1c2a9e-3b4d-4e5f-8a7b-1c2d3e4f5a6b', submissionId: 's-0001-abcdef', category: 'bug', comment: 'The fade did not finish.', appVersion: '0.2.0-alpha.1', os: 'macOS 15.1 arm64' });
 
 /** A fake reports service on 127.0.0.1: answers from `script` in turn (the last one again once it runs out), and keeps what it was sent. */
-async function fakeService(script) {
-  const got = [];
+async function fakeService(script: [number, unknown, Record<string, string>?][]) {
+  const got: { url?: string; headers: http.IncomingHttpHeaders; fields: Record<string, string>; files: Record<string, { type: string; name: string; bytes: Uint8Array }>; size: number }[] = [];
   const server = http.createServer(async (req, res) => {
-    const chunks = []; for await (const c of req) chunks.push(c);
+    const chunks: Buffer[] = []; for await (const c of req) chunks.push(c);
     const body = Buffer.concat(chunks);
-    const form = await new Request('http://x/', { method: 'POST', headers: { 'content-type': req.headers['content-type'] }, body }).formData();
-    const fields = {}, files = {};
+    const form = await new Request('http://x/', { method: 'POST', headers: { 'content-type': req.headers['content-type']! }, body }).formData();
+    const fields: Record<string, string> = {}, files: Record<string, { type: string; name: string; bytes: Uint8Array }> = {};
     for (const [k, v] of form.entries()) { if (typeof v === 'string') fields[k] = v; else files[k] = { type: v.type, name: v.name, bytes: new Uint8Array(await v.arrayBuffer()) }; }
     got.push({ url: req.url, headers: req.headers, fields, files, size: body.length });
-    const [status, json, headers] = script.length > 1 ? script.shift() : script[0];
+    const [status, json, headers] = script.length > 1 ? script.shift()! : script[0];
     res.writeHead(status, { 'content-type': 'application/json', 'x-ec-api': '1', ...(headers || {}) });
     res.end(JSON.stringify(json));
   });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { url: `http://127.0.0.1:${server.address().port}/v1/reports`, got, close: () => { server.closeAllConnections(); return new Promise((r) => server.close(r)); } };
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/reports`, got, close: () => { server.closeAllConnections(); return new Promise((r) => server.close(r)); } };
 }
 
 test('the os field and the WebP header are read as the protocol means them', () => {
   assert.equal(R.osName('darwin', '15.1', 'arm64'), 'macOS 15.1 arm64');
   assert.equal(R.osName('win32', '10.0.22631', 'x64'), 'Windows 10.0.22631 x64');
   assert.deepEqual(R.webpInfo(webp(2400, 1500)), { width: 2400, height: 1500, animated: false });
-  assert.equal(R.webpInfo(webp(10, 10, 64, { animated: true })).animated, true);
+  assert.equal(R.webpInfo(webp(10, 10, 64, { animated: true }))!.animated, true);
   assert.equal(R.webpInfo(new Uint8Array(Buffer.from('\x89PNG\r\n\x1a\n' + 'x'.repeat(40), 'binary'))), null, 'a PNG is not a WebP');
 });
 
 test('a report is built in the protocol’s fields, with its limits', () => {
-  const b = R.buildReport({ ...base(), email: 'me@example.com', capturedAt: '2026-11-16T20:00:00Z', context: { view: 'cue list' }, screenshot: webp(2400, 1500, 5000), thumbnail: webp(480, 300, 800) });
+  const b = buildReport({ ...base(), email: 'me@example.com', capturedAt: '2026-11-16T20:00:00Z', context: { view: 'cue list' }, screenshot: webp(2400, 1500, 5000), thumbnail: webp(480, 300, 800) });
   assert.ok(!b.error, b.error);
   assert.deepEqual(Object.keys(b.fields).sort(), ['app_version', 'captured_at', 'category', 'client_id', 'comment', 'context', 'email', 'os', 'submission_id']);
   assert.equal(b.fields.captured_at, '2026-11-16T20:00:00.000Z');
   assert.deepEqual(JSON.parse(b.fields.context), { view: 'cue list' });
   assert.deepEqual(Object.keys(b.files), ['screenshot', 'thumbnail']);
 
-  assert.equal(R.buildReport({ ...base(), comment: 'x'.repeat(6000) }).fields.comment.length, 5000, 'a long comment is cut, as the service would');
-  assert.equal(R.buildReport({ ...base(), comment: '' }).error, 'empty_report', 'no words and no picture');
-  assert.ok(!R.buildReport({ ...base(), comment: '', screenshot: webp(100, 100) }).error, 'a picture alone is a report');
-  assert.equal(R.buildReport({ ...base(), clientId: 'short' }).error, 'bad_client_id');
-  assert.equal(R.buildReport({ ...base(), submissionId: 'has space here' }).error, 'bad_submission_id');
-  assert.equal(R.buildReport({ ...base(), category: 'rant' }).error, 'bad_category');
-  assert.equal(R.buildReport({ ...base(), email: 'not an address' }).error, 'bad_email');
-  assert.equal(R.buildReport({ ...base(), screenshot: webp(2401, 100) }).error, 'bad_image', 'over 2400 px on its long side');
-  assert.equal(R.buildReport({ ...base(), screenshot: webp(100, 100, 64, { animated: true }) }).error, 'bad_image', 'animated');
-  assert.equal(R.buildReport({ ...base(), screenshot: new Uint8Array(Buffer.from('<svg></svg>'.padEnd(60))) }).error, 'bad_image', 'not a WebP at all');
-  assert.equal(R.buildReport({ ...base(), screenshot: webp(1000, 600, R.LIMITS.screenshot + 1) }).error, 'bad_image', 'over 8 MB');
-  assert.equal(R.buildReport({ ...base(), screenshot: webp(1000, 600), thumbnail: webp(481, 100) }).error, 'bad_image', 'a thumbnail over 480 px');
-  assert.equal(R.buildReport({ ...base(), screenshot: webp(1000, 600), thumbnail: webp(480, 300, R.LIMITS.thumbnail + 1) }).error, 'bad_image', 'a thumbnail over 256 KB');
-  assert.deepEqual(Object.keys(R.buildReport({ ...base(), thumbnail: webp(480, 300) }).files), [], 'a thumbnail goes only with a screenshot');
-  assert.equal(R.buildReport({ ...base(), context: { errors: ['x'.repeat(70 * 1024)] } }).error, 'bad_context');
+  assert.equal(buildReport({ ...base(), comment: 'x'.repeat(6000) }).fields.comment.length, 5000, 'a long comment is cut, as the service would');
+  assert.equal(buildReport({ ...base(), comment: '' }).error, 'empty_report', 'no words and no picture');
+  assert.ok(!buildReport({ ...base(), comment: '', screenshot: webp(100, 100) }).error, 'a picture alone is a report');
+  assert.equal(buildReport({ ...base(), clientId: 'short' }).error, 'bad_client_id');
+  assert.equal(buildReport({ ...base(), submissionId: 'has space here' }).error, 'bad_submission_id');
+  assert.equal(buildReport({ ...base(), category: 'rant' }).error, 'bad_category');
+  assert.equal(buildReport({ ...base(), email: 'not an address' }).error, 'bad_email');
+  assert.equal(buildReport({ ...base(), screenshot: webp(2401, 100) }).error, 'bad_image', 'over 2400 px on its long side');
+  assert.equal(buildReport({ ...base(), screenshot: webp(100, 100, 64, { animated: true }) }).error, 'bad_image', 'animated');
+  assert.equal(buildReport({ ...base(), screenshot: new Uint8Array(Buffer.from('<svg></svg>'.padEnd(60))) }).error, 'bad_image', 'not a WebP at all');
+  assert.equal(buildReport({ ...base(), screenshot: webp(1000, 600, R.LIMITS.screenshot + 1) }).error, 'bad_image', 'over 8 MB');
+  assert.equal(buildReport({ ...base(), screenshot: webp(1000, 600), thumbnail: webp(481, 100) }).error, 'bad_image', 'a thumbnail over 480 px');
+  assert.equal(buildReport({ ...base(), screenshot: webp(1000, 600), thumbnail: webp(480, 300, R.LIMITS.thumbnail + 1) }).error, 'bad_image', 'a thumbnail over 256 KB');
+  assert.deepEqual(Object.keys(buildReport({ ...base(), thumbnail: webp(480, 300) }).files), [], 'a thumbnail goes only with a screenshot');
+  assert.equal(buildReport({ ...base(), context: { errors: ['x'.repeat(70 * 1024)] } }).error, 'bad_context');
 });
 
 test('nothing personal is in the context: home folders, the user’s name, addresses, keys and emails are taken out', () => {
   const scrub = R.scrubber({ home: '/Users/sam', user: 'sam' });
   const ctx = R.makeContext({
-    view: 'cue list', mode: 'edit', selected: { number: '7', type: 'audio', name: 'never sent' }, cueCount: 64,
+    view: 'cue list', mode: 'edit', selected: { number: '7', type: 'audio', name: 'never sent' } as { number: string; type: string }, cueCount: 64,
     audio: { device: 'Sam’s AirPods', sampleRate: 48000 }, locale: 'en-GB', showName: 'My Show',
     log: [
       '10:00:00.000 [show] opened',
@@ -93,30 +100,30 @@ test('nothing personal is in the context: home folders, the user’s name, addre
   }, scrub);
   assert.deepEqual(ctx.selected_cue, { number: '7', type: 'audio' }, 'the selected cue is its number and type, never its name');
   assert.equal(ctx.cue_count, 64);
-  assert.equal(ctx.audio.device, '<user>’s AirPods');
-  assert.equal(ctx.audio.sample_rate, 48000);
+  assert.equal(ctx.audio!.device, '<user>’s AirPods');
+  assert.equal(ctx.audio!.sample_rate, 48000);
   assert.equal(ctx.show_name, undefined, 'the show’s name only when asked');
-  assert.equal(ctx.errors.length, 5, 'only the lines that say something went wrong');
+  assert.equal(ctx.errors!.length, 5, 'only the lines that say something went wrong');
   const text = JSON.stringify(ctx);
   for (const bad of ['/Users/sam', 'Users\\\\sam', '/home/sam', 'sam@', '192.168', 'fe80', 'ecd_', 'sk-ant', 'Secret']) assert.ok(!text.includes(bad), `${bad} in ${text}`);
-  assert.match(ctx.errors[0], /^10:00:01\.000 \[page\] TypeError: x is undefined at ~\/…\/show\.json:3$/, 'times are left alone; a path is only its file’s name');
+  assert.match(ctx.errors![0], /^10:00:01\.000 \[page\] TypeError: x is undefined at ~\/…\/show\.json:3$/, 'times are left alone; a path is only its file’s name');
   assert.equal(R.makeContext({ showName: 'My Show', includeShowName: true }).show_name, 'My Show');
 
   const many = R.makeContext({ log: Array.from({ length: 50 }, (_, i) => `error ${i} ${'y'.repeat(900)}`) });
-  assert.equal(many.errors.length, 20, 'at most 20 error lines');
-  assert.ok(many.errors.every((e) => e.length <= 500), 'each at most 500 characters');
-  assert.match(many.errors[19], /^error 49 /, 'the latest ones');
+  assert.equal(many.errors!.length, 20, 'at most 20 error lines');
+  assert.ok(many.errors!.every((e) => e.length <= 500), 'each at most 500 characters');
+  assert.match(many.errors![19], /^error 49 /, 'the latest ones');
 });
 
 test('a report reaches the service as multipart, with its pictures, its User-Agent and no token', async () => {
   const svc = await fakeService([[201, { id: 42, status: 'open', created_at: '2026-11-16T20:00:01.000Z', created: true }]]);
   try {
-    const built = R.buildReport({ ...base(), context: { view: 'rig' }, screenshot: webp(1600, 1000, 3000), thumbnail: webp(480, 300, 500) });
+    const built = buildReport({ ...base(), context: { view: 'rig' }, screenshot: webp(1600, 1000, 3000), thumbnail: webp(480, 300, 500) });
     const r = await R.send(built, { url: svc.url, userAgent: 'EndlessCues/0.2.0-alpha.1 (macOS 15.1 arm64)' });
     assert.deepEqual(r, { sent: true, id: 42, created: true, status: 'open' });
     const g = svc.got[0];
     assert.equal(g.url, '/v1/reports');
-    assert.match(g.headers['content-type'], /^multipart\/form-data; boundary=/);
+    assert.match(g.headers['content-type']!, /^multipart\/form-data; boundary=/);
     assert.equal(g.headers['user-agent'], 'EndlessCues/0.2.0-alpha.1 (macOS 15.1 arm64)');
     assert.equal(g.headers.authorization, undefined, 'no account needed: nothing is sent in its place');
     assert.equal(g.fields.client_id, base().clientId);
@@ -137,13 +144,13 @@ test('what the service says is understood from its error code', async () => {
   assert.equal(R.outcomeOf(413, { error: 'too_large' }).refused, 'too_large');
   // the header, when the body has no retry_after
   const svc = await fakeService([[429, { error: 'rate_limited', message: 'Later.' }, { 'retry-after': '90' }]]);
-  try { const r = await R.send(R.buildReport(base()), { url: svc.url }); assert.equal(r.held, 'rate_limited'); assert.equal(r.retryAfter, 90); assert.equal(r.message, 'Later.'); }
+  try { const r = await R.send(buildReport(base()), { url: svc.url }); assert.equal(r.held, 'rate_limited'); assert.equal(r.retryAfter, 90); assert.equal(r.message, 'Later.'); }
   finally { await svc.close(); }
   // no connection at all
-  const off = await R.send(R.buildReport(base()), { url: 'http://127.0.0.1:9/v1/reports', timeoutMs: 3000 });
+  const off = await R.send(buildReport(base()), { url: 'http://127.0.0.1:9/v1/reports', timeoutMs: 3000 });
   assert.equal(off.held, 'offline');
   // and a test run that was given no endpoint sends nothing
-  assert.equal((await R.send(R.buildReport(base()), { url: null })).refused, 'no_endpoint');
+  assert.equal((await R.send(buildReport(base()), { url: null } as unknown as SendOptions)).refused, 'no_endpoint');
 });
 
 test('the waits between tries are section 2’s: 30 s, 2 and 10 minutes, never sooner than asked, three at most', () => {
@@ -155,10 +162,10 @@ test('a report the service cannot take is kept on disk, tried again on its sched
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-reports-'));
   const svc = await fakeService([[0, null]]);
   svc.close();                        // (a port with nobody on it: offline)
-  let timers = [], t = 1_000_000;
+  let timers: FakeTimer[] = [], t = 1_000_000;
   const box = createOutbox({ dir, sendOptions: () => ({ url: svc.url, timeoutMs: 2000 }), now: () => t,
-    setTimer: (fn, ms) => { const x = { fn, at: t + ms }; timers.push(x); return x; }, clearTimer: (x) => { timers = timers.filter((y) => y !== x); } });
-  const built = R.buildReport({ ...base(), screenshot: webp(800, 500, 900), thumbnail: webp(480, 300, 200) });
+    setTimer: (fn, ms) => { const x: FakeTimer = { fn, at: t + ms }; timers.push(x); return x; }, clearTimer: (x) => { timers = timers.filter((y) => y !== x); } });
+  const built = buildReport({ ...base(), screenshot: webp(800, 500, 900), thumbnail: webp(480, 300, 200) });
   const r1 = await box.submit(built);
   assert.equal(r1.held, 'offline');
   assert.equal(r1.kept, true);
@@ -171,18 +178,18 @@ test('a report the service cannot take is kept on disk, tried again on its sched
   // the service is back, and says 429 first: the next try waits as long as it asked
   const up = await fakeService([[429, { error: 'rate_limited', retry_after: 1834 }], [201, { id: 7, created: true }]]);
   const box2 = createOutbox({ dir, sendOptions: () => ({ url: up.url }), now: () => t,
-    setTimer: (fn, ms) => { const x = { fn, at: t + ms }; timers.push(x); return x; }, clearTimer: (x) => { timers = timers.filter((y) => y !== x); } });
+    setTimer: (fn, ms) => { const x: FakeTimer = { fn, at: t + ms }; timers.push(x); return x; }, clearTimer: (x) => { timers = timers.filter((y) => y !== x); } });
   timers = [];
   box2.start();                       // the app opened again
   assert.equal(timers.length, 1, 'a launch tries what was kept');
-  t = timers[0].at; await timers.shift().fn();
+  t = timers[0].at; await timers.shift()!.fn();
   assert.equal(up.got.length, 1);
   assert.equal(box2.waiting(), 1, 'still kept after a 429');
   assert.ok(box2.list()[0].notBefore >= t + 1834000, 'with the time it may be tried again');
   assert.ok(timers.some((x) => x.at - t >= 1834000), 'and the next automatic try no sooner');
 
   // the person presses Send on a new report: the one waiting goes with it, whatever its retry_after
-  const second = R.buildReport({ ...base(), submissionId: 's-0002-abcdef', comment: 'Second.' });
+  const second = buildReport({ ...base(), submissionId: 's-0002-abcdef', comment: 'Second.' });
   const svc3 = await fakeService([[201, { id: 8, created: true }], [201, { id: 7, created: false }]]);
   const box3 = createOutbox({ dir, sendOptions: () => ({ url: svc3.url }), now: () => t, setTimer: () => null, clearTimer: () => {} });
   const r3 = await box3.submit(second);
@@ -196,7 +203,7 @@ test('a report the service refuses is set aside, not tried again by itself, and 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-reports-'));
   const svc = await fakeService([[503, { error: 'try_again' }], [400, { error: 'bad_category', message: 'No.' }]]);
   const box = createOutbox({ dir, sendOptions: () => ({ url: svc.url }), setTimer: () => null, clearTimer: () => {} });
-  const built = R.buildReport(base());
+  const built = buildReport(base());
   assert.equal((await box.submit(built)).held, 'try_again');
   assert.equal(box.waiting(), 1);
   const out = await box.flush();

@@ -17,6 +17,15 @@
  * actionOf turns one arriving input into what the host should do. What a controller moves is the desk as it
  * is played, not the show: the host lays it over the saved settings, as it does a Mix cue's.
  */
+/** One mapping of the show's map: what is pressed or moved, and what it does. */
+export interface Mapping { on: string; to: string }
+/** An `on` read: a key, or a MIDI note or controller on a channel. */
+export type MapInput = { type: 'key'; key: string } | { type: 'cc' | 'note'; number: number; channel: number };
+/** An input arriving (a key: value 1 down, 0 up). */
+export interface Arrived { type: string; value?: unknown }
+/** A decoded MIDI message, as much of it as a mapping reads. */
+export interface MidiIn { kind: string; channel?: number; number?: number; value?: number | null }
+
 const BUTTONS = ['launch', 'stop', 'mute', 'solo'];
 const CONTINUOUS = ['fader', 'pan', 'eq.low', 'eq.mid', 'eq.high', 'filter'];
 const ALONE = ['stopall', 'crossfader', 'master'];
@@ -24,7 +33,7 @@ const ALONE = ['stopall', 'crossfader', 'master'];
 const RESERVED = new Set([' ', 'escape', 'enter', 'tab', 'backspace', 'delete', '[', ']', 'shift', 'control', 'alt', 'meta', 'capslock']);
 
 /** 'fader:music' → { what: 'fader', arg: 'music' }; null when it is not a target. */
-function parseTo(to) {
+function parseTo(to: unknown) {
   const t = String(to || ''), i = t.indexOf(':');
   const what = i < 0 ? t : t.slice(0, i), arg = i < 0 ? '' : t.slice(i + 1);
   if (ALONE.includes(what)) return arg ? null : { what, arg: '' };
@@ -32,22 +41,22 @@ function parseTo(to) {
   return null;
 }
 /** 'cc 7 ch 1' → { type: 'cc', number: 7, channel: 1 }; 'key q' → { type: 'key', key: 'q' }; null otherwise. */
-function parseOn(on) {
+function parseOn(on: unknown): MapInput | null {
   const t = String(on || '').trim().toLowerCase();
   let m = /^key (\S+)$/.exec(t);
   if (m) return RESERVED.has(m[1]) ? null : { type: 'key', key: m[1] };
   m = /^(cc|note) (\d{1,3})(?: ch (\d{1,2}))?$/.exec(t);
-  if (m && Number(m[2]) <= 127) return { type: m[1], number: Number(m[2]), channel: Math.max(1, Math.min(16, Number(m[3]) || 1)) };
+  if (m && Number(m[2]) <= 127) return { type: m[1] as 'cc' | 'note', number: Number(m[2]), channel: Math.max(1, Math.min(16, Number(m[3]) || 1)) };
   return null;
 }
 /** A key the page saw, as an `on` (null: a key that cannot be mapped, or one held with ⌘, Ctrl or Alt). */
-function onOfKey(key, { meta = false, ctrl = false, alt = false } = {}) {
+function onOfKey(key: unknown, { meta = false, ctrl = false, alt = false } = {}) {
   const k = String(key || '').toLowerCase();
   if (meta || ctrl || alt || !k || RESERVED.has(k) || k.length > 12) return null;
   return `key ${k}`;
 }
 /** A decoded MIDI message (core/net/midi.js) as an `on` and the value it carries (null: not something to map). */
-function onOfMidi(msg) {
+function onOfMidi(msg: MidiIn | null | undefined) {
   if (!msg) return null;
   const ch = msg.channel || 1;
   if (msg.kind === 'cc') return { on: `cc ${msg.number} ch ${ch}`, value: msg.value };
@@ -57,12 +66,12 @@ function onOfMidi(msg) {
 }
 
 /** A fader's travel (0 … 1) as dB, by the law the faders on screen are drawn with: −60 … +12, 0 dB about three quarters up. */
-function faderDb(p) {
+function faderDb(p: unknown) {
   const x = Math.max(0, Math.min(1, Number(p) || 0));
   return x <= 0.001 ? -60 : Math.round((Math.pow(x, 1 / 2.2) * 72 - 60) * 2) / 2;
 }
 /** A controller's 0 … 127 across −1 … +1, with 64 the middle exactly. */
-const bipolar = (v) => (v >= 64 ? (v - 64) / 63 : (v - 64) / 64);
+const bipolar = (v: number) => (v >= 64 ? (v - 64) / 63 : (v - 64) / 64);
 
 /**
  * What one input does to one target. `input`: { type: 'key' | 'note' | 'cc', value } (a key: value 1 down).
@@ -71,7 +80,7 @@ const bipolar = (v) => (v >= 64 ? (v - 64) / 63 : (v - 64) / 64);
  *   { op: 'launch', id } · { op: 'stop-track', name } · { op: 'stop-clips' } · { op: 'mute', name } · { op: 'solo', name }
  *   { op: 'desk-live', key, value, name? }      key: 'db' | 'pan' | 'eq.low' | … | 'filter' | 'crossfader' | 'master'
  */
-function actionOf(to, input) {
+function actionOf(to: unknown, input: Arrived | null | undefined) {
   const t = parseTo(to);
   if (!t || !input) return null;
   const v = Math.max(0, Math.min(127, Number(input.value) || 0));
@@ -91,8 +100,8 @@ function actionOf(to, input) {
 }
 
 /** The show's map made safe: each `on` once (the last stands), nothing that is not a mapping. */
-function cleanMap(list) {
-  const seen = new Map();
+function cleanMap(list: unknown): Mapping[] {
+  const seen = new Map<string, Mapping>();
   for (const m of Array.isArray(list) ? list : []) {
     if (!m || !parseTo(m.to)) continue;
     const on = parseOn(m.on);
@@ -105,12 +114,12 @@ function cleanMap(list) {
 }
 /** A map with `on` given to `to`: what `on` did before it no longer does, and the target's other mapping of
  *  the same sort (its other key, or its other MIDI control) is replaced. `on` null: the target's mappings go. */
-function assign(map, on, to) {
-  const sort = (text) => (String(text).startsWith('key ') ? 'key' : 'midi');
+function assign(map: unknown, on: string | null | undefined, to: string) {
+  const sort = (text: unknown) => (String(text).startsWith('key ') ? 'key' : 'midi');
   const kept = cleanMap(map).filter((m) => (on == null ? m.to !== to : m.on !== on && !(m.to === to && sort(m.on) === sort(on))));
   return on == null ? kept : cleanMap([...kept, { on, to }]);
 }
 /** The mappings an input sets off. */
-function matching(map, on) { return cleanMap(map).filter((m) => m.on === on); }
+function matching(map: unknown, on: string) { return cleanMap(map).filter((m) => m.on === on); }
 
 export { parseTo, parseOn, onOfKey, onOfMidi, actionOf, cleanMap, assign, matching, faderDb };

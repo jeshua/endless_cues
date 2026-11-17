@@ -15,6 +15,12 @@
  * made by hand.
  */
 import { mirror, MIRRORED } from '../../../core/net/mirror';
+import type { MirroredCmd, MirroredResult } from '../../../core/net/mirror';
+import type { HostCommand, HostResult, ModuleContext, ModuleField, Playhead } from '../host';
+
+interface Config { role: string; patch?: string; passcode?: string }
+
+type Timer = ReturnType<typeof setInterval>;
 
 const THUMP_MS = 1000;
 const QUIET_MS = 3500;             // the main unheard for this long: said on the backup
@@ -24,19 +30,19 @@ export const name = 'Main and backup';
 export const summary = 'A second computer follows this one in step (GO, the playhead, stops), ready to take over.';
 export const needsInput = true;
 export const details = 'Both computers open the same saved show. On the main: role “main”, and a network patch that is the backup’s address and its OSC input port (53000). On the backup: role “backup”, the OSC control module on (with the same passcode, if it has one), and its outputs held back (Tools ▸ Hold Back OSC Out, MIDI Out) with its sound muted or not patched, so the equipment hears one computer. To take over: let the outputs go and bring its sound up. Edits, the mixer and cues fired by OSC, MIDI or clock triggers are not mirrored.';
-export const fields = [
+export const fields: ModuleField[] = [
     { key: 'role', label: 'This computer is', kind: 'enum', options: ['main', 'backup'] },
     { key: 'patch', label: 'The backup (on the main)', kind: 'patch' },
     { key: 'passcode', label: 'The backup’s OSC passcode', kind: 'text', placeholder: 'none' },
   ];
-export function create({ host, net, log = () => {}, changed = () => {}, now = Date.now, every = setInterval, never = clearInterval }) {
-    let cfg = null, sent = 0, timer = null, heardAt = 0, heard = 0, off = null, lost = false, beats = 0;
-    const send = (text, label = 'backup') => { if (net && cfg.patch) { net.send(cfg.patch, text, { label }); sent++; } };
-    const connect = () => { if (cfg.passcode) send(`/connect ${cfg.passcode}`, 'backup'); };
+export function create({ host, net, log = () => {}, changed = () => {}, now = Date.now, every = setInterval, never = clearInterval }: ModuleContext & { now?: () => number; every?: (fn: () => void, ms: number) => Timer; never?: (t: Timer) => void }) {
+    let cfg: Config | null = null, sent = 0, timer: Timer | null = null, heardAt = 0, heard = 0, off: (() => void) | null = null, lost = false, beats = 0;
+    const send = (text: string, label = 'backup') => { if (net && cfg!.patch) { net.send(cfg!.patch, text, { label }); sent++; } };
+    const connect = () => { if (cfg!.passcode) send(`/connect ${cfg!.passcode}`, 'backup'); };
     return {
-      start(config) {
+      start(config: Partial<Config>) {
         cfg = { role: 'main', ...config }; sent = 0; heard = 0; heardAt = 0; lost = false; beats = 0;
-        if (cfg.role === 'main') {
+        if (cfg!.role === 'main') {
           connect();
           // (the passcode again every half minute: the backup forgets a silent sender, and may have been restarted)
           timer = every(() => { if (++beats % 30 === 0) connect(); send('/thump', 'backup heartbeat'); sent--; }, THUMP_MS);
@@ -51,14 +57,14 @@ export function create({ host, net, log = () => {}, changed = () => {}, now = Da
       },
       stop() { if (timer) never(timer); timer = null; if (off) off(); off = null; },
       /** A command the host has just carried out (main only): said again to the backup. */
-      onCommand(c, result, before, after) {
+      onCommand(c: HostCommand, result: HostResult | Promise<HostResult>, before: Playhead, after: Playhead) {
         if (!cfg || cfg.role !== 'main' || !c || !MIRRORED.has(c.op)) return;
-        for (const text of mirror(c, { before, after, result })) send(text);
+        for (const text of mirror(c as MirroredCmd, { before, after, result: result as MirroredResult })) send(text);
       },
       status() {
-        if (cfg.role === 'main') {
-          if (!cfg.patch) return { ok: false, text: 'choose the patch that is the backup' };
-          const p = net ? (net.status().patches[cfg.patch] || null) : null;
+        if (cfg!.role === 'main') {
+          if (!cfg!.patch) return { ok: false, text: 'choose the patch that is the backup' };
+          const p = net ? (net.status().patches[cfg!.patch] || null) : null;
           if (!p) return { ok: false, text: 'its patch is gone' };
           return p.state === 'answering' ? { ok: true, text: `the backup is answering · ${sent} sent` } : { ok: false, text: p.state === 'error' ? p.text : `no answer from the backup · ${sent} sent` };
         }

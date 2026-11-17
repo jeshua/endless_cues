@@ -3,24 +3,29 @@ import assert from 'node:assert/strict';
 import { rig, build } from './helpers';
 import * as show from '../core/show/show';
 import { mediaKind, geometryOf, movesOf, mix, stageOf, cleanPin, pinMatrix, project } from '../core/video/stage';
+import type { CueEngine, EngineAudio, EngineStage } from '../core/engine/cue-engine';
+import type { CueSpec, Op, Place } from '../core/show/ops';
+
+/** A line of Active Cues that is a sound (it has a picture, a place on the stage, a duck). */
+type SoundRow = Extract<ReturnType<CueEngine['active']>[number], { picture: unknown }>;
 
 /** An engine with a stage that writes down what it is told. */
-function stageRig(ops) {
+function stageRig(ops: Op[]) {
   const b = build(ops);
-  const calls = [];
-  const video = {};
-  for (const op of ['show', 'move', 'pause', 'resume', 'seek', 'hide']) video[op] = (...a) => calls.push([op, ...a]);
+  const calls: [string, ...any[]][] = [];
+  const video: EngineStage = {};
+  for (const op of ['show', 'move', 'pause', 'resume', 'seek', 'hide'] as const) video[op] = (...a: unknown[]) => calls.push([op, ...a]);
   const r = rig(b.doc, { video });
-  const of = (op) => calls.filter((c) => c[0] === op);
-  return { ...r, ...b, calls, of, last: (op) => of(op).at(-1) };
+  const of = (op: string) => calls.filter((c) => c[0] === op);
+  return { ...r, ...b, calls, of, last: (op: string) => of(op).at(-1)! };
 }
-const add = (ref, cue, extra = {}) => ({ op: 'cue.add', ref, cue, ...extra });
+const add = (ref: string, cue: CueSpec, extra: Place = {}): Op => ({ op: 'cue.add', ref, cue, ...extra });
 
 test('a video file is a sound with a picture: one GO starts both, on the cue’s bus and at its place on the stage', () => {
   const s = stageRig([add('v', { type: 'video', file: 'media/film.mp4', gainDb: -6, bus: 'music', from: 2, x: 100, y: -50, scale: 0.5, layer: 3, loop: true })]);
   s.engine.setDuration('media/film.mp4', 30);
   s.engine.go();
-  const play = s.audio.calls.find((c) => c[0] === 'play');
+  const play = s.audio.calls.find((c) => c[0] === 'play')!;
   assert.deepEqual([play[2].file, play[2].gainDb, play[2].from, play[2].bus, play[2].loop], ['media/film.mp4', -6, 2, 'music', true]);
   assert.equal(play[2].exact, false, 'a video is never decoded whole to loop');
   assert.deepEqual(s.engine.wantedFiles(), []);
@@ -28,7 +33,7 @@ test('a video file is a sound with a picture: one GO starts both, on the cue’s
   assert.equal(id, s.id('v'));
   assert.deepEqual([spec.kind, spec.file, spec.from, spec.loop, spec.layer, spec.fit], ['video', 'media/film.mp4', 2, true, 3, 'fit']);
   assert.deepEqual(spec.geometry, { opacity: 100, x: 100, y: -50, scale: 0.5, rotation: 0 });
-  const a = s.engine.active().find((x) => x.id === s.id('v'));
+  const a = s.engine.active().find((x) => x.id === s.id('v')) as SoundRow;
   assert.deepEqual([a.kind, a.picture, a.total], ['audio', 'video', 30]);
 });
 
@@ -72,10 +77,10 @@ test('a video that reaches its end leaves the stage; with “hold at end” its 
   s.engine.audioEnded(s.id('h'));
   assert.equal(s.of('hide').length, 1, 'held');
   assert.deepEqual(s.last('pause'), ['pause', s.id('h')]);
-  const a = s.engine.active().find((x) => x.id === s.id('h'));
+  const a = s.engine.active().find((x) => x.id === s.id('h')) as SoundRow;
   assert.deepEqual([a.heldEnd, a.elapsed], [true, 4]);
   s.advance(10);
-  assert.equal(s.engine.active().find((x) => x.id === s.id('h')).elapsed, 4, 'its clock has stopped at the end');
+  assert.equal(s.engine.active().find((x) => x.id === s.id('h'))!.elapsed, 4, 'its clock has stopped at the end');
   assert.ok(s.engine.isLive(s.id('h')), 'still running, so what follows it waits');
   s.engine.stopCue(s.id('h'));
   assert.deepEqual(s.last('hide'), ['hide', s.id('h')]);
@@ -121,17 +126,17 @@ test('a Fade aimed at a video moves the geometry it names, and leaves the sound 
   ]);
   s.engine.go(); s.engine.go();
   assert.deepEqual(s.last('move'), ['move', s.id('v'), { opacity: 50, x: 200, scale: 2 }, 2]);
-  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1).slice(1, 4), [s.id('v'), -3, 2], 'the level stays at its own');
+  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1)!.slice(1, 4), [s.id('v'), -3, 2], 'the level stays at its own');
   assert.ok(s.engine.active().some((a) => a.id === s.id('f') && a.kind === 'fade' && a.total === 2), 'the fade shows in Active Cues');
   s.advance(2);
   s.engine.go();
   assert.deepEqual(s.last('move'), ['move', s.id('v'), { rotation: 90 }, 1]);
-  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1).slice(1, 4), [s.id('v'), -20, 1]);
-  assert.deepEqual(s.engine.active().find((a) => a.id === s.id('v')).geometry, { opacity: 50, x: 200, y: 0, scale: 2, rotation: 90 });
+  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1)!.slice(1, 4), [s.id('v'), -20, 1]);
+  assert.deepEqual((s.engine.active().find((a) => a.id === s.id('v')) as SoundRow).geometry, { opacity: 50, x: 200, y: 0, scale: 2, rotation: 90 });
   s.advance(1);
   s.engine.go();       // a Fade that names nothing takes its target out
   assert.deepEqual(s.last('move'), ['move', s.id('v'), { opacity: 0 }, 1.5]);
-  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1).slice(1, 4), [s.id('v'), -60, 1.5]);
+  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1)!.slice(1, 4), [s.id('v'), -60, 1.5]);
   s.advance(1.51);
   assert.deepEqual(s.last('hide'), ['hide', s.id('v')]);
 });
@@ -166,7 +171,7 @@ test('a still image has no sound and no end: it stays until it is stopped, or fo
   assert.deepEqual(s.engine.files(), [], 'a still is not sent to be measured as a sound');
   s.engine.stopCue(s.id('p'));
   s.engine.go();
-  assert.equal(s.engine.active().find((a) => a.id === s.id('t')).total, 5);
+  assert.equal(s.engine.active().find((a) => a.id === s.id('t'))!.total, 5);
   s.advance(4.01);
   assert.deepEqual(s.last('move'), ['move', s.id('t'), { opacity: 0 }, 1]);
   s.advance(1);
@@ -222,7 +227,7 @@ test('a missing still is a problem and is not shown; a video file of an unknown 
   assert.deepEqual(s.engine.problems().map((p) => p.why), ['missing file media/gone.png', 'no file']);
   s.engine.go();
   assert.equal(s.of('show').length, 0);
-  assert.match(show.problems(s.doc).find((p) => p.id === s.id('q')).why, /avi/);
+  assert.match(show.problems(s.doc).find((p) => p.id === s.id('q'))!.why, /avi/);
 });
 
 test('the show file’s Video, Text and Camera cues become the engine’s sounds-with-pictures and pictures', () => {
@@ -246,7 +251,7 @@ test('the show file’s Video, Text and Camera cues become the engine’s sounds
 test('which files are pictures, and a geometry as numbers', () => {
   assert.deepEqual(['a.MP4', 'b.mov', 'c.webm', 'd.png', 'e.JPG', 'f.wav', 'g'].map(mediaKind), ['video', 'video', 'video', 'image', 'image', null, null]);
   assert.deepEqual(geometryOf({ opacity: 250, scale: -1, x: '12' }), { opacity: 100, x: 12, y: 0, scale: 0, rotation: 0 });
-  assert.deepEqual(movesOf({ opacity: 0, x: '', y: null, scale: 2, db: -60 }), { opacity: 0, scale: 2 });
+  assert.deepEqual(movesOf({ opacity: 0, x: '', y: null, scale: 2, db: -60 } as unknown as Parameters<typeof movesOf>[0]), { opacity: 0, scale: 2 });
   assert.deepEqual(mix({ opacity: 100, x: 0, y: 0, scale: 1, rotation: 0 }, { opacity: 0, x: 100 }, 0.25), { opacity: 75, x: 25, y: 0, scale: 1, rotation: 0 });
 });
 
@@ -254,8 +259,8 @@ test('the stage’s settings: a size, and a corner pin that takes each corner wh
   assert.deepEqual(stageOf({}), { width: 1920, height: 1080, pin: null });
   assert.deepEqual(stageOf({ video: { width: 1280, height: 5, pin: [[0, 0], [1, 0], [1, 1], [0, 1]] } }), { width: 1280, height: 1080, pin: null }, 'the stage’s own corners are no pin');
   const pin = [[0.05, 0.02], [0.9, 0.1], [1, 0.95], [-0.02, 1]];
-  const m = pinMatrix(1920, 1080, pin);
-  const near = (got, want) => assert.ok(Math.abs(got[0] - want[0]) < 1e-6 && Math.abs(got[1] - want[1]) < 1e-6, `${got} is not ${want}`);
+  const m = pinMatrix(1920, 1080, pin)!;
+  const near = (got: number[], want: number[]) => assert.ok(Math.abs(got[0] - want[0]) < 1e-6 && Math.abs(got[1] - want[1]) < 1e-6, `${got} is not ${want}`);
   near(project(m, 0, 0), [0.05 * 1920, 0.02 * 1080]);
   near(project(m, 1920, 0), [0.9 * 1920, 0.1 * 1080]);
   near(project(m, 1920, 1080), [1920, 0.95 * 1080]);
@@ -285,7 +290,7 @@ test('a Fade or a Stop aimed at a cue list takes the pictures in it; a Load cue 
   assert.deepEqual(show.problems(s.doc).filter((p) => p.level === 'error'), []);
   s.engine.setDuration('media/film.mp4', 30);
   s.engine.go(); s.engine.go(); s.engine.go();
-  assert.equal(s.of('show').find((c) => c[1] === s.id('v'))[2].from, 8, 'the Load cue’s time reaches the picture');
+  assert.equal(s.of('show').find((c) => c[1] === s.id('v'))![2].from, 8, 'the Load cue’s time reaches the picture');
   assert.ok(s.audio.calls.some((c) => c[0] === 'play' && c[2].from === 8), '…and the sound');
   s.engine.go();
   assert.deepEqual(s.of('move').slice(-2).map((c) => [c[1], c[2], c[3]]).sort(), [[s.id('t'), { opacity: 0 }, 2], [s.id('v'), { opacity: 0 }, 2]].sort());
@@ -305,10 +310,10 @@ test('a Reset cue on a Fade puts a picture back where its cue has it; a Target c
   assert.deepEqual(show.problems(s.doc).filter((p) => p.level === 'error'), []);
   s.engine.go(); s.engine.go(); s.engine.go();
   s.advance(1.01);
-  assert.deepEqual(s.engine.active().find((a) => a.id === s.id('v')).geometry, { opacity: 40, x: 200, y: 0, scale: 1, rotation: 0 });
+  assert.deepEqual((s.engine.active().find((a) => a.id === s.id('v')) as SoundRow).geometry, { opacity: 40, x: 200, y: 0, scale: 1, rotation: 0 });
   s.engine.go();
   assert.deepEqual(s.last('move'), ['move', s.id('v'), { opacity: 100, x: 10, y: 0, scale: 1, rotation: 0 }, 0]);
-  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1).slice(1, 4), [s.id('v'), -3, 0]);
+  assert.deepEqual(s.audio.calls.filter((c) => c[0] === 'fade').at(-1)!.slice(1, 4), [s.id('v'), -3, 0]);
   s.engine.go();
   s.engine.fire(s.id('f'));
   assert.deepEqual(s.last('move'), ['move', s.id('p'), { opacity: 40, x: 200 }, 1]);
@@ -320,10 +325,10 @@ test('a cue that ducks the others moves a video’s sound and leaves a still alo
     add('p', { type: 'video', file: 'media/card.png', secondTrigger: 'stop' }),
     add('d', { type: 'audio', file: 'media/line.wav', duckOthers: -12, duckTime: 0.5 }),
   ]);
-  const ducks = []; s.audio.duck = (key, db, secs) => ducks.push([key, db, secs]);
+  const ducks: [string, number, number][] = []; (s.audio as EngineAudio).duck = (key, db, secs) => ducks.push([key, db, secs]);
   s.engine.go(); s.engine.go(); s.engine.go();
   assert.deepEqual(ducks, [[s.id('v'), -12, 0.5]]);
-  assert.equal(s.engine.active().find((a) => a.id === s.id('p')).duck, 0);
+  assert.equal((s.engine.active().find((a) => a.id === s.id('p')) as SoundRow).duck, 0);
   assert.equal(s.engine.fire(s.id('p')), 'second');
   assert.deepEqual(s.last('hide'), ['hide', s.id('p')]);
 });

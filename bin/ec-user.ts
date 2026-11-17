@@ -38,19 +38,22 @@ const [session, verb, ...rest] = process.argv.slice(2);
 if (!session || !verb) { console.log(fs.readFileSync(__filename, 'utf8').split('/*!')[1].split('*/')[0].split('\n').slice(1).map((l) => l.replace(/^ \* ?/, '')).join('\n')); process.exit(session ? 1 : 0); }
 const dir = path.resolve(session);
 const flags = new Set(rest.filter((a) => /^--[a-z]/.test(a)));
-const flagValue = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+const flagValue = (name: string) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
 const words = rest.filter((a, i) => !/^--[a-z]/.test(a) && !['--nth', '--button'].includes(rest[i - 1]));
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const mark = (line) => fs.appendFileSync(path.join(dir, 'journal.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...line }) + '\n');
-const fail = (text) => { console.error(text); process.exit(1); };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const mark = (line: Record<string, unknown>) => fs.appendFileSync(path.join(dir, 'journal.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...line }) + '\n');
+const fail = (text: string): never => { console.error(text); process.exit(1); };
 
 function door() {
   try { return JSON.parse(fs.readFileSync(path.join(dir, 'door.json'), 'utf8')); } catch { return null; }
 }
-function send(c) {
+/** What the app's drive answers (app/main/drive.js). */
+interface Answer { text?: string; shot?: string; error?: string }
+
+function send(c: Record<string, unknown>) {
   const d = door();
   if (!d) fail('The app is not open for this session. Use: start');
-  return new Promise((resolve) => {
+  return new Promise<Answer>((resolve) => {
     const req = http.request({ host: '127.0.0.1', port: d.port, method: 'POST', path: '/', headers: { 'Content-Type': 'application/json' } }, (res) => {
       let body = ''; res.on('data', (x) => { body += x; }); res.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve({ error: 'the app gave no answer' }); } });
     });
@@ -58,7 +61,7 @@ function send(c) {
     req.end(JSON.stringify(c));
   });
 }
-async function say(c) {
+async function say(c: Record<string, unknown>) {
   const r = await send(c);
   if (r.error) fail(r.error);
   if (r.shot) console.log(`picture: ${r.shot}`);
@@ -115,7 +118,7 @@ async function osc() {
 
 (async () => {
   const mods = ['shift', 'cmd', 'alt', 'ctrl'].filter((m) => flags.has(`--${m}`));
-  const num = (i) => Number(words[i]);
+  const num = (i: number) => Number(words[i]);
   const byText = words.length && Number.isNaN(Number(words[0]));
   switch (verb) {
     case 'start': return start();

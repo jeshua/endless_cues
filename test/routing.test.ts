@@ -7,10 +7,12 @@ import * as routing from '../core/audio/routing';
 import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import { importQlab, toDb } from '../core/import/qlab';
+import type { QlabLevel } from '../core/audio/routing';
+import type { CueSpec } from '../core/show/ops';
 
-const withCue = (cue, settings) => {
+const withCue = (cue: CueSpec, settings?: Record<string, unknown>) => {
   let doc = show.newShow('t');
-  doc = applyOps(doc, [{ op: 'cue.add', list: doc.lists[0].id, cue }, ...Object.entries(settings || {}).map(([p, value]) => ({ op: 'show.set', path: p, value }))]).doc;
+  doc = applyOps(doc, [{ op: 'cue.add', list: doc.lists[0].id, cue }, ...Object.entries(settings || {}).map(([p, value]) => ({ op: 'show.set' as const, path: p, value }))]).doc;
   return doc;
 };
 
@@ -67,7 +69,7 @@ test('the outputs a show uses, and what a device with too few cannot play (silen
   assert.deepEqual(routing.lost(doc, 8), []);
   const on4 = routing.lost(doc, 4);
   assert.equal(on4.length, 2);
-  assert.equal(on4[0].id, doc.lists[0].cues[0].children[0].id);
+  assert.equal(on4[0].id, doc.lists[0].cues[0].children![0].id);
   assert.match(on4[0].why, /outputs 5, 6, and this device has 4/);
   assert.match(on4[1].why, /Audition .* 7–8/);
   assert.equal(routing.lost(doc, 2).length, 3, 'the reverb’s return on 3–4 is lost too');
@@ -92,41 +94,41 @@ test('audition marks: only what V starts, each sound once, and never for longer 
 });
 
 test('a QLab level matrix becomes a cue’s outputs: masters multiplied in, the default left as no routing', () => {
-  const knob = (row, column, initialLevel, trimLevel = 1) => ({ row, column, initialLevel, trimLevel });
+  const knob = (row: number, column: number, initialLevel: number, trimLevel = 1): QlabLevel => ({ row, column, initialLevel, trimLevel });
   const plain = { a: knob(0, 0, 0.5), b: knob(0, 1, 1), c: knob(0, 2, 1), d: knob(1, 1, 1), e: knob(2, 2, 1) };
   assert.equal(routing.fromQlab(plain, { toDb }), null, 'QLab’s default is what a bus does');
-  assert.equal(routing.fromQlab({ ...plain, e: undefined, f: knob(1, 2, 1) }, { toDb }), null, 'one channel on both of 1–2 is plain too');
+  assert.equal(routing.fromQlab({ ...plain, e: undefined, f: knob(1, 2, 1) } as unknown as Record<string, QlabLevel>, { toDb }), null, 'one channel on both of 1–2 is plain too');
   // a click: channel 1 to output 3, channel 2 to output 4 at −6; output 4's own level at −6 more; a silent crosspoint
   const click = routing.fromQlab({ m: knob(0, 0, 1), o3: knob(0, 3, 1), o4: knob(0, 4, 0.5011872336), x: knob(1, 3, 1), y: knob(2, 4, 0.5011872336), z: knob(2, 1, 0) }, { toDb });
-  assert.deepEqual(click.matrix, [{ 3: 0 }, { 4: -12 }]);
-  assert.deepEqual(click.outputs, [3, 4]);
-  assert.deepEqual(routing.fromQlab({ ...plain, i: knob(1, 0, 0.5011872336) }, { toDb }).matrix, [{ 1: -6 }, { 2: 0 }], 'an input level off unity is a routing of its own');
-  assert.deepEqual(routing.fromQlab({ ...plain, d: knob(1, 1, 1, 0.5011872336) }, { toDb }).matrix, [{ 1: -6 }, { 2: 0 }], 'a trim is part of the level');
+  assert.deepEqual(click!.matrix, [{ 3: 0 }, { 4: -12 }]);
+  assert.deepEqual(click!.outputs, [3, 4]);
+  assert.deepEqual(routing.fromQlab({ ...plain, i: knob(1, 0, 0.5011872336) }, { toDb })!.matrix, [{ 1: -6 }, { 2: 0 }], 'an input level off unity is a routing of its own');
+  assert.deepEqual(routing.fromQlab({ ...plain, d: knob(1, 1, 1, 0.5011872336) }, { toDb })!.matrix, [{ 1: -6 }, { 2: 0 }], 'a trim is part of the level');
   assert.equal(routing.fromQlab({}, { toDb }), null);
   // QLab 4 writes all 24 rows, each to its own output: for a stereo file, or one whose channels are not known, that is the default
-  const wide = { m: knob(0, 0, 0.7) };
+  const wide: Record<string, QlabLevel> = { m: knob(0, 0, 0.7) };
   for (let i = 1; i <= 24; i++) { wide['o' + i] = knob(0, i, 1); wide['i' + i] = knob(i, 0, 1); wide['x' + i] = knob(i, i, 1); }
   assert.equal(routing.fromQlab(wide, { toDb }), null, 'an untouched diagonal is no routing');
   assert.equal(routing.fromQlab(wide, { toDb, channels: 2 }), null);
-  assert.deepEqual(routing.fromQlab(wide, { toDb, channels: 4 }).outputs, [1, 2, 3, 4], 'a four-channel file keeps its four');
-  assert.deepEqual(routing.fromQlab({ ...wide, x1: knob(1, 3, 1) }, { toDb }).matrix, [{ 3: 0 }, { 2: 0 }], 'and with the channels unknown, the untouched rows are not kept');
-  assert.deepEqual(routing.fromQlab({ ...wide, x1: knob(1, 3, 1) }, { toDb, channels: 2 }).matrix, [{ 3: 0 }, { 2: 0 }], 'a real routing is kept, without the rows past the file');
+  assert.deepEqual(routing.fromQlab(wide, { toDb, channels: 4 })!.outputs, [1, 2, 3, 4], 'a four-channel file keeps its four');
+  assert.deepEqual(routing.fromQlab({ ...wide, x1: knob(1, 3, 1) }, { toDb })!.matrix, [{ 3: 0 }, { 2: 0 }], 'and with the channels unknown, the untouched rows are not kept');
+  assert.deepEqual(routing.fromQlab({ ...wide, x1: knob(1, 3, 1) }, { toDb, channels: 2 })!.matrix, [{ 3: 0 }, { 2: 0 }], 'a real routing is kept, without the rows past the file');
 });
 
 test('importing a QLab workspace carries a cue’s matrix across, and says how', () => {
   const file = path.join(__dirname, 'fixtures', 'small.qlab5');
   const { doc, report } = importQlab(fs.readFileSync(file), { file });
-  const w2 = show.findByNumber(doc, '8').children[1];
+  const w2 = show.findByNumber(doc, '8')!.children![1];
   assert.deepEqual(w2.outputs, [{ 1: 0, 2: -6 }, { 2: 0 }], 'channel 1 also to output 2 at half: kept');
   const said = report.issues.filter((i) => /output routing/.test(i.why));
   assert.equal(said.length, 1);
   assert.match(said[0].why, /came across as outputs 1–2/);
-  assert.equal(show.findByNumber(doc, '1').outputs, undefined, 'a cue at QLab’s default routing has none here');
+  assert.equal(show.findByNumber(doc, '1')!.outputs, undefined, 'a cue at QLab’s default routing has none here');
 });
 
 test('a WAV file’s channels are read from its header', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-routing-'));
-  const wav = (channels) => { const b = Buffer.alloc(44 + 8 * channels); b.write('RIFF', 0); b.writeUInt32LE(36 + 8 * channels, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(channels, 22); b.writeUInt32LE(44100, 24); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(8 * channels, 40); return b; };
+  const wav = (channels: number) => { const b = Buffer.alloc(44 + 8 * channels); b.write('RIFF', 0); b.writeUInt32LE(36 + 8 * channels, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(channels, 22); b.writeUInt32LE(44100, 24); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(8 * channels, 40); return b; };
   fs.writeFileSync(path.join(dir, 'six.wav'), wav(6));
   fs.writeFileSync(path.join(dir, 'not.wav'), 'hello, this is not a sound file at all');
   assert.equal(routing.wavChannels(path.join(dir, 'six.wav')), 6);
@@ -136,7 +138,7 @@ test('a WAV file’s channels are read from its header', () => {
 });
 
 test('a change to a cue’s outputs is said in words in the list of unsaved changes', () => {
-  const { diffShows } = require('../core/show/diff');
+  const { diffShows } = require('../core/show/diff') as typeof import('../core/show/diff');
   const a = withCue({ type: 'audio', file: 'a.wav' });
   const b = applyOps(a, [{ op: 'cue.set', id: a.lists[0].cues[0].id, props: { outputs: [{ 3: 0 }, { 4: 0 }], eq: { low: -6 } } }]).doc;
   const text = JSON.stringify(diffShows(a, b));

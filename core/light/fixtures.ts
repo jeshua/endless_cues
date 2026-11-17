@@ -29,9 +29,19 @@
 const COLOURS = ['red', 'green', 'blue', 'white', 'amber'];
 const RGB = ['red', 'green', 'blue'];
 
-const p = (key, home = 0, bits = 8) => ({ key, home, bits });
+/** A fixture definition as written: the library's, or a show's own. */
+export interface FixtureSource { id?: string; name?: string; params?: { key?: unknown; home?: unknown; bits?: unknown }[] }
+/** One parameter of a compiled definition: its channel `offset` (-1 for the made-up intensity). */
+export interface FixtureParam { key: string; bits: number; home: number; offset: number; virtual?: boolean }
+/** A definition as the rest of the app uses it (`compile`). */
+export interface FixtureDef {
+  id: string; name: string; params: FixtureParam[]; footprint: number; colours: string[]; virtual: boolean;
+  default: string; byKey: Map<string, FixtureParam>; builtIn?: boolean;
+}
 
-const LIBRARY = [
+const p = (key: string, home = 0, bits = 8) => ({ key, home, bits });
+
+const LIBRARY: FixtureSource[] = [
   { id: 'dimmer', name: 'Dimmer', params: [p('intensity')] },
   { id: 'rgb', name: 'RGB', params: [p('red', 100), p('green', 100), p('blue', 100)] },
   { id: 'rgbw', name: 'RGBW', params: [p('red', 100), p('green', 100), p('blue', 100), p('white', 0)] },
@@ -48,9 +58,9 @@ const KEY = /^[a-z][a-z0-9_]*$/;
  * A definition as the rest of the app uses it: its channels laid out, its default parameter, and
  * whether its intensity is a channel or the made-up one. Returns { ok: false, why } for one that cannot be.
  */
-function compile(def) {
+function compile(def: FixtureSource | null | undefined): { ok: true; def: FixtureDef } | { ok: false; why: string } {
   if (!def || typeof def !== 'object') return { ok: false, why: 'not a fixture definition' };
-  const params = [];
+  const params: FixtureParam[] = [];
   const seen = new Set();
   let offset = 0;
   for (const raw of Array.isArray(def.params) ? def.params : []) {
@@ -76,11 +86,11 @@ function compile(def) {
 }
 
 /** Where a parameter rests when its line does not say: red, green and blue at 100 (white), pan and tilt in the middle, the rest at 0. */
-const restOf = (key) => (RGB.includes(key) ? 100 : key === 'pan' || key === 'tilt' ? 50 : 0);
+const restOf = (key: string) => (RGB.includes(key) ? 100 : key === 'pan' || key === 'tilt' ? 50 : 0);
 
 /** A definition written as text (one parameter a line, in DMX order): "pan 16", "tilt 16 home 50", "strobe". */
-function parseText(text) {
-  const params = [];
+function parseText(text: unknown): { ok: true; params: { key: string; bits: number; home: number }[] } | { ok: false; why: string } {
+  const params: { key: string; bits: number; home: number }[] = [];
   for (const [i, line] of String(text || '').split(/\r?\n/).entries()) {
     const s = line.replace(/(#|\/\/).*$/, '').trim().toLowerCase();
     if (!s) continue;
@@ -92,13 +102,13 @@ function parseText(text) {
   return r.ok ? { ok: true, params } : r;
 }
 /** The same definition back as text. */
-function toText(def) {
+function toText(def: { params?: { key: string; bits?: unknown; home?: unknown; virtual?: boolean }[] }): string {
   return (def.params || []).filter((x) => !x.virtual).map((x) => `${x.key}${Number(x.bits) === 16 ? ' 16' : ''}${Number(x.home) !== restOf(x.key) ? ` home ${Number(x.home)}` : ''}`).join('\n');
 }
 
 /** Every definition a show can use: the library, then the show's own (one of the show's with a library id takes its place). */
-function all(own = []) {
-  const out = new Map();
+function all(own: FixtureSource[] = []): Map<string, FixtureDef & { builtIn: boolean }> {
+  const out = new Map<string, FixtureDef & { builtIn: boolean }>();
   for (const d of [...LIBRARY, ...(Array.isArray(own) ? own : [])]) {
     const r = compile(d);
     if (r.ok && r.def.id) out.set(r.def.id, { ...r.def, builtIn: LIBRARY.includes(d) });
@@ -107,7 +117,7 @@ function all(own = []) {
 }
 
 /** For the UI: [{ id, name, footprint, params: ['intensity', 'pan', …], builtIn }]. */
-function list(own = []) {
+function list(own: FixtureSource[] = []) {
   return [...all(own).values()].map((d) => ({ id: d.id, name: d.name, footprint: d.footprint, builtIn: d.builtIn, text: toText(d), params: d.params.map((x) => x.key) }));
 }
 

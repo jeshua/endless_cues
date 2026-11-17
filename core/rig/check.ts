@@ -42,18 +42,47 @@ import * as show from '../show/show';
 import { STAGE_TYPES } from '../show/cue-types';
 import * as rigDevices from './devices';
 import { DEVICES as MODELS } from '../net/devices';
+import type { LiveState } from './liveness';
+import type { Device, Patch, ShowDoc } from '../show/types';
+import type { Op } from '../show/ops';
 
-const GROUPS = { show: 'The show', sound: 'Sound', picture: 'Picture', lights: 'Lights', equipment: 'Equipment', connections: 'Connections', held: 'Held back', before: 'Before the show' };
+/** What only the running app knows (any of it may be missing): see the list above. */
+export interface CheckFacts {
+  app?: boolean;
+  saved?: { untitled?: boolean; dirty?: boolean; changes?: number };
+  broken?: { id: string; why: string }[];
+  files?: { total?: number; missing: string[] };
+  audio?: { device?: string; ok?: boolean; fallback?: string; outputs?: number; inputs?: string[] | null } | null;
+  stage?: { open?: boolean; waiting?: boolean; label?: string } | null;
+  light?: { error?: unknown; held?: boolean } | null;
+  network?: { input?: { port?: number; listening?: boolean; error?: string; tcpError?: string }; patches?: Record<string, { state: string; text?: string }> } | null;
+  liveness?: Record<string, LiveState | null> | null;
+  midi?: { outputs?: string[]; error?: string } | null;
+  modules?: { id: string; name: string; enabled?: boolean; running?: boolean; status?: { ok?: boolean; text?: string } }[];
+  timecode?: { arriving?: boolean; text?: string } | null;
+  overrides?: { id: string; label: string; on?: boolean }[];
+  script?: { file?: string; found?: boolean; why?: string; lines?: number; marks?: number; missing: { number: string; line: number }[] };
+  ticks?: Record<string, boolean>;
+}
+/** A button on a row: `cmd` is the host command it sends. */
+export interface CheckAction { id: string; label: string; cmd?: Record<string, unknown>; cue?: string }
+/** One row of the Rig page. */
+export interface CheckItem {
+  id: string; group: string; groupLabel: string; label: string; state: string; text: string; fix: string; needed: boolean;
+  actions: CheckAction[]; device?: string; patch?: string; check?: string;
+}
+
+const GROUPS: Record<string, string> = { show: 'The show', sound: 'Sound', picture: 'Picture', lights: 'Lights', equipment: 'Equipment', connections: 'Connections', held: 'Held back', before: 'Before the show' };
 const STATES = ['ready', 'look', 'problem', 'unknown'];
 
 const CANNOT = 'cannot be asked: press Try';
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-const listOf = (names, max = 4) => (names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} and ${names.length - max} more`);
-const and = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const listOf = (names: unknown[], max = 4) => (names.length <= max ? names.join(', ') : `${names.slice(0, max).join(', ')} and ${names.length - max} more`);
+const and = (names: string[]) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
 /** What of the show's cues uses what: counted once, so each row can ask. */
-function uses(doc) {
-  const u = { cues: 0, types: new Set(), files: new Set(), devices: new Set(), patches: new Set(), noPatch: false, inputs: new Set(), mtc: false };
+function uses(doc: ShowDoc) {
+  const u = { cues: 0, types: new Set<string>(), files: new Set<string>(), devices: new Set<string>(), patches: new Set<string>(), noPatch: false, inputs: new Set<string>(), mtc: false };
   show.walk(doc, (c) => {
     u.cues++; u.types.add(c.type);
     if (c.file) u.files.add(String(c.file));
@@ -66,42 +95,42 @@ function uses(doc) {
 }
 
 /** The edit that makes a patch a device: the same id, so every cue that named the patch still does. null: its id cannot be a device's. */
-function patchToDevice(doc, patch) {
+function patchToDevice(doc: ShowDoc, patch: Patch): Op[] | null {
   if (!rigDevices.ID.test(String(patch.id))) return null;       // (an older patch id with a capital or a dash)
-  const device = { id: patch.id, name: patch.name, host: patch.host, port: patch.port, protocol: patch.protocol || 'udp' };
-  for (const k of ['framing', 'listenPort', 'iface', 'destinations', 'notes']) if (patch[k] !== undefined && patch[k] !== '' && patch[k] !== null) device[k] = patch[k];
+  const device: Record<string, unknown> = { id: patch.id, name: patch.name, host: patch.host, port: patch.port, protocol: patch.protocol || 'udp' };
+  for (const k of ['framing', 'listenPort', 'iface', 'destinations', 'notes'] as const) if (patch[k] !== undefined && patch[k] !== '' && patch[k] !== null) device[k] = patch[k];
   if (patch.device && MODELS[patch.device] && patch.device !== 'generic') device.model = patch.device;
-  return [{ op: 'device.add', device }, { op: 'show.set', path: 'settings.network.patches', value: doc.settings.network.patches.filter((p) => p.id !== patch.id) }];
+  return [{ op: 'device.add', device: device as Partial<Device> }, { op: 'show.set', path: 'settings.network.patches', value: doc.settings.network.patches.filter((p) => p.id !== patch.id) }];
 }
 
-function items(doc, facts = {}) {
-  const out = [];
+function items(doc: ShowDoc, facts: CheckFacts = {}): CheckItem[] {
+  const out: CheckItem[] = [];
   const app = facts.app !== false;
   const s = doc.settings, u = uses(doc);
   const rig = s.rig || { devices: [], checks: [], script: '' };
-  const row = (group, id, label, state, text = '', fix = '', more = {}) => out.push({ id, group, groupLabel: GROUPS[group], label, state, text, fix: state === 'ready' ? '' : fix, needed: true, actions: [], ...more });
+  const row = (group: string, id: string, label: string, state: string, text = '', fix = '', more: Partial<CheckItem> = {}) => out.push({ id, group, groupLabel: GROUPS[group], label, state, text, fix: state === 'ready' ? '' : fix, needed: true, actions: [], ...more });
 
   // ── the show ──
   const sv = facts.saved;
-  const save = { actions: [{ id: 'save', label: 'Save', cmd: { op: 'save' } }] };
+  const save: Partial<CheckItem> = { actions: [{ id: 'save', label: 'Save', cmd: { op: 'save' } }] };
   if (!sv) row('show', 'show.saved', 'The show is saved', 'unknown', 'it cannot be told from here');
   else if (sv.untitled) row('show', 'show.saved', 'The show is saved', 'look', 'not in a folder yet', 'Save it to a folder (⌘S).', save);
-  else if (sv.dirty) row('show', 'show.saved', 'The show is saved', 'look', sv.changes > 0 ? plural(sv.changes, 'unsaved change') : 'unsaved changes', app ? 'Save (⌘S).' : 'It has unsaved changes from the app: save or revert them there.', app ? save : {});
+  else if (sv.dirty) row('show', 'show.saved', 'The show is saved', 'look', sv.changes! > 0 ? plural(sv.changes!, 'unsaved change') : 'unsaved changes', app ? 'Save (⌘S).' : 'It has unsaved changes from the app: save or revert them there.', app ? save : {});
   else row('show', 'show.saved', 'The show is saved', 'ready');
   const mins = Number((s.backup || {}).minutes) || 0;
   if (mins > 0) row('show', 'show.backups', 'Backups are on', 'ready', `every ${plural(mins, 'minute')}`);
   else row('show', 'show.backups', 'Backups are on', 'look', 'off', 'Turn them on in Settings ▸ Show.');
   {
     const { byId } = show.index(doc);
-    const why = new Map();
+    const why = new Map<string, string>();
     for (const p of show.problems(doc)) if (p.level === 'error' && !why.has(p.id)) why.set(p.id, p.why);
     for (const p of facts.broken || []) if (p && byId.has(p.id) && !why.has(p.id)) why.set(p.id, p.why);
     // (named in the order they are in the list, which is the order they will be met in)
-    const bad = new Map();
-    show.walk(doc, (c) => { if (why.has(c.id)) bad.set(c.id, why.get(c.id)); });
+    const bad = new Map<string, string>();
+    show.walk(doc, (c) => { if (why.has(c.id)) bad.set(c.id, why.get(c.id)!); });
     if (!bad.size) row('show', 'show.cues', 'Every cue can run', 'ready', plural(u.cues, 'cue'));
     else {
-      const names = [...bad.keys()].map((id) => { const c = byId.get(id); return c.number || c.name || 'one with no number'; });
+      const names = [...bad.keys()].map((id) => { const c = byId.get(id)!; return c.number || c.name || 'one with no number'; });
       const [first, why] = [...bad][0];
       row('show', 'show.cues', 'Every cue can run', 'problem', `${bad.size === 1 ? '1 cue is' : `${bad.size} cues are`} broken: ${listOf(names, 6)}.`, `${names[0]}: ${why}.`, { actions: [{ id: 'select', label: 'Show it', cue: first }] });
     }
@@ -127,10 +156,10 @@ function items(doc, facts = {}) {
   }
   const far = s.audio.buses.filter((b) => Number(b.out) > 1);
   if (far.length && (a || app)) {
-    const lost = a && Number(a.outputs) > 0 ? far.filter((b) => Number(b.out) + 1 > a.outputs) : [];
+    const lost = a && Number(a.outputs) > 0 ? far.filter((b) => Number(b.out) + 1 > a.outputs!) : [];
     if (!a || !(Number(a.outputs) > 0)) row('sound', 'sound.buses', 'Every bus has its outputs', 'unknown', 'it cannot be told from here');
-    else if (lost.length) row('sound', 'sound.buses', 'Every bus has its outputs', 'problem', `${and(lost.map((b) => `${b.name} (outputs ${b.out}–${Number(b.out) + 1})`))} cannot be heard: this device has ${plural(a.outputs, 'output')}`, 'Choose a device with enough outputs in Settings ▸ Audio, or send the bus to outputs 1–2.');
-    else row('sound', 'sound.buses', 'Every bus has its outputs', 'ready', plural(a.outputs, 'output'));
+    else if (lost.length) row('sound', 'sound.buses', 'Every bus has its outputs', 'problem', `${and(lost.map((b) => `${b.name} (outputs ${b.out}–${Number(b.out) + 1})`))} cannot be heard: this device has ${plural(a.outputs!, 'output')}`, 'Choose a device with enough outputs in Settings ▸ Audio, or send the bus to outputs 1–2.');
+    else row('sound', 'sound.buses', 'Every bus has its outputs', 'ready', plural(a.outputs!, 'output'));
   }
   if (u.files.size) {
     const f = facts.files;
@@ -175,11 +204,11 @@ function items(doc, facts = {}) {
     const label = d.name;
     const used = u.devices.has(d.id) || u.patches.has(d.id);
     const needed = d.needed !== false && used;
-    const actions = [];
+    const actions: CheckAction[] = [];
     if (how === 'ask') actions.push({ id: 'ask', label: 'Ask again', cmd: { op: 'device-ask', device: d.id } });
     const test = d.test && d.commands.find((c) => c.id === d.test);
     if (test) actions.push({ id: 'try', label: `Try: ${test.label}`, cmd: { op: 'device-try', device: d.id, command: test.id } });
-    const more = { needed, actions, device: d.id };
+    const more: Partial<CheckItem> = { needed, actions, device: d.id };
     const id = `device.${d.id}`;
     if (net && (!d.host || !(Number(d.port) > 0))) { row('equipment', id, label, 'look', 'no address yet', 'Give it an address.', { ...more, actions: [] }); continue; }
     const l = live && live[d.id];
@@ -202,7 +231,7 @@ function items(doc, facts = {}) {
   for (const p of patches) {
     if (!p || !(u.patches.has(p.id) || (u.noPatch && patches.length === 1))) continue;
     const ops = patchToDevice(doc, p);
-    const actions = ops ? [{ id: 'make-device', label: 'Make it a device', cmd: { op: 'edit', ops, label: `${p.name} made a device` } }] : [];
+    const actions: CheckAction[] = ops ? [{ id: 'make-device', label: 'Make it a device', cmd: { op: 'edit', ops, label: `${p.name} made a device` } }] : [];
     const st = net && net.patches ? net.patches[p.id] : null;
     const id = `patch.${p.id}`;
     if (!st) row('equipment', id, p.name, 'unknown', 'cannot be asked', '', { actions, patch: p.id });
@@ -212,7 +241,7 @@ function items(doc, facts = {}) {
   }
   if (net && net.input && Number(net.input.port) > 0) {
     const port = net.input.port;
-    if (net.input.error || net.input.tcpError) row('equipment', 'equipment.input', `Listening on port ${port}`, 'problem', net.input.error || net.input.tcpError, 'Another program has it: close that, or change the port in Settings ▸ Integrations ▸ Network.');
+    if (net.input.error || net.input.tcpError) row('equipment', 'equipment.input', `Listening on port ${port}`, 'problem', net.input.error || net.input.tcpError!, 'Another program has it: close that, or change the port in Settings ▸ Integrations ▸ Network.');
     else if (!net.input.listening) row('equipment', 'equipment.input', `Listening on port ${port}`, 'look', 'not listening yet', 'If it stays shut, change the port in Settings ▸ Integrations ▸ Network.');
     else row('equipment', 'equipment.input', `Listening on port ${port}`, 'ready');
   }
@@ -222,8 +251,8 @@ function items(doc, facts = {}) {
     const label = `MIDI goes to ${port || 'every MIDI output'}`;
     if (!m) row('equipment', 'equipment.midi', label, 'unknown', 'it cannot be told from here');
     else if (!(m.outputs || []).length) row('equipment', 'equipment.midi', label, 'problem', m.error || 'no MIDI output on this computer', 'Connect the MIDI interface or the instrument.');
-    else if (port && !m.outputs.includes(port)) row('equipment', 'equipment.midi', label, 'problem', `“${port}” is not connected`, 'Connect it, or choose another output in Settings ▸ Integrations ▸ Network.');
-    else row('equipment', 'equipment.midi', label, 'ready', port ? '' : and(m.outputs.slice(0, 3)));
+    else if (port && !m.outputs!.includes(port)) row('equipment', 'equipment.midi', label, 'problem', `“${port}” is not connected`, 'Connect it, or choose another output in Settings ▸ Integrations ▸ Network.');
+    else row('equipment', 'equipment.midi', label, 'ready', port ? '' : and(m.outputs!.slice(0, 3)));
   }
 
   // ── connections: each module that is on, and timecode ──
@@ -257,8 +286,8 @@ function items(doc, facts = {}) {
 }
 
 /** The count of each state, and the one line that says it: "All 9 are ready", "6 of 9 ready · 2 to look at · 1 problem". */
-function summary(list = [], at = Date.now()) {
-  const n = (k) => list.filter((i) => i.state === k).length;
+function summary(list: { state: string }[] = [], at = Date.now()) {
+  const n = (k: string) => list.filter((i) => i.state === k).length;
   const ready = n('ready'), look = n('look'), problems = n('problem'), unknown = n('unknown'), total = list.length;
   const text = !total ? '' : ready === total ? (total === 1 ? 'The 1 is ready' : `All ${total} are ready`)
     : [`${ready} of ${total} ready`, look ? `${look} to look at` : '', problems ? plural(problems, 'problem') : '', unknown ? `${unknown} cannot be told` : ''].filter(Boolean).join(' · ');
@@ -270,20 +299,20 @@ function summary(list = [], at = Date.now()) {
  * files are there, and the script's marks. Everything else (the output device, MIDI, the stage) needs the app.
  * `liveness` may be added by whoever has asked the devices (ec check --ask).
  */
-function folderFacts(showDir, doc) {
-  const fs = require('fs');
-  const path = require('path');
-  const facts = { app: false };
+function folderFacts(showDir: string | null | undefined, doc: ShowDoc): CheckFacts {
+  const fs = require('fs') as typeof import('fs');
+  const path = require('path') as typeof import('path');
+  const facts: CheckFacts = { app: false };
   if (!showDir) return { ...facts, saved: { untitled: true, dirty: false, changes: 0 } };
   facts.saved = { untitled: false, dirty: fs.existsSync(path.join(showDir, 'show.unsaved.json')), changes: 0 };
-  const files = new Set();
+  const files = new Set<string>();
   show.walk(doc, (c) => { if (c.file) files.add(String(c.file)); });
-  facts.files = { total: files.size, missing: [...files].filter((f) => !fs.existsSync(path.isAbsolute(f) ? f : path.join(showDir, f))) };
+  facts.files = { total: files.size, missing: [...files].filter((f) => !fs.existsSync(path.isAbsolute(f) ? f : path.join(showDir!, f))) };
   facts.broken = [];
-  show.walk(doc, (c) => { if (c.file && facts.files.missing.includes(String(c.file))) facts.broken.push({ id: c.id, why: 'its file is missing' }); });
+  show.walk(doc, (c) => { if (c.file && facts.files!.missing.includes(String(c.file))) facts.broken!.push({ id: c.id, why: 'its file is missing' }); });
   const rig = doc.settings.rig || {};
   if (rig.script) {
-    const script = require('./script');
+    const script = require('./script') as typeof import('./script');
     const r = script.read(showDir, rig.script);
     facts.script = { file: rig.script, found: r.ok, why: r.why, lines: r.lines, marks: r.marks.length, missing: r.ok ? script.compare(doc, r.marks).missing : [] };
   }

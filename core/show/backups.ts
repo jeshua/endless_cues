@@ -20,29 +20,33 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as show from './show';
 import { atomicWrite } from './versions';
+import type { ShowDoc } from './types';
+
+/** A backup in a folder: its file's name and path, the day and time it was taken, and its size. */
+export interface Backup { name: string; file: string; day: string; time: string; bytes: number }
 
 const KEEP = 30;
 const DAYS = 14;
 const NAME = /^(\d{4}-\d{2}-\d{2}) (\d{2})\.(\d{2})\.(\d{2})\.json$/;
 
-const dirOf = (showDir) => path.join(showDir, 'backups');
-const p2 = (n) => String(n).padStart(2, '0');
-const nameAt = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}.${p2(d.getSeconds())}.json`; };
+const dirOf = (showDir: string) => path.join(showDir, 'backups');
+const p2 = (n: number) => String(n).padStart(2, '0');
+const nameAt = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}.${p2(d.getMinutes())}.${p2(d.getSeconds())}.json`; };
 
 /** The backups in a folder, newest first: [{ name, file, day, time, bytes }]. */
-function list(dir) {
-  let names = [];
+function list(dir: string): Backup[] {
+  let names: string[] = [];
   try { names = fs.readdirSync(dir); } catch { return []; }
   return names.filter((n) => NAME.test(n)).sort().reverse().map((name) => {
-    const m = NAME.exec(name), file = path.join(dir, name);
+    const m = NAME.exec(name)!, file = path.join(dir, name);
     let bytes = 0; try { bytes = fs.statSync(file).size; } catch { /* gone meanwhile */ }
     return { name, file, day: m[1], time: `${m[2]}:${m[3]}:${m[4]}`, bytes };
   });
 }
 
 /** Which of the backups (newest first) are let go: all but the newest `keep`, and of the older ones all but the last of each of the next `days` days. */
-function surplus(all, { keep = KEEP, days = DAYS } = {}) {
-  const out = [], seen = new Set();
+function surplus(all: Backup[], { keep = KEEP, days = DAYS }: { keep?: number; days?: number } = {}) {
+  const out: Backup[] = [], seen = new Set<string>();
   for (const b of all.slice(Math.max(1, keep))) {
     if (seen.has(b.day) || seen.size >= days) out.push(b); else seen.add(b.day);
   }
@@ -53,7 +57,7 @@ function surplus(all, { keep = KEEP, days = DAYS } = {}) {
  * Take a backup of `doc` into `dir`. Returns its entry, or null when the newest backup is already this document
  * (a show left open and untouched all night makes one backup, not a hundred).
  */
-function write(dir, doc, { now = Date.now(), keep = KEEP } = {}) {
+function write(dir: string, doc: ShowDoc, { now = Date.now(), keep = KEEP }: { now?: number; keep?: number } = {}): Backup | null {
   const text = show.stringify(doc);
   const all = list(dir);
   if (all[0]) { try { if (fs.readFileSync(all[0].file, 'utf8') === text) return null; } catch { /* unreadable: take a new one */ } }
@@ -66,9 +70,9 @@ function write(dir, doc, { now = Date.now(), keep = KEEP } = {}) {
 }
 
 /** A backup, as a document this app can open. `name` is a file in `dir`, never a path. */
-function read(dir, name) {
+function read(dir: string, name: string): ShowDoc {
   if (!NAME.test(String(name))) throw new Error(`no backup ${name}`);
-  let raw;
+  let raw: unknown;
   try { raw = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')); } catch { throw new Error(`the backup ${name} cannot be read`); }
   return show.normalise(raw).doc;
 }

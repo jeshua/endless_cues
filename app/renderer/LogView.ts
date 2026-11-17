@@ -2,22 +2,23 @@
 // (core/log/show-log.js). Read-only. It follows as lines come in, unless it has been scrolled up; it can be
 // narrowed to one kind of line and searched; Copy takes what is shown, and Reveal opens the folder.
 import { html, useState, useEffect, useRef, cx, ec } from './lib.js';
+import type { LogEntry } from '../../core/log/show-log';
 
 const KINDS = [['all', 'All'], ['go', 'GO'], ['cue', 'Cues'], ['trigger', 'Triggers'], ['problems', 'Problems'], ['show', 'Show']];
-const isProblem = (k) => k === 'error' || k === 'warning' || k === 'ignored';
-const p2 = (n) => String(n).padStart(2, '0');
-const time = (at) => { const d = new Date(at); return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`; };
+const isProblem = (k: string) => k === 'error' || k === 'warning' || k === 'ignored';
+const p2 = (n: number) => String(n).padStart(2, '0');
+const time = (at: number) => { const d = new Date(at); return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`; };
 
-export function LogDrawer({ close, say }) {
-  const [lines, setLines] = useState([]);
+export function LogDrawer({ close, say }: { close: () => void; say: (text: string, bad?: boolean) => void }) {
+  const [lines, setLines] = useState<LogEntry[]>([]);
   const [kind, setKind] = useState('all');
   const [find, setFind] = useState('');
-  const [file, setFile] = useState(null);
-  const since = useRef(0), box = useRef(), follow = useRef(true);
+  const [file, setFile] = useState<string | null>(null);
+  const since = useRef(0), box = useRef<HTMLDivElement>(null), follow = useRef(true);
   useEffect(() => {
     let alive = true;
     const pull = async () => {
-      const r = await ec.cmd({ op: 'log-tail', since: since.current });
+      const r = await ec.cmd({ op: 'log-tail', since: since.current }) as { error?: string; file?: string; lines: LogEntry[] };
       if (!alive || !r || r.error) return;
       setFile(r.file || null);
       if (!r.lines.length) return;
@@ -44,7 +45,7 @@ export function LogDrawer({ close, say }) {
       <button class="btn ghost small icon" onClick=${close} title="Close">×</button></div>
     <div class="drawer-body">
       <div class="seg log-kinds">${KINDS.map(([k, l]) => html`<button key=${k} data-log-kind=${k} class=${cx(kind === k && 'on')} onClick=${() => setKind(k)}>${l}</button>`)}</div>
-      <input type="text" data-log-find placeholder="Find" value=${find} onInput=${(e) => setFind(e.target.value)} />
+      <input type="text" data-log-find placeholder="Find" value=${find} onInput=${(e: Event) => setFind((e.target as HTMLInputElement).value)} />
       <div class="log-list" ref=${box} onScroll=${onScroll}>
         ${shown.length ? shown.map((e) => html`<div class=${cx('logl', e.kind)} key=${e.n}><span class="t">${time(e.at)}</span><span class="k">${e.kind}</span><span class="m">${e.text}</span></div>`)
           : html`<div class="dim" style="padding:14px">${lines.length ? 'Nothing matches.' : 'Nothing yet.'}</div>`}

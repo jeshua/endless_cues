@@ -17,32 +17,46 @@
  *   p.start(id, source)                 -> messages that end what `id` was playing before, if anything
  *   p.tick(now, (id) => ({ startedAt, pausedAt } | null))   -> [{ id, at, bytes }], `at` on the same clock as `now`
  */
+import type * as Timecode from '../timecode/timecode';
+
+/** What a playout plays: messages in seconds of its own time. */
+export interface PlayoutSource {
+  between(t0: number, t1: number): { at: number; bytes: number[] }[];
+  locate?(t: number): number[][];
+  flush?(): number[][];
+}
+/** A message handed over, stamped with the time it is due. */
+export interface PlayoutMessage { id: string; at: number; bytes: number[] }
+interface Run { source: PlayoutSource; upTo: number; going: boolean; fresh: boolean; edge: number }
+
 class Playout {
+  lookahead: number;
+  runs: Map<string, Run>;
   constructor({ lookahead = 0.1 } = {}) { this.lookahead = lookahead; this.runs = new Map(); }
   get size() { return this.runs.size; }
-  has(id) { return this.runs.has(id); }
+  has(id: string) { return this.runs.has(id); }
 
-  start(id, source, now = 0) {
+  start(id: string, source: PlayoutSource, now = 0): PlayoutMessage[] {
     const out = this.end(id, now);
     this.runs.set(id, { source, upTo: 0, going: false, fresh: true, edge: now });
     return out;
   }
   /** What ends a run's sound, stamped after everything already handed over for it (so no note it started is left on). */
-  end(id, now) {
+  end(id: string, now: number): PlayoutMessage[] {
     const run = this.runs.get(id);
     if (!run) return [];
     this.runs.delete(id);
     return this.quiet(id, run, now);
   }
-  quiet(id, run, now) {
+  quiet(id: string, run: Run, now: number): PlayoutMessage[] {
     if (!run.going) return [];
     run.going = false;
     const at = Math.max(now, run.edge);
     return (run.source.flush ? run.source.flush() : []).map((bytes) => ({ id, at, bytes }));
   }
 
-  tick(now, stateOf) {
-    const out = [];
+  tick(now: number, stateOf: (id: string) => { startedAt: number; pausedAt?: number | null } | null | undefined): PlayoutMessage[] {
+    const out: PlayoutMessage[] = [];
     for (const [id, run] of [...this.runs]) {
       const st = stateOf(id);
       if (!st) { out.push(...this.end(id, now)); continue; }                     // stopped, or it ran its length
@@ -64,10 +78,10 @@ class Playout {
 }
 
 /** MIDI Timecode as a source: quarter frames from `start` (in frames) at `rate`, and a full frame wherever it starts or resumes. */
-function mtcSource(tc, start, rate) {
+function mtcSource(tc: typeof Timecode, start: number, rate: Timecode.RateIn): PlayoutSource {
   return {
-    between: (t0, t1) => tc.mtcBetween(start, rate, t0, t1),
-    locate: (t) => [tc.fullFrame(tc.fromFrames(start + Math.floor(tc.framesAt(t, rate) + 1e-6), rate), rate)],
+    between: (t0: number, t1: number) => tc.mtcBetween(start, rate, t0, t1),
+    locate: (t: number) => [tc.fullFrame(tc.fromFrames(start + Math.floor(tc.framesAt(t, rate) + 1e-6), rate), rate)],
   };
 }
 

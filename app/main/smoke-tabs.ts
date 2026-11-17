@@ -7,11 +7,12 @@
  * types until More; and at 1000 by 700, with the Playing strip folded out and the inspector showing, the cue list
  * keeps its header and four rows.
  */
-async function run({ host, win, check, until, page, sleep, shot: take }) {
-  const shot = async (name) => { try { if (take) await take(name); } catch { /* no picture */ } };
-  const snap = () => host.snapshot();
-  const has = (sel) => page(`!!document.querySelector(${JSON.stringify(sel)})`);
-  const click = (sel) => page(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+import type { Smoke, Snap } from './smoke';
+async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Smoke, 'host' | 'win' | 'check' | 'until' | 'page' | 'sleep' | 'shot'>) {
+  const shot = async (name: string) => { try { if (take) await take(name); } catch { /* no picture */ } };
+  const snap = () => host.snapshot() as Snap;
+  const has = (sel: string) => page<boolean>(`!!document.querySelector(${JSON.stringify(sel)})`);
+  const click = (sel: string) => page<boolean>(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
   const tabOn = () => page(`(() => { const t = document.querySelector('[data-tabs] button.on'); return t ? t.dataset.tab : null; })()`);
 
   host.cmd({ op: 'panic', hard: true });
@@ -34,12 +35,12 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
 
   // ── the add-cue bar: the common types in one row, the rest behind its + ──
   win.setContentSize(1480, 940); await sleep(250);
-  const bar = () => page(`(() => { const t = document.querySelector('.centre > .toolbar:not(.toolstrip)'); if (!t) return null; const b = [...t.querySelectorAll('[data-add-type]')]; const tops = new Set(b.map((x) => Math.round(x.getBoundingClientRect().top))); return { n: b.length, rows: tops.size, more: !!t.querySelector('[data-tools-more]') }; })()`);
+  const bar = () => page<{ n: number; rows: number; more: boolean } | null>(`(() => { const t = document.querySelector('.centre > .toolbar:not(.toolstrip)'); if (!t) return null; const b = [...t.querySelectorAll('[data-add-type]')]; const tops = new Set(b.map((x) => Math.round(x.getBoundingClientRect().top))); return { n: b.length, rows: tops.size, more: !!t.querySelector('[data-tools-more]') }; })()`);
   const few = await bar();
   check('the add-cue bar shows the common cue types in one row, with a +', !!few && few.n === 5 && few.rows === 1 && few.more, few);
   await click('[data-tools-more]');
   const all = await page(`document.querySelectorAll('[data-add-list] [data-add-pick]').length`);
-  check('…and + lists every other type', all === (await page(`window.ec.init().then((i) => i.typeOrder.length)`)) - 5, all);
+  check('…and + lists every other type', all === (await page<number>(`window.ec.init().then((i) => i.typeOrder.length)`)) - 5, all);
   await click('[data-tools-more]');
 
   // ── Show: the cue list in Show mode, with everything Show mode locks ──
@@ -69,7 +70,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
   check('the Edit tab leaves Show mode and shows the list with its inspector', await until(async () => snap().mode === 'edit' && (await tabOn()) === 'edit' && (await has('.centre .list')) && (await has('.centre .inspector')), 2000));
 
   // ── ⇧⌘M: between Edit and Show, from wherever ──
-  const menuItem = (label) => { const { Menu } = require('electron'); const walk = (m) => { for (const i of m.items) { if (i.label === label) return i; if (i.submenu) { const x = walk(i.submenu); if (x) return x; } } return null; }; return walk(Menu.getApplicationMenu()); };
+  const menuItem = (label: string) => { const { Menu } = require('electron'); const walk = (m: Electron.Menu): Electron.MenuItem | null => { for (const i of m.items) { if (i.label === label) return i; if (i.submenu) { const x = walk(i.submenu); if (x) return x; } } return null; }; return walk(Menu.getApplicationMenu()); };
   const sm = menuItem('Show Mode');
   check('View ▸ Show Mode is on ⇧⌘M', !!sm && /Shift\+M$/i.test(String(sm.accelerator || '').replace('CmdOrCtrl+', '')), sm && sm.accelerator);
   win.webContents.send('ec-menu', 'view-rig');
@@ -91,13 +92,13 @@ async function run({ host, win, check, until, page, sleep, shot: take }) {
 
   // ── the list keeps its room at 1000 by 700: the Playing strip folded out and the inspector showing ──
   win.setContentSize(1000, 700); await sleep(300);
-  const rain = snap().rows.find((r) => r.name === 'Rain');
+  const rain = snap().rows.find((r) => r.name === 'Rain')!;
   host.cmd({ op: 'fire', id: rain.id });
   await until(() => has('.playing'), 3000);
   await page(`(() => { const tr = [...document.querySelectorAll('.list tbody tr')].find((t) => /Rain/.test(t.textContent)); tr && tr.click(); })()`);
   if (!(await has('.playing [data-more].on'))) await click('.playing [data-more]');
   await sleep(300);
-  const room = await page(`(() => { const l = document.querySelector('.centre .list'), i = document.querySelector('.centre .inspector'), p = document.querySelector('.centre .playing'); const row = parseFloat(getComputedStyle(l).getPropertyValue('--row')) || 30;
+  const room = await page<{ list: number; need: number; inspector: number; playing: number; fits: boolean }>(`(() => { const l = document.querySelector('.centre .list'), i = document.querySelector('.centre .inspector'), p = document.querySelector('.centre .playing'); const row = parseFloat(getComputedStyle(l).getPropertyValue('--row')) || 30;
     return { list: Math.round(l.getBoundingClientRect().height), need: 24 + 4 * row, inspector: i ? Math.round(i.getBoundingClientRect().height) : 0, playing: p ? Math.round(p.getBoundingClientRect().height) : 0, fits: document.querySelector('.centre').scrollHeight <= document.querySelector('.centre').clientHeight + 1 }; })()`);
   check('at 1000×700 with the Playing strip folded out and the inspector showing, the list keeps its header and four rows', room.list >= room.need - 1 && room.inspector > 0 && room.playing > 0, room);
   await shot('tabs-3-list-room-1000x700');

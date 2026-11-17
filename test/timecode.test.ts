@@ -16,13 +16,13 @@ test('a timecode as text, and what is not one', () => {
 });
 
 test('frames and times, both ways, at every rate', () => {
-  assert.equal(tc.toFrames(tc.parse('01:00:00:00'), '24'), 86400);
-  assert.equal(tc.toFrames(tc.parse('01:00:00:00'), '25'), 90000);
-  assert.equal(tc.toFrames(tc.parse('01:00:00:00'), '30'), 108000);
+  assert.equal(tc.toFrames(tc.parse('01:00:00:00')!, '24'), 86400);
+  assert.equal(tc.toFrames(tc.parse('01:00:00:00')!, '25'), 90000);
+  assert.equal(tc.toFrames(tc.parse('01:00:00:00')!, '30'), 108000);
   // drop-frame: the known landmarks. One minute is 1800 frames less the two numbers skipped; an hour is 107892.
-  assert.equal(tc.toFrames(tc.parse('00:01:00:02'), '29.97df'), 1800);
-  assert.equal(tc.toFrames(tc.parse('00:10:00:00'), '29.97df'), 17982);
-  assert.equal(tc.toFrames(tc.parse('01:00:00:00'), '29.97df'), 107892);
+  assert.equal(tc.toFrames(tc.parse('00:01:00:02')!, '29.97df'), 1800);
+  assert.equal(tc.toFrames(tc.parse('00:10:00:00')!, '29.97df'), 17982);
+  assert.equal(tc.toFrames(tc.parse('01:00:00:00')!, '29.97df'), 107892);
   assert.deepEqual(tc.fromFrames(1799, '29.97df'), { h: 0, m: 0, s: 59, f: 29 });
   assert.deepEqual(tc.fromFrames(1800, '29.97df'), { h: 0, m: 1, s: 0, f: 2 });      // 00:01:00:00 and :01 do not exist
   assert.deepEqual(tc.fromFrames(17982, '29.97df'), { h: 0, m: 10, s: 0, f: 0 });   // every tenth minute keeps them
@@ -40,7 +40,7 @@ test('frames and times, both ways, at every rate', () => {
 });
 
 test('MTC: a full frame and the eight quarter frames, to the byte', () => {
-  const t = tc.parse('01:02:03:04');
+  const t = tc.parse('01:02:03:04')!;
   // F0 7F <device> 01 01 hr mn sc fr F7, the rate in bits 5–6 of the hours: 30 fps is 3, so 0x60 | 1
   assert.deepEqual(tc.fullFrame(t, '30'), [0xf0, 0x7f, 0x7f, 0x01, 0x01, 0x61, 0x02, 0x03, 0x04, 0xf7]);
   assert.deepEqual(tc.fullFrame(t, '24'), [0xf0, 0x7f, 0x7f, 0x01, 0x01, 0x01, 0x02, 0x03, 0x04, 0xf7]);
@@ -53,7 +53,7 @@ test('MTC: a full frame and the eight quarter frames, to the byte', () => {
 });
 
 test('MTC out: four quarter frames to the frame, eight to a time, none lost or doubled where two stretches meet', () => {
-  const start = tc.toFrames(tc.parse('01:00:00:00'), '30');
+  const start = tc.toFrames(tc.parse('01:00:00:00')!, '30');
   const all = tc.mtcBetween(start, '30', 0, 1);
   assert.equal(all.length, 120);
   assert.equal(all[0].at, 0);
@@ -72,7 +72,7 @@ test('MTC out: four quarter frames to the frame, eight to a time, none lost or d
   assert.equal(heard[0].frames, start + 1.75);           // the eighth piece arrives a frame and three quarters after the time it says
   assert.deepEqual(heard[14].tc, { h: 1, m: 0, s: 0, f: 28 });
   // 29.97 drop: 119.88 quarter frames a second, and the time steps over the dropped numbers
-  const df = tc.mtcBetween(tc.toFrames(tc.parse('00:00:59:28'), '29.97df'), '29.97df', 0, 10);
+  const df = tc.mtcBetween(tc.toFrames(tc.parse('00:00:59:28')!, '29.97df'), '29.97df', 0, 10);
   assert.equal(df.length, Math.ceil(10 * 4 * 30000 / 1001));
   const r2 = new tc.MtcReader(), times = [];
   for (const e of df) { const r = r2.feed(e.bytes); if (r) times.push(tc.format(r.tc, r.rate)); }
@@ -81,19 +81,19 @@ test('MTC out: four quarter frames to the frame, eight to a time, none lost or d
 
 test('MTC in: a full frame is the time outright; a run joined part way, or backwards, is not a time', () => {
   const r = new tc.MtcReader();
-  const full = r.feed(tc.fullFrame(tc.parse('10:20:30:12'), '25'));
-  assert.deepEqual([full.tc, full.rate, full.full, full.frames], [{ h: 10, m: 20, s: 30, f: 12 }, '25', true, tc.toFrames(tc.parse('10:20:30:12'), '25')]);
-  const t = tc.parse('00:00:01:00');
+  const full = r.feed(tc.fullFrame(tc.parse('10:20:30:12')!, '25'))!;
+  assert.deepEqual([full.tc, full.rate, full.full, full.frames], [{ h: 10, m: 20, s: 30, f: 12 }, '25', true, tc.toFrames(tc.parse('10:20:30:12')!, '25')]);
+  const t = tc.parse('00:00:01:00')!;
   for (const p of [3, 4, 5, 6, 7]) assert.equal(r.feed(tc.quarterFrame(p, t, '24')), null);     // joined at piece 3
   for (const p of [0, 1, 2, 3, 4, 5, 6]) assert.equal(r.feed(tc.quarterFrame(p, t, '24')), null);
-  assert.equal(r.feed(tc.quarterFrame(7, t, '24')).rate, '24');
+  assert.equal(r.feed(tc.quarterFrame(7, t, '24'))!.rate, '24');
   for (const p of [7, 6, 5, 4, 3, 2, 1, 0]) assert.equal(r.feed(tc.quarterFrame(p, t, '24')), null);     // backwards
   assert.equal(r.feed([0x90, 60, 100]), null);
 });
 
 test('LTC: the 80 bits of a frame, as SMPTE lays them out', () => {
   const bits = [...tc.ltcBits({ h: 12, m: 34, s: 56, f: 17 }, '30')];
-  const field = (at, n) => bits.slice(at, at + n).reduce((v, b, i) => v | (b << i), 0);
+  const field = (at: number, n: number) => bits.slice(at, at + n).reduce((v, b, i) => v | (b << i), 0);
   assert.deepEqual([field(0, 4), field(8, 2), field(16, 4), field(24, 3), field(32, 4), field(40, 3), field(48, 4), field(56, 2)], [7, 1, 6, 5, 4, 3, 2, 1]);
   assert.equal(bits.slice(64).join(''), '0011111111111101');                        // the sync word
   assert.equal(bits[10], 0);
@@ -123,7 +123,7 @@ test('LTC as sound is biphase mark: an edge at every bit, one more in the middle
 test('LTC out is read back by decoding it: every rate, two sample rates, blocks of any size, either polarity, any level', () => {
   for (const rate of tc.RATE_NAMES) {
     for (const sampleRate of [48000, 44100]) {
-      const start = tc.toFrames(tc.parse(rate === '29.97df' ? '00:00:59;20' : '01:59:59:10'), rate) + 0.37;      // (it starts part way through a frame)
+      const start = tc.toFrames(tc.parse(rate === '29.97df' ? '00:00:59;20' : '01:59:59:10')!, rate) + 0.37;      // (it starts part way through a frame)
       const w = new tc.LtcWriter({ rate, sampleRate, start, level: 0.25 });
       const r = new tc.LtcReader({ sampleRate });
       const frames = [];
@@ -139,15 +139,15 @@ test('LTC out is read back by decoding it: every rate, two sample rates, blocks 
       const from = tc.toFrames(frames[0].tc, rate);
       assert.ok(from >= first && from <= first + 4, `${rate} at ${sampleRate}: the first frame heard is one of the first sent`);
       frames.forEach((f, i) => assert.equal(tc.toFrames(f.tc, rate), from + i, `${rate} at ${sampleRate}: no frame missed or repeated`));
-      assert.equal(frames.at(-1).rate, rate);
-      assert.ok(Math.abs(frames.at(-1).fps - tc.rateOf(rate).real) < 0.2);
+      assert.equal(frames.at(-1)!.rate, rate);
+      assert.ok(Math.abs(frames.at(-1)!.fps - tc.rateOf(rate).real) < 0.2);
       // where each frame ended, to the sample: frame n ends at (n + 1 − start) frames of samples from the first
       const f = frames[5], want = (tc.toFrames(f.tc, rate) + 1 - start) * sampleRate / tc.rateOf(rate).real;
       assert.ok(Math.abs(f.end - want) <= 2, `${rate} at ${sampleRate}: frame end ${f.end} against ${want}`);
     }
   }
   // drop-frame over the minute: :29 is followed by :02
-  const w = new tc.LtcWriter({ rate: '29.97df', start: tc.toFrames(tc.parse('00:00:59:27'), '29.97df') }), r = new tc.LtcReader({});
+  const w = new tc.LtcWriter({ rate: '29.97df', start: tc.toFrames(tc.parse('00:00:59:27')!, '29.97df') }), r = new tc.LtcReader({});
   const heard = r.feed(w.render(new Float32Array(48000 / 2))).map((f) => tc.format(f.tc, '29.97df'));
   const at = heard.indexOf('00:00:59;29');
   assert.ok(at >= 0 && heard[at + 1] === '00:01:00;02' && heard[at + 2] === '00:01:00;03', heard.join(' '));
@@ -166,6 +166,6 @@ test('silence, noise and a signal that stops are not timecode', () => {
 
 test('the same file runs where there is no require: its own text makes the same thing', () => {
   const again = new Function(`return ${tc.SOURCE}`)();
-  assert.deepEqual(again.fullFrame(again.parse('01:02:03:04'), '30'), tc.fullFrame(tc.parse('01:02:03:04'), '30'));
+  assert.deepEqual(again.fullFrame(again.parse('01:02:03:04')!, '30'), tc.fullFrame(tc.parse('01:02:03:04')!, '30'));
   assert.deepEqual([...again.ltcBits({ h: 1, m: 2, s: 3, f: 4 }, '25')], [...tc.ltcBits({ h: 1, m: 2, s: 3, f: 4 }, '25')]);
 });

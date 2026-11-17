@@ -13,47 +13,91 @@ import { toPos } from './Sidebar.js';
 import { format, quantize } from './dial.js';
 import { Pop } from './SoundDesign.js';
 import { snapTime, beatsOf, groupMove, bendFromDrag, segmentAt, moveMarker, moveRegion } from './edit-math.js';
+import type { Cue, Marker, Region, LanePoint } from '../../core/show/types';
+import type { LaneSpec } from '../../core/audio/lanes';
 
-const fine = new Map();              // file -> { peaks, rms } (null: none to be had)
+declare global {
+  interface Window {
+    /** A key the window gives a part of itself first (WaveEdit's Delete): true when it was taken. */
+    ecKeyHook?: ((e: KeyboardEvent) => boolean) | null;
+  }
+}
+
+/** A line's points: [seconds, value, bend?]. */
+type Points = LanePoint[];
+/** A stretch of a sound: a loop region, or what is held. */
+interface Span { start: number; end: number }
+/** A playing sound, as far as this draws it: where it is, the regions armed, what it holds. */
+export interface WavePlaying { elapsed: number; armed?: Span[]; holding?: boolean; region?: Span | null }
+/** The finer peaks of a file (and its loudness inside them). */
+interface Peaks { peaks: number[]; rms?: number[] }
+interface View { zoom: number; start: number }
+type RegionDrag = { kind: 'region'; x0: number; t0: number; t1: number; moved: boolean };
+/** What the mouse is doing while it is down. */
+type Drag =
+  | { kind: 'start'; t: number }
+  | { kind: 'end'; t: number }
+  | RegionDrag
+  | { kind: 'select'; x0: number; y0: number; x1: number; y1: number }
+  | { kind: 'bend'; k: number; y0: number; c0: number; rising: boolean; pts: Points; moved: boolean }
+  | { kind: 'points'; anchor: number; sel: Set<number>; x0: number; y0: number; orig: Points; pts: Points; moved: boolean; added?: boolean }
+  | { kind: 'marker'; i: number; x0: number; at0: number; markers: Marker[]; moved: boolean; added?: boolean }
+  | { kind: 'loop'; i: number; part: 'start' | 'end' | 'body'; x0: number; grab: number; g: Region; loops: Region[]; moved: boolean };
+type Menu = { kind: 'lanes'; anchor: HTMLElement } | { kind: 'marker'; left: number; t: number; i: number };
+/** A place on the picture: x and y in it, and its height. */
+interface At { x: number; y: number; h: number }
+
+const fine = new Map<string | undefined, Peaks | null>();              // file -> { peaks, rms } (null: none to be had)
 const MAX_ZOOM = 64;
-const r2 = (t) => Math.round(t * 100) / 100;
-const near = (a, b) => a && b && Math.abs(a.start - b.start) < 0.02 && Math.abs(a.end - b.end) < 0.02;
+const r2 = (t: number) => Math.round(t * 100) / 100;
+const near = (a: Span | null | undefined, b: Span) => a && b && Math.abs(a.start - b.start) < 0.02 && Math.abs(a.end - b.end) < 0.02;
 const shown = { lane: 'volume' };    // the line last chosen, while the window is open
 const HIT = 7;                       // px: how near a point or the line a click must be to take it
 
 // A line's value on the picture and back. Volume: the fader's law (the top half of the height is the last 20 dB);
 // anything else along its knob's own scale, as the line moves.
-function yOf(spec, v, h) {
+function yOf(spec: LaneSpec, v: number, h: number) {
   const u = spec.kind === 'volume' ? toPos(v) : spec.kind === 'chain' ? Lanes.posOf(spec.p, v) : (v - spec.min) / (spec.max - spec.min);
   return (1 - u) * (h - 8) + 4;
 }
-function valueAtY(spec, y, h, fineHand) {
+function valueAtY(spec: LaneSpec, y: number, h: number, fineHand: boolean) {
   const u = Math.max(0, Math.min(1, 1 - (y - 4) / (h - 8)));
   if (spec.kind === 'volume') { const d = u <= 0.001 ? -60 : Math.pow(u, 1 / 2.2) * 72 - 60; return Math.max(-60, Math.min(12, Math.round(d * (fineHand ? 10 : 2)) / (fineHand ? 10 : 2))); }
   if (spec.kind === 'pan') return Math.round((spec.min + (spec.max - spec.min) * u) * (fineHand ? 10 : 1)) / (fineHand ? 10 : 1);
   return quantize(spec.p, Lanes.valueAtPos(spec.p, u), fineHand);
 }
-function valueText(spec, v) {
+function valueText(spec: LaneSpec, v: number) {
   if (spec.kind === 'volume') return db(Math.round(v * 10) / 10);
   if (spec.kind === 'pan') { const n = Math.round(v); return n < 0 ? `L ${-n}` : n > 0 ? `R ${n}` : 'C'; }
   const f = format(spec.p, v);
   return `${f.text} ${f.unit}`.trim();
 }
 
-export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, tools = [] }) {
+export interface WaveEditProps {
+  cue: Cue;
+  duration: number;
+  active?: WavePlaying | null;
+  /** a place pinned on the picture (seconds), or none */
+  pin?: number | null;
+  onPick?: (t: number) => void;
+  locked?: boolean;
+  /** core/audio/chain.js TOOLS: the sound design's settings that can have a line */
+  tools?: Parameters<typeof Lanes.lanesOf>[1];
+}
+export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, tools = [] }: WaveEditProps) {
   const file = cue.file, a = active;
-  const canvas = useRef(), box = useRef(), root = useRef();
+  const canvas = useRef<HTMLCanvasElement>(null), box = useRef<HTMLDivElement>(null), root = useRef<HTMLDivElement>(null);
   const [data, setData] = useState(fine.get(file));
   const [width, setWidth] = useState(0);
-  const [view, setView] = useState({ zoom: 1, start: 0 });
-  const [drag, setDrag] = useState(null);       // what the mouse is doing while it is down (see `down`)
+  const [view, setView] = useState<View>({ zoom: 1, start: 0 });
+  const [drag, setDrag] = useState<Drag | null>(null);       // what the mouse is doing while it is down (see `down`)
   const [lane, setLaneState] = useState(shown.lane);
-  const [sel, setSel] = useState(() => new Set());      // the selected points of the line shown (indices)
+  const [sel, setSel] = useState(() => new Set<number>());      // the selected points of the line shown (indices)
   const [msel, setMsel] = useState(-1);                 // the selected marker
   const [naming, setNaming] = useState(-1);             // the marker being renamed
-  const [menu, setMenu] = useState(null);               // { kind: 'lanes', anchor } | { kind: 'marker', x, t, i }
-  const live = useRef({});
-  const setLane = (id) => { shown.lane = id; setLaneState(id); setSel(new Set()); };
+  const [menu, setMenu] = useState<Menu | null>(null);               // { kind: 'lanes', anchor } | { kind: 'marker', x, t, i }
+  const live = useRef({} as { view: View; start: number; span: number; dur: number; width: number });
+  const setLane = (id: string) => { shown.lane = id; setLaneState(id); setSel(new Set()); };
   useEffect(() => { setSel(new Set()); setMsel(-1); setNaming(-1); setMenu(null); }, [cue.id]);
   useEffect(() => {
     let alive = true, tries = 0;
@@ -63,7 +107,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
       const r = await window.ec.cmd({ op: 'peaks', file, detail: true });
       if (!alive) return;
       if (r && r.pending && tries++ < 60) { setTimeout(ask, 300); return; }
-      const got = r && r.peaks ? { peaks: r.peaks, rms: r.rms } : null;
+      const got: Peaks | null = r && r.peaks ? { peaks: r.peaks, rms: r.rms } : null;
       fine.set(file, got); setData(got);
     };
     ask();
@@ -71,32 +115,32 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
   }, [file]);
   useEffect(() => {
     const ro = new ResizeObserver(() => setWidth(box.current ? box.current.clientWidth : 0));
-    ro.observe(box.current);
+    ro.observe(box.current!);
     return () => ro.disconnect();
   }, []);
 
   const dur = duration > 0 ? duration : 0;
   const span = dur / view.zoom;
   const start = Math.max(0, Math.min(dur - span, view.start));
-  const xOf = (t) => (span > 0 ? ((t - start) / span) * width : 0);
+  const xOf = (t: number) => (span > 0 ? ((t - start) / span) * width : 0);
   // (the box's own width, as it is now: the picture's may be a redraw behind the mouse)
   const boxW = () => Math.max(1, (box.current && box.current.clientWidth) || width);
-  const tOf = (x) => Math.max(0, Math.min(dur, start + (x / boxW()) * span));
+  const tOf = (x: number) => Math.max(0, Math.min(dur, start + (x / boxW()) * span));
   const pxPerSec = span > 0 ? boxW() / span : 0;
   const from = Number(cue.from) || 0, end = Number(cue.cutAt) > 0 && Number(cue.cutAt) < dur ? Number(cue.cutAt) : dur;
   const position = a ? a.elapsed : null;
   const shownFrom = drag && drag.kind === 'start' ? drag.t : from, shownEnd = drag && drag.kind === 'end' ? drag.t : end;
   const lanes = Lanes.lanesOf(cue, tools);
-  const spec = lanes.find((x) => x.id === lane) || Lanes.VOLUME;
+  const spec: LaneSpec = lanes.find((x: LaneSpec) => x.id === lane) || Lanes.VOLUME;
   const pts = drag && (drag.kind === 'points' || drag.kind === 'bend') ? drag.pts : Lanes.pointsOf(cue, spec.id);
-  const base = Lanes.baseOf(cue, spec);
+  const base: number = Lanes.baseOf(cue, spec);
   const markers = drag && drag.kind === 'marker' ? drag.markers : cue.markers || [];
   const loops = drag && drag.kind === 'loop' ? drag.loops : cue.loops || [];
   live.current = { view, start, span, dur, width };
 
   // what a time snaps to: the markers, the bar lines and beats, Start and End (Shift: nothing)
   const grid = sectionsOf(cue.tempo);
-  const marks = (skip = []) => [...(cue.markers || []).map((m) => m.at), ...barsOf(cue.tempo, dur), ...(grid.length ? beatsOf(grid, dur) : []), from, end, ...skip];
+  const marks = (skip: number[] = []) => [...(cue.markers || []).map((m) => m.at), ...barsOf(cue.tempo, dur), ...(grid.length ? beatsOf(grid, dur) : []), from, end, ...skip];
 
   // the picture: peaks, and loudness inside them, for the stretch in view (each pixel the loudest of its slices)
   useEffect(() => {
@@ -104,7 +148,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     if (!c || !width) return;
     const dpr = window.devicePixelRatio || 1, h = c.clientHeight;
     c.width = Math.round(width * dpr); c.height = Math.round(h * dpr);
-    const g = c.getContext('2d');
+    const g = c.getContext('2d')!;
     g.scale(dpr, dpr);
     g.clearRect(0, 0, width, h);
     const css = getComputedStyle(document.documentElement);
@@ -114,7 +158,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     const n = data.peaks.length, per = (span / dur) * n / width;
     const played = position != null ? xOf(position) : -1;
     const go = css.getPropertyValue('--go');
-    for (const [arr, col, isRms] of [[data.peaks, css.getPropertyValue('--bg-4'), false], [data.rms || data.peaks, css.getPropertyValue('--text-2'), true]]) {
+    for (const [arr, col, isRms] of [[data.peaks, css.getPropertyValue('--bg-4'), false], [data.rms || data.peaks, css.getPropertyValue('--text-2'), true]] as [number[], string, boolean][]) {
       for (let x = 0; x < width; x++) {
         const i0 = Math.floor((start / dur) * n + x * per), i1 = Math.max(i0 + 1, Math.floor((start / dur) * n + (x + 1) * per));
         let v = 0;
@@ -133,13 +177,13 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
   }, [data, width, dur, view.zoom, start, Math.round((position || 0) * 4), shownFrom, shownEnd]);
 
   // zoom about a place (the pointer, or the middle), and scroll: the wheel sideways scrolls, with ⌘ / ctrl (or a pinch) it zooms
-  const zoomTo = (zoom, about = start + span / 2, frac = 0.5) => {
+  const zoomTo = (zoom: number, about = start + span / 2, frac = 0.5) => {
     const z = Math.max(1, Math.min(MAX_ZOOM, zoom)), sp = dur / z;
     setView({ zoom: z, start: Math.max(0, Math.min(dur - sp, about - frac * sp)) });
   };
   useEffect(() => {
-    const el = box.current;
-    const wheel = (e) => {
+    const el = box.current!;
+    const wheel = (e: WheelEvent) => {
       const L = live.current;
       if (!(L.dur > 0)) return;
       const r = el.getBoundingClientRect(), frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
@@ -159,14 +203,14 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
 
   // ── the line ──
   const h = box.current ? box.current.clientHeight : 128;
-  const lineAt = (t) => { const v = Lanes.valueAt(pts, t, spec); return v == null ? base : v; };
-  const put = (next, label) => setCue(cue.id, Lanes.propsFor(cue, spec.id, next), label || `${spec.label.toLowerCase()} line`);
-  const removePoints = (idx) => { put(pts.filter((_, k) => !idx.has(k))); setSel(new Set()); };
-  const removeMarker = (i) => { setCue(cue.id, { markers: moveMarker(cue.markers || [], i, null, dur) }, 'remove marker'); setMsel(-1); };
+  const lineAt = (t: number): number => { const v = Lanes.valueAt(pts, t, spec); return v == null ? base : v; };
+  const put = (next: Points, label?: string) => setCue(cue.id, Lanes.propsFor(cue, spec.id, next), label || `${spec.label.toLowerCase()} line`);
+  const removePoints = (idx: Set<number>) => { put(pts.filter((_, k) => !idx.has(k))); setSel(new Set()); };
+  const removeMarker = (i: number) => { setCue(cue.id, { markers: moveMarker(cue.markers || [], i, null, dur) }, 'remove marker'); setMsel(-1); };
   // Delete (or Backspace) takes the selected points, or the selected marker: the window's own key for a cue gives way
   useEffect(() => {
     if (locked || (!sel.size && msel < 0)) return undefined;
-    const hook = (e) => {
+    const hook = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return false;
       e.preventDefault();
       if (sel.size) removePoints(sel); else removeMarker(msel);
@@ -174,18 +218,18 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     };
     window.ecKeyHook = hook;
     // (a click anywhere else lets go of the selection, so Delete is the cue list's again)
-    const away = (e) => { if (root.current && !root.current.contains(e.target)) { setSel(new Set()); setMsel(-1); } };
+    const away = (e: PointerEvent) => { if (root.current && !root.current.contains(e.target as Node)) { setSel(new Set()); setMsel(-1); } };
     document.addEventListener('pointerdown', away, true);
     return () => { if (window.ecKeyHook === hook) window.ecKeyHook = null; document.removeEventListener('pointerdown', away, true); };
   });
 
-  const where = (e) => { const r = box.current.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, h: r.height }; };
-  const pointAt = (m) => pts.findIndex((p) => Math.abs(xOf(p[0]) - m.x) < HIT && Math.abs(yOf(spec, p[1], m.h) - m.y) < HIT);
-  const onLine = (m) => Math.abs(yOf(spec, lineAt(tOf(m.x)), m.h) - m.y) < HIT - 1;
-  const down = (e) => {
+  const where = (e: PointerEvent | MouseEvent): At => { const r = box.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top, h: r.height }; };
+  const pointAt = (m: At) => pts.findIndex((p) => Math.abs(xOf(p[0]) - m.x) < HIT && Math.abs(yOf(spec, p[1], m.h) - m.y) < HIT);
+  const onLine = (m: At) => Math.abs(yOf(spec, lineAt(tOf(m.x)), m.h) - m.y) < HIT - 1;
+  const down = (e: PointerEvent) => {
     if (!(dur > 0) || e.button !== 0) return;
     const m = where(e);
-    try { box.current.setPointerCapture(e.pointerId); } catch { /* a pointer that is already gone */ }
+    try { box.current!.setPointerCapture(e.pointerId); } catch { /* a pointer that is already gone */ }
     setMenu(null); setMsel(-1);
     if (!locked) {
       const i = pointAt(m);
@@ -207,8 +251,8 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
       // on the line: a new point there, on the line, that can be dragged at once
       if (onLine(m) && !mod(e)) {
         const t = r2(snapTime(tOf(m.x), marks(pts.map((p) => p[0])), pxPerSec, e.shiftKey));
-        const p = [t, spec.kind === 'volume' ? Math.round(lineAt(t) * 10) / 10 : spec.kind === 'chain' ? quantize(spec.p, lineAt(t), true) : Math.round(lineAt(t))];
-        const next = [...pts.map((q) => [...q]), p].sort((x, y) => x[0] - y[0]);
+        const p: LanePoint = [t, spec.kind === 'volume' ? Math.round(lineAt(t) * 10) / 10 : spec.kind === 'chain' ? quantize(spec.p, lineAt(t), true) : Math.round(lineAt(t))];
+        const next = [...pts.map((q): LanePoint => [...q]), p].sort((x, y) => x[0] - y[0]);
         const at = next.indexOf(p);
         setSel(new Set([at]));
         setDrag({ kind: 'points', anchor: at, sel: new Set([at]), x0: m.x, y0: m.y, orig: next.map((q) => [...q]), pts: next, moved: false, added: true });
@@ -218,13 +262,13 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
       if (mod(e)) { setDrag({ kind: 'select', x0: m.x, y0: m.y, x1: m.x, y1: m.y }); return; }
     }
     if (sel.size) setSel(new Set());
-    const grab = (t) => Math.abs(xOf(t) - m.x) < 6;
+    const grab = (t: number) => Math.abs(xOf(t) - m.x) < 6;
     // (where the two handles are on top of each other, the End is the one that can be told from a click on the picture)
     if (grab(end) && (end < dur || m.y < 16)) setDrag({ kind: 'end', t: end });
     else if (grab(from) && (from > 0 || m.y < 16)) setDrag({ kind: 'start', t: from });
     else setDrag({ kind: 'region', x0: m.x, t0: tOf(m.x), t1: tOf(m.x), moved: false });
   };
-  const move = (e) => {
+  const move = (e: PointerEvent) => {
     if (!drag) return;
     const m = where(e), t = tOf(m.x);
     if (drag.kind === 'start') setDrag({ ...drag, t: r2(Math.max(0, Math.min(end - 0.05, t))) });
@@ -232,7 +276,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     else if (drag.kind === 'region') setDrag({ ...drag, t1: t, moved: drag.moved || Math.abs(m.x - drag.x0) > 4 });
     else if (drag.kind === 'select') setDrag({ ...drag, x1: m.x, y1: m.y });
     else if (drag.kind === 'bend') {
-      const next = drag.pts.map((p) => [...p]), c = bendFromDrag(drag.c0, drag.y0 - m.y, drag.rising);
+      const next = drag.pts.map((p): LanePoint => [...p]), c = bendFromDrag(drag.c0, drag.y0 - m.y, drag.rising);
       next[drag.k] = c ? [next[drag.k][0], next[drag.k][1], c] : [next[drag.k][0], next[drag.k][1]];
       setDrag({ ...drag, pts: next, moved: true });
     } else if (drag.kind === 'points') {
@@ -241,7 +285,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
       // the point held snaps (lightly) in time; the others keep their distance from it
       const want = snapTime(o[drag.anchor][0] + (m.x - drag.x0) / pxPerSec, marks(o.filter((_, k) => !drag.sel.has(k)).map((p) => p[0])), pxPerSec, e.shiftKey);
       const g = groupMove(o, ys, drag.sel, want - o[drag.anchor][0], (m.y - drag.y0) * (e.shiftKey ? 0.2 : 1), dur, m.h);
-      setDrag({ ...drag, moved: true, pts: o.map((p, k) => (drag.sel.has(k) ? [r2(p[0] + g.dt), valueAtY(spec, ys[k] + g.dy, m.h, e.shiftKey), ...(p[2] ? [p[2]] : [])] : p)) });
+      setDrag({ ...drag, moved: true, pts: o.map((p, k): LanePoint => (drag.sel.has(k) ? [r2(p[0] + g.dt), valueAtY(spec, ys[k] + g.dy, m.h, e.shiftKey), ...(p[2] ? [p[2]] as const : [] as const)] : p)) });
     }
   };
   const up = () => {
@@ -254,40 +298,40 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     else if (d.kind === 'bend') { if (d.moved) put(d.pts, `${spec.label.toLowerCase()} curve`); }
     else if (d.kind === 'select') {
       const [x0, x1] = [Math.min(d.x0, d.x1), Math.max(d.x0, d.x1)], [y0, y1] = [Math.min(d.y0, d.y1), Math.max(d.y0, d.y1)];
-      setSel(new Set(pts.map((p, k) => [p, k]).filter(([p]) => { const x = xOf(p[0]), y = yOf(spec, p[1], h); return x >= x0 && x <= x1 && y >= y0 && y <= y1; }).map(([, k]) => k)));
-    } else if (!d.moved) { if (onPick) onPick(d.t0); }
+      setSel(new Set(pts.map((p, k): [number[], number] => [p, k]).filter(([p]) => { const x = xOf(p[0]), y = yOf(spec, p[1], h); return x >= x0 && x <= x1 && y >= y0 && y <= y1; }).map(([, k]) => k)));
+    } else if (!d.moved) { if (onPick) onPick((d as RegionDrag).t0); }
     else {
-      const s0 = r2(Math.min(d.t0, d.t1)), e0 = r2(Math.max(d.t0, d.t1));
+      const g = d as RegionDrag, s0 = r2(Math.min(g.t0, g.t1)), e0 = r2(Math.max(g.t0, g.t1));
       if (e0 - s0 >= 0.1) setCue(cue.id, { loops: [...(cue.loops || []), { start: s0, end: e0 }].sort((p, q) => p.start - q.start) }, 'add loop region');
     }
   };
-  const dbl = (e) => {
+  const dbl = (e: MouseEvent) => {
     if (locked) return;
     const i = pointAt(where(e));
     if (i >= 0) removePoints(new Set([i]));
   };
 
   // ── the marker strip: drag a marker, double-click its name, ⌥-click it away; a drag on the strip makes one ──
-  const stripX = (e) => { const r = box.current.getBoundingClientRect(); return e.clientX - r.left; };
-  const markerDown = (e, i) => {
+  const stripX = (e: PointerEvent | MouseEvent) => { const r = box.current!.getBoundingClientRect(); return e.clientX - r.left; };
+  const markerDown = (e: PointerEvent, i: number) => {
     e.stopPropagation();
     if (e.button !== 0) return;
     setMenu(null); setSel(new Set());
     if (locked) return;
     if (e.altKey) { removeMarker(i); return; }
     setMsel(i);
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* gone */ }
     setDrag({ kind: 'marker', i, x0: stripX(e), at0: (cue.markers || [])[i].at, markers: (cue.markers || []).map((m) => ({ ...m })), moved: false });
   };
-  const stripDown = (e) => {
+  const stripDown = (e: PointerEvent) => {
     if (locked || e.button !== 0 || !(dur > 0)) return;
     setMenu(null); setSel(new Set());
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* gone */ }
     const t = r2(snapTime(tOf(stripX(e)), marks(), pxPerSec, e.shiftKey));
-    const made = [...(cue.markers || []).map((m) => ({ ...m })), { at: t, name: `Marker ${(cue.markers || []).length + 1}` }];
+    const made: Marker[] = [...(cue.markers || []).map((m) => ({ ...m })), { at: t, name: `Marker ${(cue.markers || []).length + 1}` }];
     setDrag({ kind: 'marker', i: made.length - 1, x0: stripX(e), at0: t, markers: made, moved: false, added: true });
   };
-  const stripMove = (e) => {
+  const stripMove = (e: PointerEvent) => {
     if (!drag || drag.kind !== 'marker') return;
     const x = stripX(e);
     if (!drag.moved && Math.abs(x - drag.x0) < 3) return;
@@ -304,26 +348,26 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     setCue(cue.id, { markers: sorted }, d.added ? 'add marker' : 'move marker');
     setMsel(sorted.findIndex((m) => m.name === mine.name && Math.abs(m.at - mine.at) < 0.001));
   };
-  const rename = (i, name) => { setNaming(-1); const n = String(name).trim(); if (!n || n === (cue.markers || [])[i].name) return; setCue(cue.id, { markers: (cue.markers || []).map((m, k) => (k === i ? { ...m, name: n } : m)) }, 'rename marker'); };
-  const context = (e) => {
+  const rename = (i: number, name: string) => { setNaming(-1); const n = String(name).trim(); if (!n || n === (cue.markers || [])[i].name) return; setCue(cue.id, { markers: (cue.markers || []).map((m, k) => (k === i ? { ...m, name: n } : m)) }, 'rename marker'); };
+  const context = (e: MouseEvent) => {
     if (locked || !(dur > 0)) return;
     e.preventDefault();
     const x = stripX(e), t = r2(tOf(x)), i = (cue.markers || []).findIndex((m) => Math.abs(xOf(m.at) - x) < 6);
-    const r = box.current.getBoundingClientRect();
+    const r = box.current!.getBoundingClientRect();
     setMenu({ kind: 'marker', left: e.clientX - r.left, t, i });
   };
-  const addMarkerAt = (t) => { setMenu(null); const made = [...(cue.markers || []), { at: t, name: `Marker ${(cue.markers || []).length + 1}` }]; setCue(cue.id, { markers: moveMarker(made, made.length - 1, t, dur) }, 'add marker'); };
+  const addMarkerAt = (t: number) => { setMenu(null); const made: Marker[] = [...(cue.markers || []), { at: t, name: `Marker ${(cue.markers || []).length + 1}` }]; setCue(cue.id, { markers: moveMarker(made, made.length - 1, t, dur) }, 'add marker'); };
 
   // ── the loop lane: drag a region's edge, or its middle to move it whole; a click holds it (as before) ──
-  const loopDown = (e, i) => {
+  const loopDown = (e: PointerEvent, i: number) => {
     e.stopPropagation();
     if (e.button !== 0) return;
     const g = (cue.loops || [])[i], x = stripX(e);
-    const part = Math.abs(x - xOf(g.start)) < 6 ? 'start' : Math.abs(x - xOf(g.end)) < 8 ? 'end' : 'body';
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* gone */ }
+    const part: 'start' | 'end' | 'body' = Math.abs(x - xOf(g.start)) < 6 ? 'start' : Math.abs(x - xOf(g.end)) < 8 ? 'end' : 'body';
+    try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* gone */ }
     setDrag({ kind: 'loop', i, part, x0: x, grab: tOf(x) - g.start, g, loops: (cue.loops || []).map((q) => ({ ...q })), moved: false });
   };
-  const loopMove = (e) => {
+  const loopMove = (e: PointerEvent) => {
     if (!drag || drag.kind !== 'loop' || locked) return;
     const x = stripX(e);
     if (!drag.moved && Math.abs(x - drag.x0) < 4) return;
@@ -340,17 +384,17 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
     setCue(cue.id, { loops: [...d.loops].sort((p, q) => p.start - q.start) }, d.part === 'body' ? 'move loop region' : 'loop region edge');
   };
 
-  const inView = (t) => t >= start - 1e-6 && t <= start + span + 1e-6;
-  const left = (t) => `${xOf(t)}px`;
+  const inView = (t: number) => t >= start - 1e-6 && t <= start + span + 1e-6;
+  const left = (t: number) => `${xOf(t)}px`;
   const armed = (a && a.armed) || [];
   // a line across the whole view, drawn from what it plays (so a bend is drawn as it is heard)
-  const pathOf = (sp, ps, b) => {
+  const pathOf = (sp: LaneSpec, ps: Points, b: number) => {
     if (!(width > 0) || !(span > 0)) return '';
-    const out = [];
+    const out: string[] = [];
     for (let x = 0; x <= width; x += 2) { const t = start + (x / width) * span, v = Lanes.valueAt(ps, t, sp); out.push(`${x ? 'L' : 'M'}${x} ${yOf(sp, v == null ? b : v, h).toFixed(1)}`); }
     return out.join(' ');
   };
-  const others = lanes.filter((x) => x.id !== spec.id && Lanes.pointsOf(cue, x.id).length);
+  const others: LaneSpec[] = lanes.filter((x: LaneSpec) => x.id !== spec.id && Lanes.pointsOf(cue, x.id).length);
   const ghost = drag && drag.kind === 'region' && drag.moved ? { a: Math.min(drag.t0, drag.t1), b: Math.max(drag.t0, drag.t1) } : null;
   const tipPt = drag && drag.kind === 'points' && drag.moved ? drag.pts[drag.anchor] : null;
   const box2 = drag && drag.kind === 'select' ? drag : null;
@@ -358,12 +402,12 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
   const loopTip = drag && drag.kind === 'loop' && drag.moved ? drag.loops[drag.i] : null;
   return html`<div class=${cx('wavedit', locked && 'locked')} ref=${root}>
     <div class="wavetop">
-      <button class="btn small lane-pick" data-lane-pick title="Which line is drawn and edited" onClick=${(e) => { const anchor = e.currentTarget; setMenu((m) => (m && m.kind === 'lanes' ? null : { kind: 'lanes', anchor })); }}>${spec.label} ▾</button>
+      <button class="btn small lane-pick" data-lane-pick title="Which line is drawn and edited" onClick=${(e: MouseEvent) => { const anchor = e.currentTarget as HTMLElement; setMenu((m) => (m && m.kind === 'lanes' ? null : { kind: 'lanes', anchor })); }}>${spec.label} ▾</button>
       <span class="dim mono">${pts.length ? `${pts.length} point${pts.length === 1 ? '' : 's'}${sel.size ? ` · ${sel.size} selected` : ''}` : ''}</span>
       <span class="grow"></span>
     </div>
     ${menu && menu.kind === 'lanes' ? html`<${Pop} anchor=${menu.anchor} onClose=${() => setMenu(null)} width=${250} data-lane-menu>
-      <div class="sd-menu-group"><div class="lane-list">${lanes.map((x) => html`<button key=${x.id} class=${cx('sd-menu-item lane-item', x.id === spec.id && 'on')} data-lane=${x.id} onClick=${() => { setLane(x.id); setMenu(null); }}>
+      <div class="sd-menu-group"><div class="lane-list">${lanes.map((x: LaneSpec) => html`<button key=${x.id} class=${cx('sd-menu-item lane-item', x.id === spec.id && 'on')} data-lane=${x.id} onClick=${() => { setLane(x.id); setMenu(null); }}>
         <i class=${cx('lane-dot', Lanes.pointsOf(cue, x.id).length && 'has')}></i>${x.label}</button>`)}</div></div>
       ${pts.length && !locked ? html`<button class="sd-menu-item danger" data-lane-clear onClick=${() => { setMenu(null); put([], `clear ${spec.label.toLowerCase()} line`); setSel(new Set()); }}>Clear this line</button>` : null}
     <//>` : null}
@@ -372,16 +416,16 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
       const holding = a && a.holding && near(a.region, g);
       return html`<button key=${i} data-loop=${i} class=${cx('loop', armed.some((x) => near(x, g)) && 'armed', holding && 'holding', !locked && 'movable')} style=${`left:${Math.max(0, xOf(g.start))}px;width:${Math.max(4, Math.min(width, xOf(g.end)) - Math.max(0, xOf(g.start)) - 2)}px`}
         title=${locked ? (a ? 'Click to hold here' : `${clock(g.start)}–${clock(g.end)}`) : `${a ? 'Click: hold. ' : ''}Drag an edge, or the middle to move it`}
-        onPointerDown=${(e) => loopDown(e, i)}>${holding ? '⟳ ' : ''}${g.name || `Loop ${i + 1}`}</button>`;
+        onPointerDown=${(e: PointerEvent) => loopDown(e, i)}>${holding ? '⟳ ' : ''}${g.name || `Loop ${i + 1}`}</button>`;
     })}</div>`}
     <div class="mstrip" data-markers onPointerDown=${stripDown} onPointerMove=${stripMove} onPointerUp=${stripUp} onPointerCancel=${stripUp} onContextMenu=${context}
       title=${locked ? '' : 'Drag here: a new marker. Right-click: add one.'}>
       ${markers.map((m, i) => (inView(m.at) ? html`<div key=${i} data-mflag=${i} class=${cx('mflag', msel === i && 'on', !locked && 'movable')} style=${`left:${left(m.at)}`}
-        onPointerDown=${(e) => markerDown(e, i)}
-        onDblClick=${(e) => { e.stopPropagation(); if (!locked) setNaming(i); }} title=${locked ? `${m.name} · ${clock(m.at, 2)}` : `${m.name} · ${clock(m.at, 2)}: drag to move, double-click to rename, ⌥-click to remove`}>
-        ${naming === i ? html`<input class="mname" data-marker-name value=${m.name} ref=${(el) => { if (el && !el.dataset.held) { el.dataset.held = '1'; el.focus(); el.select(); } }}
-            onPointerDown=${(e) => e.stopPropagation()} onBlur=${(e) => { if (naming === i) rename(i, e.target.value); }}
-            onKeyDown=${(e) => { e.stopPropagation(); if (e.key === 'Enter') rename(i, e.target.value); if (e.key === 'Escape') setNaming(-1); }} />`
+        onPointerDown=${(e: PointerEvent) => markerDown(e, i)}
+        onDblClick=${(e: MouseEvent) => { e.stopPropagation(); if (!locked) setNaming(i); }} title=${locked ? `${m.name} · ${clock(m.at, 2)}` : `${m.name} · ${clock(m.at, 2)}: drag to move, double-click to rename, ⌥-click to remove`}>
+        ${naming === i ? html`<input class="mname" data-marker-name value=${m.name} ref=${(el: HTMLInputElement | null) => { if (el && !el.dataset.held) { el.dataset.held = '1'; el.focus(); el.select(); } }}
+            onPointerDown=${(e: PointerEvent) => e.stopPropagation()} onBlur=${(e: FocusEvent) => { if (naming === i) rename(i, (e.target as HTMLInputElement).value); }}
+            onKeyDown=${(e: KeyboardEvent) => { e.stopPropagation(); if (e.key === 'Enter') rename(i, (e.target as HTMLInputElement).value); if (e.key === 'Escape') setNaming(-1); }} />`
           : html`<span>${m.name}</span>`}</div>` : null))}
       ${markerTip ? html`<div class="mtip mono" style=${`left:${left(markerTip.at)}`}>${clock(markerTip.at, 2)}</div>` : null}
       ${loopTip ? html`<div class="mtip mono" style=${`left:${left(loopTip.start)}`}>${clock(loopTip.start, 2)} – ${clock(loopTip.end, 2)}</div>` : null}
