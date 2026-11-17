@@ -23,7 +23,8 @@
     "dist:mac": "node build/compile.mjs && electron-builder --mac",
     "dist:win": "node build/compile.mjs && electron-builder --win",
     "dist:linux": "node build/compile.mjs && electron-builder --linux",
-    "release": "node build/compile.mjs && node bin/release.js"
+    "release": "node build/compile.mjs && node bin/release.js",
+    "cue-fields": "node build/compile.mjs && node build/cue-fields.js"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

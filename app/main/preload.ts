@@ -6,7 +6,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 let tables = null;
 try { tables = ipcRenderer.sendSync('ec-ui-tables'); } catch { tables = null; }
 
-contextBridge.exposeInMainWorld('ec', {
+const bridge = {
   /** The keys, as core/ui/keys.js has them for the window. */
   ui: tables,
   /** What the app is: version, the cue-type table the inspector is drawn from. */
@@ -25,4 +25,9 @@ contextBridge.exposeInMainWorld('ec', {
   onUpdate: (fn) => ipcRenderer.on('ec-update', (_e, s) => fn(s)),
   /** Where a dropped file is on disk. */
   pathFor: (file) => webUtils.getPathForFile(file),
-});
+};
+contextBridge.exposeInMainWorld('ec', bridge);
+
+/** What the window has of the app: `window.ec`. */
+export type EcBridge = typeof bridge;
+declare global { interface Window { ec: EcBridge } }

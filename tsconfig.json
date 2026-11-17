@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "noEmit": true,
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
     "moduleDetection": "force"
   },
