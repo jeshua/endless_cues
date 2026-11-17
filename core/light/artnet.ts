@@ -9,7 +9,7 @@
  * Release V1.4"). Everything is on UDP port 6454 (0x1936). A universe is a 15-bit "port address":
  * bits 14–8 the Net, 7–4 the Sub-Net, 3–0 the Universe; the first one is 0.
  *
- * Pure: buffers in, buffers out. Nothing here opens a socket (core/light/output.js does).
+ * Pure: buffers in, buffers out. Nothing here opens a socket (core/light/output.ts does).
  * Art-Net™ Designed by and Copyright Artistic Licence.
  */
 const PORT = 6454;

@@ -4,7 +4,7 @@
  * The inspector, drag and drop, undo, a restored version and the assistant all
  * go through `applyOps(doc, ops)`. That is what makes an AI edit safe to show
  * before it lands: a proposal is a list of these, applying them to a copy
- * gives the document it would make, and diff.js says what changed.
+ * gives the document it would make, and diff.ts says what changed.
  *
  * Pure: the input document is never touched. Throws OpError (with the index of
  * the op that failed) and changes nothing if any op is not valid: a batch
@@ -18,9 +18,9 @@
  *   { op: 'cue.renumber', ids: [...], start, step?, prefix?, suffix? }    numbers other cues have are passed over
  *   { op: 'cue.unnumber', ids: [...] }
  *   { op: 'list.add',   name, cart? }   { op: 'list.rename', id, name }   { op: 'list.remove', id }
- *   { op: 'list.cart',  id, rows, columns }     a list becomes a cart of that size (cart.js); rows: null makes it a list again
+ *   { op: 'list.cart',  id, rows, columns }     a list becomes a cart of that size (cart.ts); rows: null makes it a list again
  *   { op: 'show.set',   path: 'title' | 'notes' | 'settings.…' | 'modules.…', value }
- *   { op: 'device.add',    device: { name, …fields } }      a piece of equipment (core/rig/devices.js); `id` made from the name if left out;
+ *   { op: 'device.add',    device: { name, …fields } }      a piece of equipment (core/rig/devices.ts); `id` made from the name if left out;
  *                                                           with `model` and no commands, the model's are copied in
  *   { op: 'device.set',    id, props: { field: value | null } }     null clears; commands, reports and alive are set whole
  *   { op: 'device.remove', id }                             cues that named it become broken
@@ -199,7 +199,7 @@ function settingsTrouble(doc: ShowDoc): string[] {
   items(doc.settings.audio.buses, 'settings.audio.buses', 'bus', (b, at) => {
     if (b.db !== undefined && (typeof b.db !== 'number' || !Number.isFinite(b.db))) out.push(`${at}.db is a number of dB (it was given ${JSON.stringify(b.db)})`);
     if (b.out !== undefined && !(Number.isInteger(b.out) && b.out >= 1 && b.out % 2 === 1)) out.push(`${at}.out is the first of a pair of outputs: 1, 3, 5 … (it was given ${JSON.stringify(b.out)})`);
-    // what kind of sound it carries, and what its kind was offered (core/audio/kinds.js)
+    // what kind of sound it carries, and what its kind was offered (core/audio/kinds.ts)
     if (b.kind !== undefined && !(KIND_ORDER as readonly string[]).includes(b.kind)) out.push(`${at}.kind is one of ${KIND_ORDER.join(', ')} (it was given ${JSON.stringify(b.kind)})`);
     if (b.noDuck !== undefined && typeof b.noDuck !== 'boolean') out.push(`${at}.noDuck is true or false (it was given ${JSON.stringify(b.noDuck)})`);
     for (const k of ['stopFade', 'oneAtATime'] as const) if (b[k] !== undefined && !(typeof b[k] === 'number' && b[k] >= 0 && b[k] <= 60)) out.push(`${at}.${k} is a time in seconds, 0 to 60 (it was given ${JSON.stringify(b[k])})`);
@@ -208,7 +208,7 @@ function settingsTrouble(doc: ShowDoc): string[] {
     if (typeof p.host !== 'string') out.push(`${at}: a patch needs a "host" (an address)`);
     if (!(Number.isInteger(p.port) && p.port > 0 && p.port < 65536)) out.push(`${at}: a patch needs a "port" (a number, 1–65535)`);
   });
-  // the rig: each device as core/rig/devices.js holds it to (and no id shared with a patch or another device), and the checklist
+  // the rig: each device as core/rig/devices.ts holds it to (and no id shared with a patch or another device), and the checklist
   const rig = doc.settings.rig || {};
   for (const d of Array.isArray(rig.devices) ? rig.devices : []) out.push(...rigDevices.trouble(d, doc));
   const ticks = new Set();
@@ -411,7 +411,7 @@ function applyOps(input: ShowDoc, ops: readonly Op[]): Applied {
         if (o.value === undefined) delete node[keys.at(-1)!]; else node[keys.at(-1)!] = clone(o.value);
         break;
       }
-      // ── devices (core/rig/devices.js): each is held to `trouble` as it lands; an id shared with a patch is the
+      // ── devices (core/rig/devices.ts): each is held to `trouble` as it lands; an id shared with a patch is the
       //    whole batch's to answer for (below), so a patch can be made a device in either order ──
       case 'device.add': {
         const rig = doc.settings.rig;

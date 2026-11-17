@@ -13,7 +13,7 @@
  *
  *   look     list_folder · read_file                      the files in the show folder; the text of one (a script, notes)
  *            rig_status · read_monitor                    what the show depends on and whether it is ready; what was sent and heard
- *   point    show_in_app                                  a place in the window ringed for the person (core/ui/places.js): no
+ *   point    show_in_app                                  a place in the window ringed for the person (core/ui/places.ts): no
  *                                                         change and nothing sent, and nothing at all in Show mode
  *   ask      ask_device · find_devices                    "are you there?", to one device, or to any prop on the network
  *   stage    make_prop_files · hand_off                   files for the show folder, written by the app's own generators,
@@ -24,7 +24,7 @@
  * equipment: a device's own "are you there?" message, or a model's built-in one to a private address, never a
  * message the model wrote, never a command, at most 30 a turn, and nothing at all in Show mode.
  *
- * The edit operations (core/show/ops.js) can do anything to a show: add, change, remove, move, duplicate and
+ * The edit operations (core/show/ops.ts) can do anything to a show: add, change, remove, move, duplicate and
  * renumber cues, restructure groups and lists, and set any setting or module option. What the assistant cannot do
  * is the safety design (docs/specs/08-assistant.md): it cannot play the show, it cannot save it, and nothing it
  * does to the draft touches the real show until a person accepts the proposal (or has chosen, on this computer,
@@ -124,7 +124,7 @@ interface Sender { address: string; port: number; messages?: { address: string; 
 /** What an "are you there?" heard. */
 interface AskAnswer { ok?: boolean; held?: boolean; answered?: boolean; ms?: number; text?: string; why?: string }
 export type AskTarget = string | { host: string; port: number; probe: string };
-/** The host's rig service (app/main/rig-service.js): the one door to the equipment the tools have. */
+/** The host's rig service (app/main/rig-service.ts): the one door to the equipment the tools have. */
 export interface RigService {
   status(): RigStatus | null;
   monitor(last: number): MonitorEntry[] | null;
@@ -157,7 +157,7 @@ export interface ToolContext {
   bin?: string;
 }
 
-/** A field of the devices table (core/rig/devices.js). */
+/** A field of the devices table (core/rig/devices.ts). */
 interface DeviceField {
   key: string; kind: string; help?: string; options?: readonly string[]; labels?: Record<string, string>;
   required?: boolean; default?: unknown; min?: number; max?: number; when?: string; network?: boolean;
@@ -432,8 +432,8 @@ function outlineFrom(doc: ShowDoc, cue: Cue, count: number, engine: EngineView |
 // Two forms of it. The brief one (reference()) goes with every request: every cue type and every field by name,
 // the common fields with their values, the operations, and the equipment in a line a model. The full one, a part at
 // a time, is read_reference's answer: a type's every field with its help, every setting path, every device field,
-// each model's commands. Both are written from the same tables (core/show/cue-types.js, core/rig/devices.js,
-// core/net/devices.js, the show's own defaults), so neither can fall behind them; what moved out of the brief is
+// each model's commands. Both are written from the same tables (core/show/cue-types.ts, core/rig/devices.ts,
+// core/net/devices.ts, the show's own defaults), so neither can fall behind them; what moved out of the brief is
 // what a model needs on few asks, and the brief says where to read it.
 
 const when = (f: Field) => (f.when ? `, only when ${Object.entries(f.when).map(([k, v]) => `${k} is ${v.join(' or ')}`).join(' and ')}` : '');
@@ -442,7 +442,7 @@ const options = (f: Field | DeviceField) => f.options!.filter(Boolean).map((o) =
 /** One field in full: its kind, its values (the colours named once, as "colour"), required, default, the mode it belongs to, its help. */
 const fieldLine = (f: Field) => `    ${f.key} (${f.kind}${f.options ? ': ' + (f.options === COLORS ? 'a colour' : options(f)) : ''}${f.targets ? `: a ${f.targets.map((t) => TYPES[t].label).join(', ')} cue` : ''}${f.required ? ', required' : ''}${dflt(f)}${when(f)})${f.help ? ' — ' + f.help : ''}`;
 const COLOUR_LINE = `    (a colour is one of: ${COLORS.join(' ')}; or any colour as #rrggbb)`;
-// (a heading has only some of the fields every cue has, and a place of its own: core/show/sections.js)
+// (a heading has only some of the fields every cue has, and a place of its own: core/show/sections.ts)
 const HEADING = (t: CueType) => (TYPES[t].heading ? ` Has only ${TYPES[t].common!.join(', ')}. A top-level entry of a list, over the cues after it up to the next section; never inside a group; GO and continues pass over it.` : '');
 const typeHead = (t: CueType) => `${t} — ${TYPES[t].label}: ${TYPES[t].summary}${TYPES[t].container ? ' Has "children".' : ''}${HEADING(t)}`;
 function typeFull(t: CueType) { return [typeHead(t), ...TYPES[t].fields.filter((f) => !f.hidden).map(fieldLine)].join('\n'); }
@@ -507,7 +507,7 @@ const RIG_SETTINGS = [
   '  settings.rig.devices — NOT set with show.set: see DEVICES.',
 ];
 
-// the equipment: written from core/rig/devices.js's tables, as the cue types are written from theirs
+// the equipment: written from core/rig/devices.ts's tables, as the cue types are written from theirs
 const dfield = (f: DeviceField) => `    ${f.key} (${f.kind}${f.options ? ': ' + options(f) : ''}${f.required ? ', required' : ''}${f.default !== undefined && f.default !== '' ? `, default ${f.default}` : ''}${f.min !== undefined ? `, ${f.min} to ${f.max}` : ''}${f.when ? `, only when how is ${f.when}` : ''}${f.network ? ', network devices only' : ''})${f.help ? ' — ' + f.help : ''}`;
 const PATCH_TO_DEVICE = 'Making a network patch a device (so it has a Rig row, a Try button and an "are you there?"), in one batch: device.add with the patch’s own id, name, host and port (and the model its "device" names), and show.set of settings.network.patches to the list without that patch. Cues that named the patch then name the device, unchanged.';
 function devicesFull() {
@@ -652,12 +652,12 @@ function mediaList(doc: ShowDoc, { showDir = null, engine = null }: { showDir?: 
 }
 
 // What is checked before an edit reaches the draft (an operation's shape, a setting's kind) is checked by
-// applyOps itself (core/show/ops.js), so the inspector and the command line are held to the same rules and a
+// applyOps itself (core/show/ops.ts), so the inspector and the command line are held to the same rules and a
 // refusal reads the same wherever it came from. "Applied" always means the thing asked for happened.
 
 const refuse = (message: string): never => { const e = new Error(message); e.name = 'OpError'; throw e; };
 
-/** What check_show reports, one line each: the show's own problems (show.js) and files that are not on disk. */
+/** What check_show reports, one line each: the show's own problems (show.ts) and files that are not on disk. */
 function problemLines(doc: ShowDoc, document: ShowDocument) {
   const { byId } = show.index(doc);
   const label = (id: string) => { const c = byId.get(id); return c ? `${c.number ? `#${c.number} ` : ''}${c.name || defaultName(c, byId)} [${id}]` : id; };
@@ -964,7 +964,7 @@ function execute(name: string, input: ToolInput, ctx: ToolContext): ToolResult |
         const { device: _d, ...options } = input;
         const made = kit.files(d, options);
         const o = kit.settle(d, options);
-        // (the person's secrets.h, once it is there, is theirs: it is left out here, and files.js would leave it out too)
+        // (the person's secrets.h, once it is there, is theirs: it is left out here, and files.ts would leave it out too)
         const kept = made.filter((f) => /\/secrets\.h$/.test(f.path) && fs.existsSync(path.join(document.showDir!, ...f.path.split('/'))));
         const staged = made.filter((f) => !kept.includes(f));
         const r = showFiles.check(document.showDir, [...filesOf(ctx).filter((f) => !staged.some((x) => x.path === f.path)), ...staged]);

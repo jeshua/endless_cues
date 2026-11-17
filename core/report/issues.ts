@@ -1,6 +1,6 @@
 /**
- * Something went wrong: the line of the app's own log that the status bar offers to report (app/main/main.js keeps
- * one of these; app/renderer/app.js draws it, and Report a Problem attaches it). It only notices and remembers: it
+ * Something went wrong: the line of the app's own log that the status bar offers to report (app/main/main.ts keeps
+ * one of these; app/renderer/app.ts draws it, and Report a Problem attaches it). It only notices and remembers: it
  * never opens anything, and the window decides when to show it (in Show mode, as a small mark until Edit).
  *
  *   isIssue(line)              whether a log line says something went wrong (an error, a cue that could not play,
@@ -8,7 +8,7 @@
  *   createIssues({ now })      .seen(line) -> true when it is news; .latest() -> { line, at, count } | null; .dismiss()
  */
 
-// (the words the report's own error lines are picked by (core/report/report.js), and the ones the app uses when a
+// (the words the report's own error lines are picked by (core/report/report.ts), and the ones the app uses when a
 // part of it drops or dies: an output gone, the audio window made again, a MIDI message dropped)
 const BAD = /\b(error|uncaught|could not|cannot|failed|exception)\b|\bdied\b|\bis gone\b|\bDROPPED\b|\bstopped answering\b|\[page\]/i;
 // (what is not the app going wrong: the assistant being refused a tool, a report's own sending, a test run's own words)

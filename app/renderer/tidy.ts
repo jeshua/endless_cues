@@ -28,7 +28,7 @@ function colorCss(col: unknown) {
 
 // ── the list's optional columns: one that nothing in the list fills is not drawn ──
 const COLUMNS = ['target', 'preWait', 'duration', 'postWait'];
-/** What the Target column shows for a cue (CueList.js draws the same): its target, a named sound's file or its
+/** What the Target column shows for a cue (CueList.ts draws the same): its target, a named sound's file or its
  *  bus, a network cue's message. */
 function hasTarget(c: CueLike) {
   if (c.target) return true;

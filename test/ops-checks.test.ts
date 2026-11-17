@@ -1,4 +1,4 @@
-/** The checks every edit passes, whoever makes it: the shape of an operation, and the kind of a setting (core/show/ops.js). */
+/** The checks every edit passes, whoever makes it: the shape of an operation, and the kind of a setting (core/show/ops.ts). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

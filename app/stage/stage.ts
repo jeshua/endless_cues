@@ -1,4 +1,4 @@
-// The stage window's code (stage.html). A plain script (build/compile.mjs writes stage.js).
+// The stage window's code (stage.html). A plain script (build/compile.mjs writes stage.ts).
 import type { StageCmd, StageReport } from './preload';
 
 type Cmd<K extends StageCmd['op']> = Extract<StageCmd, { op: K }>;

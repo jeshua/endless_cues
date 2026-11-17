@@ -1,8 +1,8 @@
 /**
- * The smoke run's checks that the app is simple until asked (docs/specs/00-defaults.md), called from smoke.js:
+ * The smoke run's checks that the app is simple until asked (docs/specs/00-defaults.md), called from smoke.ts:
  *
  *   plain(…)   as the app comes: no Live view, no way into it, nothing has looked for a tempo; then the Live
- *              view is switched on, which the checks of that view (smoke.js, smoke-live.js) need
+ *              view is switched on, which the checks of that view (smoke.ts, smoke-live.ts) need
  *   after(…)   switched off again: a show made with the Live view says so in one line and offers it; a new
  *              sound goes on a bus by its length only when the show asks for that
  */

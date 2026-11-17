@@ -15,7 +15,7 @@
  *     without numbers and extensions, numbered in order, under a section heading where a sub-folder or a scene prefix says so. Nothing else
  *     is set: no level, no fade, no loop. What the names suggest beyond that (a loop) is said, not done.
  *
- * Pure: plain data in, plain data out. The listing comes from core/rig/folder.js; nothing here reads a disk.
+ * Pure: plain data in, plain data out. The listing comes from core/rig/folder.ts; nothing here reads a disk.
  */
 import * as show from '../show/show';
 import * as devices from '../rig/devices';
@@ -23,7 +23,7 @@ import * as models from '../net/devices';
 import type { Cue, Device, ShowDoc } from '../show/types';
 import type { Op } from '../show/ops';
 
-/** A file in the show folder, as core/rig/folder.js lists it (as much as is read here). */
+/** A file in the show folder, as core/rig/folder.ts lists it (as much as is read here). */
 export interface FolderEntry { path: string; kind: string; usedBy?: string[] }
 /** A sound the plan makes a cue for: its path, its name in full, and the name it is given. */
 interface PlanCue { path: string; long: string; name: string; cues?: undefined }
@@ -102,7 +102,7 @@ function folderPlan(listing: FolderEntry[] = [], { from = 1 }: { from?: number }
   let n = Math.max(1, Math.round(Number(from)) || 1) - 1;
   const first = n + 1;
   const audio = (c: PlanCue) => ({ type: 'audio', number: String(++n), name: c.name, file: c.path });
-  // one GO a sound: a scene's sounds are a run of cues under a section heading (core/show/sections.js), which never
+  // one GO a sound: a scene's sounds are a run of cues under a section heading (core/show/sections.ts), which never
   // plays; a group would fire them together, which is never what a folder of a scene's sounds means
   const ops = top.flatMap((t): Op[] => (t.cues
     ? [{ op: 'cue.add', cue: { type: 'section', name: t.name } }, ...t.cues.map((c): Op => ({ op: 'cue.add', cue: audio(c) }))]

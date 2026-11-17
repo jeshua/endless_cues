@@ -14,7 +14,7 @@ import type { ShowCommands } from '../show/types';
 /** A show command: its label, and the host `cmd` it sends. */
 export interface ShowCommand { label: string; cmd: { op: string; step?: number } }
 
-// what each command is to the host (app/main/host.js `cmd`)
+// what each command is to the host (app/main/host.ts `cmd`)
 const COMMANDS: Record<string, ShowCommand> = {
   go: { label: 'GO', cmd: { op: 'go' } },
   panic: { label: 'Panic', cmd: { op: 'panic' } },

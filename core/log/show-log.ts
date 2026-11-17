@@ -5,7 +5,7 @@
  *     2026-11-16 19-30-02.log    every GO and what it started, each cue starting, stopping and fading and what set
  *                                it off, the GOs that were ignored, problems, mode changes, saves (one file per sitting)
  *     2026-11-16 19-30-02.csv    the same, as a table
- *     playback.csv               what sound played and for how long (core/engine/playlog.js), as before
+ *     playback.csv               what sound played and for how long (core/engine/playlog.ts), as before
  *
  * Logging must never hold up a GO: `add` only puts the line in memory; the lines are written together a moment
  * later, without waiting (fs.promises), and a log that cannot be written is given up quietly (the show goes on).

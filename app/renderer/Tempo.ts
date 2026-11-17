@@ -4,13 +4,13 @@ import { html, useState, useEffect, cmd, setCue, clock, cx } from './lib.js';
 import type { Cue } from './lib.js';
 import type { TempoEdit } from '../../core/audio/tempo';
 
-/** A tempo as a cue keeps it (core/audio/tempo.js): the first section's bpm, bar line and bar, then the later sections. */
+/** A tempo as a cue keeps it (core/audio/tempo.ts): the first section's bpm, bar line and bar, then the later sections. */
 export interface TempoLike { bpm: number; first?: number; bar?: number; sections?: { from: number; bpm: number; first?: number; bar?: number }[] }
 /** One section of a tempo, filled in. */
 export interface TempoSection { from: number; bpm: number; first: number; bar: number }
 
 export const bpmText = (b: number) => (Math.round(b * 100) / 100).toFixed(2);
-/** A tempo's sections in order, and the one a place is in (as core/audio/tempo.js has them: the top of a tempo is
+/** A tempo's sections in order, and the one a place is in (as core/audio/tempo.ts has them: the top of a tempo is
  *  the section from the start of the file, `sections` the later ones, each with its own bpm, bar line and bar). */
 export function sectionsOf(tempo: TempoLike | null | undefined): TempoSection[] {
   if (!tempo || !(tempo.bpm > 0)) return [];

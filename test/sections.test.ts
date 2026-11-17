@@ -1,6 +1,6 @@
 /**
- * Sections (core/show/sections.js): headings in a list that never play. The engine is handed the list without them
- * (show.js toEngineDoc), so GO, continues and auto-follow run straight through; what names one lands on its first cue.
+ * Sections (core/show/sections.ts): headings in a list that never play. The engine is handed the list without them
+ * (show.ts toEngineDoc), so GO, continues and auto-follow run straight through; what names one lands on its first cue.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -5,18 +5,18 @@ import type { AppCommand, AppInfo } from './main';
 import type { UpdateView } from '../../core/update/updates';
 import type { forPage } from '../../core/ui/keys';
 
-/** The keys as the page has them (core/ui/keys.js `forPage`). */
+/** The keys as the page has them (core/ui/keys.ts `forPage`). */
 export interface UiTables { keys: ReturnType<typeof forPage> }
 /** A word between this show's windows: the selection, for an inspector in a window of its own, and whether that window is out. */
 export type Relay = Record<string, unknown>;
 
-// The keys (core/ui/keys.js): asked for once, at once, because the page's modules read them as
+// The keys (core/ui/keys.ts): asked for once, at once, because the page's modules read them as
 // they load. (null if the main process has no answer: the page then has no keys of its own.)
 let tables: UiTables | null = null;
 try { tables = ipcRenderer.sendSync('ec-ui-tables'); } catch { tables = null; }
 
 const bridge = {
-  /** The keys, as core/ui/keys.js has them for the window. */
+  /** The keys, as core/ui/keys.ts has them for the window. */
   ui: tables,
   /** What the app is: version, the cue-type table the inspector is drawn from. */
   init: (): Promise<AppInfo> => ipcRenderer.invoke('ec-init'),
@@ -30,7 +30,7 @@ const bridge = {
   /** A word to this show's other windows (the selection, for an inspector in a window of its own). */
   relay: (m: Relay) => ipcRenderer.send('ec-relay', m),
   onRelay: (fn: (m: Relay) => void) => ipcRenderer.on('ec-relay', (_e, m: Relay) => fn(m)),
-  /** A newer version: found, downloading or ready (app/main/updates.js). */
+  /** A newer version: found, downloading or ready (app/main/updates.ts). */
   onUpdate: (fn: (s: UpdateView) => void) => ipcRenderer.on('ec-update', (_e, s: UpdateView) => fn(s)),
   /** Where a dropped file is on disk. */
   pathFor: (file: File) => webUtils.getPathForFile(file),

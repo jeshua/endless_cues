@@ -7,7 +7,7 @@
  * is found again from the show it is pasted into.
  *
  * Nothing here changes a show. `pasteOps` and `propertyOps` return operations
- * for core/show/ops.js, so a paste is one undoable edit like any other.
+ * for core/show/ops.ts, so a paste is one undoable edit like any other.
  */
 import * as path from 'path';
 import { TYPES, fieldsOf } from './cue-types';

@@ -249,7 +249,7 @@ function Knob({ name, value, peak, was, onLive, onCommit, onBack }: { name: stri
   const up = () => { if (!start.current) return; start.current = null; const d = live.current; setDrag(null); if (d !== value) onCommit(d); };
   const wheel = (e: WheelEvent) => { e.preventDefault(); const d = clamp(live.current + (e.deltaY < 0 ? 0.5 : -0.5)); setDrag(d); onLive(d); clearTimeout(wheelTimer.current); wheelTimer.current = setTimeout(() => { setDrag(null); onCommit(live.current); }, 350); };
   // (the keys a knob takes are only these, and only once Tab has given it the keyboard (a click does not): Space and Esc
-  // still reach GO and Panic. The window's own keys step aside for them, app.js)
+  // still reach GO and Panic. The window's own keys step aside for them, app.ts)
   const key = (e: KeyboardEvent) => {
     const by = e.shiftKey ? 0.5 : 1;
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); step(by); }

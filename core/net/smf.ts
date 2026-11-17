@@ -91,7 +91,7 @@ function parse(buffer: Buffer | ArrayLike<number> | null | undefined) {
 }
 
 /**
- * A parsed file as the playout plays it (core/net/playout.js): `between(t0, t1)` is what falls in that stretch of
+ * A parsed file as the playout plays it (core/net/playout.ts): `between(t0, t1)` is what falls in that stretch of
  * the cue's own time, at its rate (2: twice as fast). It remembers which notes it has started, so that `flush()`
  * can end them when the cue is stopped or paused part way; `locate(t)`, for a cue started or resumed part way in,
  * is the programs, controllers and bends the file had set by then, so the instrument is as it would have been.

@@ -1,5 +1,5 @@
 /**
- * A show from another computer (core/show/trust.js): which shows are this computer's own, and what a show that is
+ * A show from another computer (core/show/trust.ts): which shows are this computer's own, and what a show that is
  * not leaves alone until it is turned on (its sounds on another computer's share, its connections, its reply ports).
  */
 import test from 'node:test';

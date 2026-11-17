@@ -30,7 +30,7 @@ interface Config { port?: number | string; control?: boolean; levels?: boolean; 
 /** What a remote posts, as JSON: nothing in it is trusted until it is checked. */
 type Posted = { op?: unknown; secs?: unknown; db?: unknown; name?: unknown; commit?: unknown } | null;
 
-/** The page, its script written into it (remote.js, from remote.ts), so a phone loads one file. */
+/** The page, its script written into it (remote.ts, from remote.ts), so a phone loads one file. */
 const page = () => fs.readFileSync(path.join(__dirname, 'remote.html'), 'utf8')
   .replace('<script src="remote.js"></script>', () => `<script>${fs.readFileSync(path.join(__dirname, 'remote.js'), 'utf8').replace(/<\/script/gi, '<\\/script')}</script>`);
 

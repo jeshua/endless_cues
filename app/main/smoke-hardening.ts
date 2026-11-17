@@ -1,8 +1,8 @@
 /**
- * Run by smoke.js at its end: a show from another computer opens with its network features held back (no module,
+ * Run by smoke.ts at its end: a show from another computer opens with its network features held back (no module,
  * nothing sent, no clock trigger, a sound on another computer's share not opened) and one line in the title bar;
  * Turn on gives it all back and is remembered. Then OSC control with no passcode: it runs the show and does not edit
- * it, and a UDP sender that has not connected is not answered (core/show/trust.js, docs/specs/06 "No UDP reflector").
+ * it, and a UDP sender that has not connected is not answered (core/show/trust.ts, docs/specs/06 "No UDP reflector").
  * A test run opens no socket: OSC arrives through the hub's `pretendInput`. Picture: hardening-away.
  */
 import * as fs from 'fs';

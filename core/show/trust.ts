@@ -13,7 +13,7 @@
  * and a show put in place of one of yours (another id) is not taken for yours. Nothing is written into the
  * show file: a show is the same file whichever computer saved it.
  *
- * Plain node, no Electron: core/show/trust.js. docs/specs/03-show-file.md says it for the show file.
+ * Plain node, no Electron: core/show/trust.ts. docs/specs/03-show-file.md says it for the show file.
  */
 import * as fs from 'fs';
 import * as path from 'path';

@@ -1,4 +1,4 @@
-// Automation (core/audio/lanes.js): the lines drawn over a sound's length that move its volume, its pan and the
+// Automation (core/audio/lanes.ts): the lines drawn over a sound's length that move its volume, its pan and the
 // settings of its sound design; how they are kept, read between their points, bent, wrapped round a loop, and how
 // a pan is shared between the two sides. And what reaches the engine and the sound.
 import test from 'node:test';
@@ -24,7 +24,7 @@ test('an old envelope reads and plays exactly as it did: straight lines in dB, h
   assert.strictEqual(curves.envelopeAt(env, 3), -13);
   assert.strictEqual(curves.envelopeAt(env, -1), 0);
   assert.strictEqual(curves.envelopeAt(env, 99), 12);
-  // (the reading the audio window used to make by itself, before it read lanes.js)
+  // (the reading the audio window used to make by itself, before it read lanes.ts)
   const old = (e: LanePoint[], t: number) => { if (t <= e[0][0]) return e[0][1]; for (let i = 1; i < e.length; i++) { const [t0, d0] = e[i - 1], [t1, d1] = e[i]; if (t <= t1) return d0 + (d1 - d0) * ((t - t0) / (t1 - t0)); } return e[e.length - 1][1]; };
   for (let t = -0.5; t < 10; t += 0.137) assert.strictEqual(L.envelopeAt(env, t), old(env, t), `at ${t}`);
 });

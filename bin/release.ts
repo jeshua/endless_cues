@@ -163,7 +163,7 @@ const WIN_OUT = 'dist-win.noindex';
 /**
  * The Windows installers, one for each architecture (a 64-bit PC, and Windows on Arm), into dist-win.noindex/ with
  * their release.json. Signed through Azure Artifact Signing when EC_WIN_SIGNING says which certificate (the app, its
- * uninstaller and the installer, by build/sign-win.js), with a certificate of your own to try the path when
+ * uninstaller and the installer, by build/sign-win.ts), with a certificate of your own to try the path when
  * EC_WIN_SIGN_P12 names one (not offered as signed: Windows trusts none), and otherwise not code-signed, so
  * SmartScreen warns the first time. Every signature is checked after. Downloads only: no update feed is written for
  * Windows, and an installed copy says the server has no version for it.

@@ -5,11 +5,11 @@
  * Out: a Timecode cue (MTC through the playout, or LTC made in the audio window) and a MIDI File cue. The cue
  * engine owns when each starts, how long it runs and whether it is held (its entry in `engine.fades`, marked
  * `run`); `tick`, every 20 ms while anything runs, reads that entry and plays to match. MIDI is handed over stamped
- * with the time it is due, a tenth of a second ahead (core/net/playout.js says why), so a stop or a pause takes
+ * with the time it is due, a tenth of a second ahead (core/net/playout.ts says why), so a stop or a pause takes
  * that long to reach the wire.
  *
  * In: MTC from any MIDI input, or LTC the audio window has decoded. With the show set to chase (settings.timecode),
- * cues with a timecode trigger start as their times are passed (core/timecode/chase.js) and the playhead stands on
+ * cues with a timecode trigger start as their times are passed (core/timecode/chase.ts) and the playhead stands on
  * the next of them. Timecode that has not been heard for a quarter of a second has stopped.
  *
  *   const t = createTransport({ engine, now, every, soon, sendMidi, audio, record, log, notice, read, midiWhyNot, settings })

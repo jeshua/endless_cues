@@ -1,5 +1,5 @@
 /**
- * How the assistant starts (core/assistant/starters.js): cues made from a folder of sounds, and the first
+ * How the assistant starts (core/assistant/starters.ts): cues made from a folder of sounds, and the first
  * screen, which must be true of the show it is shown for (docs/specs/15-assistant-and-rig.md, 4.6).
  */
 import test from 'node:test';

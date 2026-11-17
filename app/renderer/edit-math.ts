@@ -1,5 +1,5 @@
-// The arithmetic behind dragging things on a sound's waveform (WaveEdit.js): lines' points, markers and loop
-// regions. No view and no import, so the unit tests run it in Node (test/wave-edit.test.js) as the window does.
+// The arithmetic behind dragging things on a sound's waveform (WaveEdit.ts): lines' points, markers and loop
+// regions. No view and no import, so the unit tests run it in Node (test/wave-edit.test.ts) as the window does.
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
@@ -13,10 +13,10 @@ export function snapTime(t: number, marks: number[] | null | undefined, pxPerSec
   return best;
 }
 
-/** A tempo's section as Tempo.js gives it: from where, its tempo, its first beat and the beats in a bar. */
+/** A tempo's section as Tempo.ts gives it: from where, its tempo, its first beat and the beats in a bar. */
 export interface TempoSection { from: number; bpm: number; first: number; bar: number }
 
-/** The beats of a tempo across a length (its sections as Tempo.js gives them: { from, bpm, first, bar }), at most `max`. */
+/** The beats of a tempo across a length (its sections as Tempo.ts gives them: { from, bpm, first, bar }), at most `max`. */
 export function beatsOf(sections: TempoSection[], length: number, max = 2400) {
   const out: number[] = [];
   if (!(length > 0)) return out;

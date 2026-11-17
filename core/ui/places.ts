@@ -1,13 +1,13 @@
 /**
- * The window's named places: what the assistant can point at (its tool show_in_app, core/assistant/tools.js) and
- * the guide to the app names (core/assistant/app-guide.js). Each name is a place a person looks for ("where is
+ * The window's named places: what the assistant can point at (its tool show_in_app, core/assistant/tools.ts) and
+ * the guide to the app names (core/assistant/app-guide.ts). Each name is a place a person looks for ("where is
  * Panic?"), mapped to how the window finds it (a CSS selector, a `data-*` attribute wherever one can be had) and,
  * when it is not always on screen, the steps that bring it there: open Settings at a pane, show the cue list,
  * select a cue, bring an inspector tab forward, open More.
  *
  * A step only changes what the window shows (the selection, a tab, which pane is open): none edits the show, plays
- * anything or takes the keyboard. The window does them (app/renderer/Point.js) and says whether the place could be
- * shown; in Show mode nothing is pointed at at all (app/main/host.js refuses first).
+ * anything or takes the keyboard. The window does them (app/renderer/Point.ts) and says whether the place could be
+ * shown; in Show mode nothing is pointed at at all (app/main/host.ts refuses first).
  *
  *   resolve(target, { doc })   a name → { ok, place } (what the window is sent) or { ok: false, why }
  *   names()                    every fixed name and every family, for the tool's description and the guide's test
@@ -107,7 +107,7 @@ const FAMILIES: Record<string, string[] | string> = {
   settings: PANES.map((p) => p[0]),
 };
 
-// a field's place in the inspector: which tab, and whether it waits under More (app/renderer/Inspector.js draws them so)
+// a field's place in the inspector: which tab, and whether it waits under More (app/renderer/Inspector.ts draws them so)
 const TIME_KINDS = new Set(['markers', 'regions', 'numbers', 'envelope', 'automation']);
 function fieldPlace(key: string) {
   const common = COMMON.find((f) => f.key === key && !f.hidden);

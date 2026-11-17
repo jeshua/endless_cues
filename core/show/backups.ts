@@ -4,7 +4,7 @@
  *   MyShow.ecshow/backups/
  *     2026-03-14 19.05.09.json     the whole working document at that moment
  *
- * A version (versions.js) is a save made on purpose; the journal beside the show
+ * A version (versions.ts) is a save made on purpose; the journal beside the show
  * holds only the latest unsaved state. A backup is the third thing: a copy of the
  * working document, unsaved changes and all, taken every few minutes while it is
  * changing, so "what did this look like twenty minutes ago, before I saved over

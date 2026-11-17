@@ -1,5 +1,5 @@
 /**
- * The assistant pointing at the window (show_in_app; core/ui/places.js, app/renderer/Point.js), run by smoke.js near
+ * The assistant pointing at the window (show_in_app; core/ui/places.ts, app/renderer/Point.ts), run by smoke.ts near
  * its end. Checked here: the built-in helper asked where a cue's colour is changed and what the key for Panic is,
  * each answered from the guide and the place ringed (the ring is around the right element, its words beside it);
  * a place pointed at with no model at all (an inspector tab brought forward, a cue's row, a Settings pane), "Show

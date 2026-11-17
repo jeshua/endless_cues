@@ -66,7 +66,7 @@ export function CueList({ secs = [], lockPlayhead = true, revealed = 0, zoomRef 
     return () => clearTimeout(t);
   }, [revealed]);
 
-  // chains of continues: what links to what, and the line each drawn row carries (list-view.js)
+  // chains of continues: what links to what, and the line each drawn row carries (list-view.ts)
   const links = useMemo(() => LV.linksOf(list ? list.cues : [], { skipLights: e.skipLights }), [list, e.skipLights]);
   const marks = useMemo(() => LV.chainMarks(list ? list.cues : [], rows, collapsed, links, { skipLights: e.skipLights }), [rows, collapsed, links]);
   // zoomed out: the whole show in the window; a click there zooms back in at that place (and selects nothing)
@@ -130,7 +130,7 @@ export function CueList({ secs = [], lockPlayhead = true, revealed = 0, zoomRef 
 
   // the optional columns (Target, Pre-wait, Duration, Post-wait): one that nothing in this list fills is left out, and
   // comes back with the first cue that has a value. Decided in Edit; in Show mode they stay as they were when it began
-  // (tidy.js), so no row moves while the show runs.
+  // (tidy.ts), so no row moves while the show runs.
   const usedNow = useMemo(() => Tidy.usedColumns(list ? list.cues : [], duration), [list, e.durations, info]);
   const heldCols = useRef<{ held?: Tidy.Columns | null }>({});
   const cols = Tidy.frozenColumns(heldCols.current, usedNow, !editMode);

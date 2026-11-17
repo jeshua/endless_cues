@@ -1,5 +1,5 @@
 // The kinds of sound, in the window: a bus's kind and what it was offered (Settings ▸ Audio), ducking by kind,
-// and the chooser that shows what newly added sounds were taken for. What a kind means is core/audio/kinds.js
+// and the chooser that shows what newly added sounds were taken for. What a kind means is core/audio/kinds.ts
 // (its table comes in `info.sound`); nothing here holds show state.
 import { html, useState, useEffect, useRef, cmd, edit, setCue, cx } from './lib.js';
 import type { State, Info, CueIndex } from './lib.js';
@@ -21,9 +21,9 @@ function Box({ value, onCommit, title, placeholder = '', width = 52, ...rest }: 
     onInput=${(e: Event) => type((e.target as HTMLInputElement).value)} onBlur=${done}
     onKeyDown=${(e: KeyboardEvent) => { const box = e.target as HTMLInputElement; if (e.key === 'Enter') { e.preventDefault(); done(); box.blur(); } if (e.key === 'Escape') { type(null); box.blur(); e.stopPropagation(); } }} />`;
 }
-/** How one kind dips under a voice: the show's, or what core/audio/kinds.js offers. */
+/** How one kind dips under a voice: the show's, or what core/audio/kinds.ts offers. */
 type Under = DuckUnder;
-/** The kinds of sound (core/audio/kinds.js, `info.sound`), looked up by a kind's name. */
+/** The kinds of sound (core/audio/kinds.ts, `info.sound`), looked up by a kind's name. */
 type SoundTables = Omit<Info['sound'], 'kinds' | 'ducking'> & { kinds: Record<string, { label: string; what: string }>; ducking: Omit<Info['sound']['ducking'], 'under'> & { under: Record<string, Under> } };
 const secsOf = (text: string) => { const t = String(text).trim(); if (t === '' || t === 'off') return 0; const n = Number(t.replace(/s$/i, '')); return Number.isFinite(n) ? Math.max(0, Math.min(60, n)) : null; };
 
@@ -51,7 +51,7 @@ export function BusKinds({ s, info }: { s: State; info: Info }) {
     </div></div>`;
 }
 
-/** Ducking by kind, as the show has it (settings.audio.ducking, cleaned: core/audio/kinds.js `duckingOf`). */
+/** Ducking by kind, as the show has it (settings.audio.ducking, cleaned: core/audio/kinds.ts `duckingOf`). */
 type DuckingBy = NonNullable<Settings['audio']['ducking']>;
 
 const UNDER = [['music', 'Music'], ['ambience', 'Ambience'], ['effects', 'Effects']];
@@ -90,7 +90,7 @@ export function Ducking({ s, info, Old }: { s: State; info: Info; Old: Component
   </div>`;
 }
 
-/** A sound just added, and what it was taken for (the host's `added`, core/audio/kinds.js `guessKind`). */
+/** A sound just added, and what it was taken for (the host's `added`, core/audio/kinds.ts `guessKind`). */
 interface AddedItem { id: string; name: string; kind: string | null; why: string; bus: string; loop: boolean; template: boolean }
 
 /** Several sounds were added at once: what each was taken for, and the bus it was put on, to confirm or change. */

@@ -2,7 +2,7 @@
  * Files a proposal may carry into the show folder: prop firmware and the guide for coding agents.
  *
  * A proposal is mostly a change to the show; it may also be a short list of text files, written when a
- * person accepts it (core/show/document.js). What may be written is narrow on purpose, and decided here and
+ * person accepts it (core/show/document.ts). What may be written is narrow on purpose, and decided here and
  * nowhere else:
  *
  *   AGENTS.md and CLAUDE.md at the top of the show folder, and anything under props/

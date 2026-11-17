@@ -1,7 +1,7 @@
 /**
- * The smoke run's checks of a sound's lines (core/audio/lanes.js) and of what is dragged on its waveform:
+ * The smoke run's checks of a sound's lines (core/audio/lanes.ts) and of what is dragged on its waveform:
  *
- *   editing()   Time & Loops, on the cue smoke-audio.js has open: a point added on the Volume line, dragged, bent,
+ *   editing()   Time & Loops, on the cue smoke-audio.ts has open: a point added on the Volume line, dragged, bent,
  *               selected with others and deleted; the lane picker and a Pan line; a marker made, dragged, renamed
  *               and ⌥-clicked away; a loop region's edge and its middle dragged; Show mode moving nothing.
  *   heard()     the audio window: a pan as a difference between the two outputs' meters, a Pan line, a filter's
@@ -29,7 +29,7 @@ const pointer = (sel: string, steps: unknown[][], opts: { alt?: boolean; meta?: 
   }
   return 'ok';
 })()`;
-// the y (px, in the waveform) the Volume line is drawn at for a level: the fader's law, as WaveEdit.js draws it
+// the y (px, in the waveform) the Volume line is drawn at for a level: the fader's law, as WaveEdit.ts draws it
 const volY = (d: number) => `(() => { const h = document.querySelector('[data-wavedit]').clientHeight, u = ${d} <= -60 ? 0 : Math.pow((${d} + 60) / 72, 2.2); return (1 - u) * (h - 8) + 4; })()`;
 
 async function editing({ host, check, until, page, sleep, cue, edit }: Pick<Smoke, 'host' | 'check' | 'until' | 'page' | 'sleep'> & { cue: () => Cue; edit: (n: number) => void }) {

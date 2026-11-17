@@ -1,5 +1,5 @@
 /**
- * Updates (app/main/updates.js, app/renderer/Update.js), run by smoke.js near its end, against the test run's
+ * Updates (app/main/updates.ts, app/renderer/Update.ts), run by smoke.ts near its end, against the test run's
  * stand-in updater: no network. Checked here: Help ▸ Check for Updates… with nothing newer says so; with a newer
  * version the title bar has one line with Download and Not now, and nothing is downloaded yet; Show mode hides the
  * line and refuses a check; sound playing hides it; Download fetches and the line becomes "will install when you

@@ -15,14 +15,14 @@
  * messages are framed with SLIP (OSC 1.1) or a length prefix (OSC 1.0), per patch. A patch may
  * have more destinations than one (a main and a backup desk): a message goes to each. A
  * destination may name the network interface it leaves by, on a computer with two networks.
- * A message need not be OSC: `format` 'text' or 'hex' sends those bytes as they are (core/net/raw.js).
+ * A message need not be OSC: `format` 'text' or 'hex' sends those bytes as they are (core/net/raw.ts).
  *
- * A device of the show's rig (core/rig/devices.js) is also a patch here: it is found by its id as a patch
+ * A device of the show's rig (core/rig/devices.ts) is also a patch here: it is found by its id as a patch
  * is, and a few things are done for it that are not done for a patch. Its "are you there?" is sent quietly
  * (`quiet`: not in the monitor), and its answers, or its heartbeat, are kept out of the monitor too, the
  * first after a silence excepted: asked every two seconds, a device would otherwise be all the monitor showed.
  * What arrives on the input port from a device's address is credited to it. `onHeard` tells whoever is
- * keeping count (core/rig/liveness.js) of everything that arrives.
+ * keeping count (core/rig/liveness.ts) of everything that arrives.
  *
  * Plain node, no Electron. `dryRun` (the app's test runs) records everything and opens no socket;
  * `pretendHeard(id, text)` stands in for a device's answer there.

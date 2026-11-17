@@ -82,7 +82,7 @@ function settingsOf(doc: ShowDoc): SettingsFile {
 /**
  * The operations that bring a settings file into `doc`: each group of settings and each module replaced by the
  * file's, and nothing else touched. The show's own passcodes and keys stay as they are. Throws when the file is
- * not one; ops.js refuses the batch if anything in it is not a setting this app can hold.
+ * not one; ops.ts refuses the batch if anything in it is not a setting this app can hold.
  */
 function settingsOps(file: any, doc: ShowDoc): Op[] {
   if (!file || file.format !== SETTINGS || !file.settings || typeof file.settings !== 'object') throw new Error('not an Endless Cues settings file');

@@ -1,7 +1,7 @@
 /**
- * The stage's part of the end-to-end check (smoke.js calls it): Video, Text and Camera cues, through the real
+ * The stage's part of the end-to-end check (smoke.ts calls it): Video, Text and Camera cues, through the real
  * engine, audio window and output window. The stage is drawn offscreen, so nothing appears on any display; what
- * it shows is read back as pixels. Its media are made here by code (test-media.js).
+ * it shows is read back as pixels. Its media are made here by code (test-media.ts).
  */
 import * as fs from 'fs';
 import * as path from 'path';

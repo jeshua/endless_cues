@@ -1,4 +1,4 @@
-/** Cue carts: a list drawn as a grid of buttons (core/show/cart.js), and the edits that make and fill one. */
+/** Cue carts: a list drawn as a grid of buttons (core/show/cart.ts), and the edits that make and fill one. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

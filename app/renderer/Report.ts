@@ -2,7 +2,7 @@
 // service with a picture of the window if the person wants one. Nothing is sent until Send is pressed; what goes
 // with it is said under the form, and can be looked at in full.
 //
-// The picture is taken by the app (app/main/report.js) before the form is drawn, so the form is never in it; it is
+// The picture is taken by the app (app/main/report.ts) before the form is drawn, so the form is never in it; it is
 // made into a WebP here, because the window has a canvas and the service never re-encodes what it is sent.
 import { html, useState, useEffect, useRef, ec, cx, keys } from './lib.js';
 
@@ -13,7 +13,7 @@ type Category = 'bug' | 'idea' | 'other';
 interface Draft { category: Category; comment: string; email: string; picture: boolean; showName: boolean; showLog: boolean; submissionId: string | null }
 /** A picture made for the report: the WebP, its bytes and its size. */
 interface Webp { blob: Blob; bytes: Uint8Array; width: number; height: number }
-/** The picture of the window and what goes with it (app/main/report.js `capture`), shown in the form before it is sent. */
+/** The picture of the window and what goes with it (app/main/report.ts `capture`), shown in the form before it is sent. */
 export interface Taken {
   png: Uint8Array<ArrayBuffer> | null;
   width?: number;

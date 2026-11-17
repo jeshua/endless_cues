@@ -5,19 +5,19 @@ import { Qirx, QirxSign, qirxState } from './Qirx.js';
 import type { State, Info } from './lib.js';
 
 type Say = (text: string, bad?: boolean) => void;
-/** One line of a diff (core/show/diff.js): a cue, a list, a device or a setting, and what changed of it. */
+/** One line of a diff (core/show/diff.ts): a cue, a list, a device or a setting, and what changed of it. */
 export interface Change { kind: string; label?: string; path?: string | null; from?: unknown; to?: unknown; count?: number; text?: string; fields?: { label: string; from: unknown; to: unknown }[] }
 /** A file a proposal would write into the show folder. */
 interface ProposalFile { path: string; lines: number; replaces: boolean; text?: string | null }
-/** A change the assistant proposes, waiting to be accepted (host.js `snapshot`: proposal). */
+/** A change the assistant proposes, waiting to be accepted (host.ts `snapshot`: proposal). */
 interface Proposal { id: string; summary: string; changes: Change[]; counts?: Record<string, number>; files?: ProposalFile[] }
 /** What accepting wrote that is used outside this window: a guide for a coding agent, a prop's firmware. */
 interface Wrote { guide: boolean; props: string[]; dir?: string }
-/** One of the assistant's suggested asks (core/assistant/starters.js). */
+/** One of the assistant's suggested asks (core/assistant/starters.ts). */
 interface Ask { label: string; text?: string; action?: string; offline?: boolean }
 /** A way to have someone answer: set at once (`set`), or Settings opened on it (`open`). */
 interface SetupRow { id: string; label: string; says: string; set?: string | null; open?: string | null; signIn?: boolean }
-/** What the assistant says first, of this show (core/assistant/starters.js `first`). */
+/** What the assistant says first, of this show (core/assistant/starters.ts `first`). */
 interface First { state?: string; line: string; asks?: Ask[]; next?: Ask; setup?: { title?: string; rows: SetupRow[]; foot?: string } | null }
 
 const SIGN: Record<string, string> = { added: '+', removed: '−', changed: '~', moved: '↕', setting: '~', 'list-added': '+', 'list-removed': '−', 'list-renamed': '~', 'device-added': '+', 'device-removed': '−', 'device-changed': '~' };
@@ -93,7 +93,7 @@ function Written({ w, said = '' }: { w: Wrote; said?: string }) {
 const SUGGESTIONS = ['Fade out cue 1 over 6', 'Set cue 3 level to -6', 'Add a memo called Interval', 'Rename cue 2 to Storm arrives'];
 
 /** Who should answer, when nobody does yet (spec 15, 4.6.1): the host's rows, each true of this computer
- *  (core/assistant/starters.js `setupRows`). A row either sets a provider at once (`set`) or opens Settings on one (`open`). */
+ *  (core/assistant/starters.ts `setupRows`). A row either sets a provider at once (`set`) or opens Settings on one (`open`). */
 /** "1 December", from the ISO time a month ends. */
 const dayWords = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${d.getUTCDate()} ${d.toLocaleString('en-GB', { month: 'long', timeZone: 'UTC' })}`; };
 
@@ -178,7 +178,7 @@ export function AssistantDrawer({ s, info, close, openSettings, say, refreshInfo
   </div>`;
 }
 
-/** A saved version (core/show/versions.js), newest first. */
+/** A saved version (core/show/versions.ts), newest first. */
 interface Version { id: string; at: string; note?: string; author: string; cues: number }
 /** A timed backup: its file's name, and the day and time it was taken. */
 interface Backup { name: string; day: string; time: string }

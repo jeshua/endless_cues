@@ -1,4 +1,4 @@
-// The show log (core/log/show-log.js) and double-GO protection for every way a GO arrives (core/engine/go-guard.js).
+// The show log (core/log/show-log.ts) and double-GO protection for every way a GO arrives (core/engine/go-guard.ts).
 import test from 'node:test';
 import assert from 'node:assert';
 import * as fs from 'fs';

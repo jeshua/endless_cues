@@ -1,5 +1,5 @@
 // The cue list's own tools for running a show: the line down a chain of continues, a playing row's level and its
-// stop, and the list zoomed out to the whole show. The arithmetic is list-view.js (`ListView`, loaded as a
+// stop, and the list zoomed out to the whole show. The arithmetic is list-view.ts (`ListView`, loaded as a
 // plain script by index.html); nothing here holds show state, and nothing here moves the playhead.
 import { html, useState, useEffect, useLayoutEffect, useRef, useCallback, ec, cmd, cx } from './lib.js';
 import type { Cue, ShowDoc, State, Row, Active } from './lib.js';
@@ -38,7 +38,7 @@ export function routeOf(c: Cue, s: State): { text: string; ok: boolean; why: str
     text = outs.length === 1 ? `output ${outs[0]}` : `outputs ${outs.join(', ')}`;
     missing = m.outputs > 0 && outs.some((o) => o > m.outputs);
   } else {
-    // (a cue with no bus, or one that is gone, plays where the engine puts it: Live.js `busOf`)
+    // (a cue with no bus, or one that is gone, plays where the engine puts it: Live.ts `busOf`)
     const b = buses.find((x) => x.id === c.bus) || buses[buses.length > 1 ? 1 : 0];
     const out = b ? Number(b.out) || 1 : 1;
     text = `${b ? b.name : 'bus'} → outputs ${out}–${out + 1}`;

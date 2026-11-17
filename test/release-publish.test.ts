@@ -1,4 +1,4 @@
-// bin/release.js publish: what it refuses, and the order it uploads in, against a fake bucket (nothing leaves this process).
+// bin/release.ts publish: what it refuses, and the order it uploads in, against a fake bucket (nothing leaves this process).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

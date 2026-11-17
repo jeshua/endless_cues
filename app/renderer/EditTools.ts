@@ -5,7 +5,7 @@ import type { State, Cue, CueIndex } from './lib.js';
 
 /** What the host says is on the clipboard, for Paste Cue Properties: the cue, and each property it could paste. */
 export interface PropsClip { cue: Cue; properties: { key: string; label: string; set: boolean }[] }
-/** A line of Check the show (core/show/check.js `checkShow`). */
+/** A line of Check the show (core/show/check.ts `checkShow`). */
 export interface CheckLine { id?: string | null; level?: 'problem' | 'look'; text: string; rig?: boolean }
 /** The host's answer to `check`: the lines, and a few words for all of them. */
 type Checked = { lines: CheckLine[]; summary: string };
@@ -46,7 +46,7 @@ export function PasteProps({ clip, label, typeLabel, count, last, onPaste, close
 
 /**
  * Check the show (⇧⌘F, the footer's Check and its counts, the Rig page): everything that would go wrong in it,
- * found without playing anything, in one list (the host's `check`, core/show/check.js), and the cues someone
+ * found without playing anything, in one list (the host's `check`, core/show/check.ts), and the cues someone
  * flagged. A line about a cue goes to the cue (opening the group it is in); one about the equipment, to the Rig.
  * It asks again as the show changes, and every two seconds while it is open (a device can stop answering).
  */

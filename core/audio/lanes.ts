@@ -11,18 +11,18 @@
  *   pan                           the cue's own pan, −100 (left) … 0 … 100 (right): a field, not a lane
  *   automation                    every other lane, by id: { "pan": [[t, v, c?], …], "chain.lowpass.hz": [[t, Hz], …] }
  *                                 "pan" replaces the Pan field while it has points; "chain.<tool>.<setting>" replaces
- *                                 that knob of its sound design (only a setting that glides: core/audio/chain.js
+ *                                 that knob of its sound design (only a setting that glides: core/audio/chain.ts
  *                                 SWEEPABLE). A lane for a tool the chain does not have does nothing.
  *
- * Between two points the value moves along the knob's own scale (core/audio/chain.js's table, turned the way
- * app/renderer/dial.js turns the knob: a frequency along a ratio, a level along a line), so a straight line from
+ * Between two points the value moves along the knob's own scale (core/audio/chain.ts's table, turned the way
+ * app/renderer/dial.ts turns the knob: a frequency along a ratio, a level along a line), so a straight line from
  * 200 Hz to 2 kHz passes 632 Hz half way. The Volume lane moves in dB and Pan in its own units, as drawn.
  *
  * A lane is read at a place IN THE FILE, never at a time since the GO: so it repeats with a loop region (or a loop
  * of the whole file) each time round, follows a skip, a pause, a rate, Load to Time and Run from here, with nothing
  * to work out again.
  *
- * Pure arithmetic, no dependency; loads three ways as core/audio/chain.js does: required by Node, as a plain script
+ * Pure arithmetic, no dependency; loads three ways as core/audio/chain.ts does: required by Node, as a plain script
  * in the audio window (`Lanes`), and in the main window (served at ec://app/core/audio/lanes.js).
  */
 import type { Tool, ToolKey, NumberParam, ChainValue, SweepValue } from './chain';
@@ -45,7 +45,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-// ── a knob's scale: as scaleOf in app/renderer/dial.js (test/lanes.test.js holds the two to one answer) ──
+// ── a knob's scale: as scaleOf in app/renderer/dial.ts (test/lanes.test.ts holds the two to one answer) ──
 function scaleOf(p: Scale) {
   const { min, max } = p;
   if (min > 0 && max / min >= 20) return 'log';
@@ -71,7 +71,7 @@ const VOLUME: LaneSpec = { id: 'volume', kind: 'volume', label: 'Volume', unit: 
 const NAMES: Record<string, string> = { 'lowpass.hz': 'Cutoff', 'highpass.hz': 'Cutoff' };      // (a lane's name where the knob's own reads oddly alone)
 const PAN: LaneSpec = { id: 'pan', kind: 'pan', label: 'Pan', unit: '', min: -100, max: 100, def: 0 };
 /** A lane's description from its id: { id, kind, label, unit, min, max, def, tool?, key?, p? }, or null.
- *  `tools`: core/audio/chain.js TOOLS (the chain lanes are drawn from it). */
+ *  `tools`: core/audio/chain.ts TOOLS (the chain lanes are drawn from it). */
 function specOf(id: string, tools?: Tool[]): LaneSpec | null {
   if (id === 'volume') return VOLUME;
   if (id === 'pan') return PAN;
@@ -156,7 +156,7 @@ function valueAt(pts: LanePoint[] | null | undefined, t: number, spec: LaneSpec 
   }
   return pts[pts.length - 1][1];
 }
-/** The Volume lane in dB at `t` (0: no envelope, no change). The reading core/audio/curves.js envelopeAt gives. */
+/** The Volume lane in dB at `t` (0: no envelope, no change). The reading core/audio/curves.ts envelopeAt gives. */
 const envelopeAt = (env: LanePoint[] | null | undefined, t: number) => { const v = valueAt(env, t, VOLUME); return v == null ? 0 : v; };
 
 /** A place in the file, played straight on from a start (`u`), as it is heard: a held region (`region`) and a loop

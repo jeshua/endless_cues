@@ -1,4 +1,4 @@
-// Run from here (core/engine/run-from.js): a rehearsal at a cue, with what would be going on there.
+// Run from here (core/engine/run-from.ts): a rehearsal at a cue, with what would be going on there.
 import test from 'node:test';
 import assert from 'node:assert';
 import { rig, build } from './helpers';

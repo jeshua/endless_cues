@@ -374,7 +374,7 @@ function unpatch(v: Voice) {
   if (v.fx) { v.fx.dispose(); v.fx = null; }
 }
 
-// ── Sound design: a voice's own chain of tools (core/audio/chain.js builds it) ──
+// ── Sound design: a voice's own chain of tools (core/audio/chain.ts builds it) ──
 // The worklets (the gate, the compressor, the crusher, the pitch shifter) are added to the context once, as the
 // window starts; a sound that asks for one before they have loaded plays without it and says so.
 const fxEnv = { worklets: false, ir: (file: string) => irs.get(file) || null };
@@ -1243,7 +1243,7 @@ function setRate({ key, rate, secs }: Cmd<'rate'>) {
 }
 
 /** Peaks for a file main cannot read itself (mp3): decoded at a low rate, then dropped. */
-/** A file as mono sound at 11 kHz, for the host to find its tempo in (core/audio/tempo.js). The first twenty minutes. */
+/** A file as mono sound at 11 kHz, for the host to find its tempo in (core/audio/tempo.ts). The first twenty minutes. */
 async function pcm({ file, bytes }: Cmd<'pcm'>) {
   try {
     const off = new OfflineAudioContext(1, 1, 11025);

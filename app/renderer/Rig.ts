@@ -1,7 +1,7 @@
 // The Rig: everything the show depends on, whether each part is ready, and what to do about the parts that are not
-// (docs/specs/15-assistant-and-rig.md, section 5). The rows are the host's (`s.rig.items`, from core/rig/check.js);
-// the devices are the show's (`settings.rig.devices`), drawn and edited from the tables in core/rig/devices.js, as
-// the inspector draws a cue from core/show/cue-types.js. This file also has the Device cue's part of the inspector.
+// (docs/specs/15-assistant-and-rig.md, section 5). The rows are the host's (`s.rig.items`, from core/rig/check.ts);
+// the devices are the show's (`settings.rig.devices`), drawn and edited from the tables in core/rig/devices.ts, as
+// the inspector draws a cue from core/show/cue-types.ts. This file also has the Device cue's part of the inspector.
 // Nothing here holds show state: a device changes through `device.add` / `device.set` / `device.remove`, a tick and
 // a Try are host commands, and what is kept in this view is only what is selected and what is typed but not yet sent.
 import { html, useState, useEffect, useRef, ec, cmd, edit, setCue, cx, keys, nextNumber } from './lib.js';
@@ -14,23 +14,23 @@ import type { OPTIONS as KIT_OPTIONS } from '../../core/kit/kit';
 
 type Say = (text: string, bad?: boolean) => void;
 type RigState = 'ready' | 'look' | 'problem' | 'unknown';
-/** A button on a Rig row, as core/rig/check.js names it: `cmd` is the host command that does it, `cue` the cue it shows. */
+/** A button on a Rig row, as core/rig/check.ts names it: `cmd` is the host command that does it, `cue` the cue it shows. */
 interface RigAction { id: string; label: string; cmd?: Command & { ops?: Op[]; label?: string; command?: string }; cue?: string }
-/** A row of the Rig page (core/rig/check.js `items`). */
+/** A row of the Rig page (core/rig/check.ts `items`). */
 export interface RigItem { id: string; group?: string; label: string; state: string; text?: string; fix?: string; actions?: RigAction[]; patch?: string; device?: string }
 /** One of a device's reports, as it stands now. */
 interface ReportNow { key: string; label: string; value?: unknown; unit?: string; warn?: boolean }
 /** What the host knows of a device now (the Rig's `devices`): its state, its reports, the last message each way. */
 interface DeviceNow { state?: string; text?: string; reports?: ReportNow[]; lastOut?: string; lastIn?: string }
-/** A prop that answered the last look (core/rig/scan.js), and what it is against the show now. */
+/** A prop that answered the last look (core/rig/scan.ts), and what it is against the show now. */
 interface FoundProp { name: string; host: string; port?: number; kind?: string; fw?: string }
-/** Something heard on the network that is not a device (core/rig/senders.js). */
+/** Something heard on the network that is not a device (core/rig/senders.ts). */
 interface Sender { address: string; port?: number; count?: number; messages?: { address?: string; every?: number | null }[] }
-/** The Rig's summary line (core/rig/check.js `summary`). */
+/** The Rig's summary line (core/rig/check.ts `summary`). */
 interface RigSummary { ready?: number; total?: number; look?: number; problems?: number; unknown?: number; at?: number; text?: string }
 /** The Rig part of the host's state, as this page reads it. */
 interface RigView { items?: RigItem[]; devices?: Record<string, DeviceNow>; summary?: RigSummary; ticks?: Record<string, boolean>; found?: FoundProp[] | null; scanning?: boolean; senders?: Sender[] }
-/** A field of one of core/rig/devices.js's tables, as the editor reads it. */
+/** A field of one of core/rig/devices.ts's tables, as the editor reads it. */
 interface TableField { key: string; label?: string; help?: string; labels?: Record<string, string> }
 /** A button of a row: what it says and what it does. */
 interface RowAction { id: string; label: string; run: () => unknown; disabled?: boolean; title?: string }
@@ -38,14 +38,14 @@ interface RowAction { id: string; label: string; run: () => unknown; disabled?: 
 type Vals = Record<string, string | number | boolean>;
 /** A change not saved yet, as the host lists them (`show.unsaved`). */
 type Unsaved = State['show']['unsaved'][number];
-/** core/rig/devices.js's tables, as ec.init() gives them (`info.rig`). */
+/** core/rig/devices.ts's tables, as ec.init() gives them (`info.rig`). */
 interface DeviceTables { fields?: TableField[]; commandFields?: TableField[]; aliveFields?: TableField[]; kinds?: string[]; vias?: string[] }
 /** A change to a device, a command or a parameter: null takes a setting off. */
 type DeviceChange = { [K in keyof Device]?: Device[K] | null };
 type CommandChange = { [K in keyof DeviceCommand]?: DeviceCommand[K] | null };
 /** A parameter as it is being edited: its default and limits may still be what was typed. */
 type ParamChange = Omit<Partial<DeviceParam>, 'default' | 'min' | 'max'> & { default?: unknown; min?: unknown; max?: unknown };
-/** One thing the kit's firmware form may set (core/kit/kit.js `OPTIONS`). */
+/** One thing the kit's firmware form may set (core/kit/kit.ts `OPTIONS`). */
 type KitOption = (typeof KIT_OPTIONS)[number];
 /** What a test run lays over the pushed state (`window.ecFixture`): Rig states, the assistant's first-time offer, a proposal. */
 export interface Fixture { rig?: Partial<State['rig']>; first?: State['assistant']['first']; proposal?: State['proposal'] }
@@ -69,7 +69,7 @@ const checksOf = (s: State | null | undefined): RigCheck[] => (s && s.doc && s.d
 const holesOf = (template: unknown) => [...String(template || '').matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
 const given = (v: unknown) => v !== undefined && v !== null && v !== '';
 /** The message a command would send for these values (a value left empty is the parameter's default), for showing:
- *  the host composes and checks the real one (core/rig/devices.js `compose`). */
+ *  the host composes and checks the real one (core/rig/devices.ts `compose`). */
 export function messageOf(command: DeviceCommand | null | undefined, vals: Vals = {}) {
   return String((command && command.template) || '').replace(/\{(\w+)\}/g, (_m, k: string) => { const p: Partial<DeviceParam> = ((command!.params || []).find((x) => x.key === k)) || {}; return String(given(vals[k]) ? vals[k] : p.default ?? ''); });
 }
@@ -84,7 +84,7 @@ function sendName(d: Device, c: DeviceCommand, vals: Vals = {}) {
   const shown = (c.params || []).map((p) => (given(vals[p.key]) ? vals[p.key] : p.default)).filter(given);
   return `${d.name} ▸ ${c.label || c.id}${shown.length ? ` (${shown.join(', ')})` : ''}`;
 }
-/** An id made from a name, as core/rig/devices.js `idFrom` makes it (given with the edit, so the new one can be selected at once). */
+/** An id made from a name, as core/rig/devices.ts `idFrom` makes it (given with the edit, so the new one can be selected at once). */
 function idFrom(name: unknown, taken: Set<string>) {
   let base = String(name || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'device';
   if (!/^[a-z]/.test(base)) base = `d_${base}`;
@@ -222,7 +222,7 @@ export function Rig({ s, info, byId, sel, list, editMode, say, reveal, saveVersi
     const r = await edit([{ op: 'cue.add', cue: { type: 'device', device: d.id, command: c.id, ...number, ...(Object.keys(args).length ? { args } : {}) }, ...(after ? { after } : { list: list.id }) }], 'add a device cue');
     if (r && !r.error) { const x = after && byId.get(after); say(`Added “${sendName(d, c, vals)}” ${x ? `after ${x.cue.number ? `cue ${x.cue.number}` : `“${s.labels[after!]}”`}` : 'at the end of the list'}`); }
   };
-  /** What a row's button does. The host names each action (core/rig/check.js) and, for most, gives the command that
+  /** What a row's button does. The host names each action (core/rig/check.ts) and, for most, gives the command that
    *  does it (`cmd`); the few that need this window (a folder to choose, a cue to show, a device to select) are by id. */
   const act = (item: RigItem, a: RigAction, d: Device | null) => () => {
     const id = String(a.id || ''), c = a.cmd || null;
@@ -493,7 +493,7 @@ function DeviceEditor({ d, live, s, info, byId, editMode, say, naming, named, un
 }
 
 // ── Write firmware… ──────────────────────────────────────────────────────────
-// The form is the kit's own table of what may be set (core/kit/kit.js `OPTIONS`, given by ec.init()): each option's
+// The form is the kit's own table of what may be set (core/kit/kit.ts `OPTIONS`, given by ec.init()): each option's
 // label, choices, default and help are the kit's. Only what an empty box means is said here. The light's own look is
 // not in the form (it is three colours and an effect: the assistant's make_prop_files takes it, and so does config.h).
 const KIT_EMPTY: Record<string, string> = { ssid: 'typed into secrets.h', address: 'from the router' };

@@ -1,6 +1,6 @@
 // Where sound goes, in the window: a cue's own outputs as a small matrix and its eq (the inspector), and the
 // device's outputs, the audition pair and the effects (Settings ▸ Audio). What the fields mean is in
-// core/audio/routing.js; nothing here holds show state.
+// core/audio/routing.ts; nothing here holds show state.
 import { html, useState, useEffect, useRef, edit, cx } from './lib.js';
 import type { State } from './lib.js';
 import type { Eq, Matrix } from '../../core/show/types';
@@ -34,7 +34,7 @@ function Cell({ value, onCommit, title, placeholder = '', width = 40, ...rest }:
 
 /** The outputs' names and trims (settings.audio.outs), by output number. */
 type Out = { name?: string; trim?: number };
-/** A cue's own outputs: one { output: dB } per channel of its sound (core/audio/routing.js `cleanMatrix`). */
+/** A cue's own outputs: one { output: dB } per channel of its sound (core/audio/routing.ts `cleanMatrix`). */
 type MatrixValue = Matrix;
 type Outs = Record<number, Out>;
 type FxKind = 'reverb' | 'delay';

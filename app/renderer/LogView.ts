@@ -1,5 +1,5 @@
 // The show log (View ▸ Show Log, ⌥⌘L): what happened as the show ran, as it is written in the show's logs folder
-// (core/log/show-log.js). Read-only. It follows as lines come in, unless it has been scrolled up; it can be
+// (core/log/show-log.ts). Read-only. It follows as lines come in, unless it has been scrolled up; it can be
 // narrowed to one kind of line and searched; Copy takes what is shown, and Reveal opens the folder.
 import { html, useState, useEffect, useRef, cx, ec } from './lib.js';
 import type { LogEntry } from '../../core/log/show-log';

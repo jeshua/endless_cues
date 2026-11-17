@@ -1,5 +1,5 @@
 /**
- * The cue list's run tools (app/renderer/ListTools.js, list-view.js), run by smoke.js near its end. Checked here:
+ * The cue list's run tools (app/renderer/ListTools.ts, list-view.ts), run by smoke.ts near its end. Checked here:
  * a chain of continues drawn as a line down the linked rows (past a heading) and the masthead saying how many cues
  * the GO sets off; a cue deleted from the middle of a chain: the new link shown and said; a playing row's own level,
  * where it goes, "no output" when its outputs are not there, and its stop (a fade, then dead; ⌥ dead at once; in

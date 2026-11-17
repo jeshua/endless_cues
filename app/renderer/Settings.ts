@@ -568,7 +568,7 @@ function AppearancePane({ info, refreshInfo }: { info: Info; refreshInfo: () => 
       <span data-live-switch><${Switch} on=${!!(info.view || {}).live} onChange=${async (on: boolean) => { await ec.app({ op: 'view', view: { live: on } }); refreshInfo(); }} /></span><//>`;
 }
 
-/** New versions, on this computer (app/main/updates.js): whether it looks by itself, and whether test versions are offered. */
+/** New versions, on this computer (app/main/updates.ts): whether it looks by itself, and whether test versions are offered. */
 function UpdatesPane({ s, info, refreshInfo, say }: { s: State; info: Info; refreshInfo: () => unknown; say: Say }) {
   const u = info.updates || { auto: true, test: false };
   const found = useUpdate();     // (Settings covers the title bar: a newer version is said here too)

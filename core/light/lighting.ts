@@ -23,7 +23,7 @@
  *                 untouched underneath, until it is switched off again.
  *
  * Plain node: the engine, the document's edit function and the clock are handed in. `dryRun` (the
- * app's test runs) makes every packet and sends none (core/light/output.js).
+ * app's test runs) makes every packet and sends none (core/light/output.ts).
  */
 import * as patchLib from './patch';
 import * as fixtures from './fixtures';

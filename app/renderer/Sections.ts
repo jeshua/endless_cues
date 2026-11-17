@@ -1,10 +1,10 @@
-// Sections: the headings of a cue list (core/show/sections.js), their row in the list and the strip of their names
-// above it. Folding is the view's: what is folded is kept per show on this computer (app.js), never in the show.
+// Sections: the headings of a cue list (core/show/sections.ts), their row in the list and the strip of their names
+// above it. Folding is the view's: what is folded is kept per show on this computer (app.ts), never in the show.
 import { html, cx } from './lib.js';
 import * as Tidy from './tidy.js';
 import type { State, Cue, CueList, CueIndex, Row, Labels, sectionsIn } from './lib.js';
 
-/** A section of a list: its heading and every cue under it (lib.js `sectionsIn`). */
+/** A section of a list: its heading and every cue under it (lib.ts `sectionsIn`). */
 export type Section = ReturnType<typeof sectionsIn>[number];
 /** A problem the host found with a cue: what the status column shows. */
 export type Problem = State['problems'][number];

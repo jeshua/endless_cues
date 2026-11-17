@@ -2,9 +2,9 @@
  * The open show: the working document, its undo stack, its saved versions and
  * any change waiting for review.
  *
- * Every edit is an `edit(ops)`: applied whole or not at all (ops.js), heard and
+ * Every edit is an `edit(ops)`: applied whole or not at all (ops.ts), heard and
  * seen at once, and undoable — but NOT kept. Nothing reaches show.json until
- * `save()`, which writes the file and records a version (versions.js). Until
+ * `save()`, which writes the file and records a version (versions.ts). Until
  * then `unsaved()` says exactly what is pending, change by change, so the app
  * can mark each changed control, put one back, and warn before quitting. (It
  * used to save every move the moment it was made, which is how an accidental
@@ -17,7 +17,7 @@
  * assistant never edits a show directly, it proposes; accepting is one
  * undoable, unsaved edit like any other.
  * A proposal may also carry a few text files for the show folder (prop firmware,
- * the guide for coding agents: files.js says which are allowed), written when
+ * the guide for coding agents: files.ts says which are allowed), written when
  * it is accepted; a proposal may be files alone. Undo takes back the change to
  * the show and leaves the files.
  *
@@ -94,7 +94,7 @@ class ShowDocument extends EventEmitter {
     this.assisted = false;    // an accepted proposal is among the unsaved changes (the version says so)
     this.recovered = false;   // opened with unsaved changes from last time
     this.made = false;        // open() made this show (its folder had none): it was made on this computer
-    this.localOnly = false;   // a show from another computer, not turned on yet: a file on another computer's share is not opened (trust.js)
+    this.localOnly = false;   // a show from another computer, not turned on yet: a file on another computer's share is not opened (trust.ts)
     this.pendingCache = null;
   }
 
@@ -148,7 +148,7 @@ class ShowDocument extends EventEmitter {
   /** Whether anything is pending. */
   get dirty() { return this.doc !== this.saved && show.stringify(this.doc) !== show.stringify(this.saved); }
 
-  /** What is pending, change by change (diff.js), from the saved show to the working one. */
+  /** What is pending, change by change (diff.ts), from the saved show to the working one. */
   unsaved() {
     if (!this.pendingCache || this.pendingCache.doc !== this.doc || this.pendingCache.saved !== this.saved) {
       this.pendingCache = { doc: this.doc, saved: this.saved, changes: this.dirty ? diffShows(this.saved, this.doc) : [] };
@@ -255,7 +255,7 @@ class ShowDocument extends EventEmitter {
 
   // ── proposals (the assistant's edits, reviewed before they land) ─────────
 
-  /** The files a proposal carries, checked (files.js): [] for none. Throws, with the sentence to show, when one may not be written. */
+  /** The files a proposal carries, checked (files.ts): [] for none. Throws, with the sentence to show, when one may not be written. */
   filesFor(files: ShowFile[] | null | undefined): CheckedFile[] {
     if (!files || !files.length) return [];
     const r = showFiles.check(this.showDir, files);

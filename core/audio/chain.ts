@@ -19,7 +19,7 @@
  *   Dynamics, Crusher, PitchShifter     the kernels the worklets run (and the tests run, in Node)
  *   WORKLETS                   the worklet module's source, made from those kernels
  *
- * This file has no dependency and loads three ways, as core/timecode/timecode.js does: required by Node (the show
+ * This file has no dependency and loads three ways, as core/timecode/timecode.ts does: required by Node (the show
  * file's checks, the tests), as a plain script in the audio window, and pasted into an AudioWorklet (`SOURCE`), so
  * the gate, the compressor, the crusher and the pitch shifter the app plays are the code the tests measure.
  *

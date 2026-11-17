@@ -7,10 +7,10 @@ export type { ShowDoc, Cue, CueList };
 
 export const ec = window.ec;
 
-/** What the host pushes (host.js `snapshot`): the document and what comes with it only in a full one. */
+/** What the host pushes (host.ts `snapshot`): the document and what comes with it only in a full one. */
 export type Pushed = Parameters<Parameters<EcBridge['onState']>[0]>[0];
 type FullOnly = 'doc' | 'labels' | 'triggers' | 'carts' | 'fadeStops';
-/** The show's state as the window keeps it: the pushes merged, so what comes only in a full push is kept from the last one (app.js). */
+/** The show's state as the window keeps it: the pushes merged, so what comes only in a full push is kept from the last one (app.ts). */
 export type State = Omit<Pushed, FullOnly> & Required<Pick<Pushed, Exclude<FullOnly, 'doc' | 'labels'>>> & { doc: ShowDoc; labels: Labels };
 type ActiveLine = State['engine']['active'][number];
 /** A playing sound's (or picture's) line of what is going on. */
@@ -20,15 +20,15 @@ export type Sounding = Extract<ActiveLine, { file: unknown }>;
 export type Active = ActiveLine & Partial<Omit<Sounding, 'kind'>>;
 /** Each cue's name as the list shows it (its own, or the one made for it), by id. */
 export type Labels = Record<string, string>;
-/** What the app is (`ec.init()`, main.js): version, the cue-type table the inspector is drawn from, this computer's settings. */
+/** What the app is (`ec.init()`, main.ts): version, the cue-type table the inspector is drawn from, this computer's settings. */
 export type Info = Awaited<ReturnType<EcBridge['init']>>;
-/** The assistant as this computer has it set up (main.js `assistantInfo`). */
+/** The assistant as this computer has it set up (main.ts `assistantInfo`). */
 export type AssistantInfo = Info['assistant'];
-/** A command for the host: { op, … } (host.js `HostCommand`). */
+/** A command for the host: { op, … } (host.ts `HostCommand`). */
 export type Command = Parameters<EcBridge['cmd']>[0];
 /** The host's answer to a command: anything it returns, `error` when refused. */
 export type Reply = Awaited<ReturnType<EcBridge['cmd']>>;
-/** One operation of an edit (core/show/ops.js). */
+/** One operation of an edit (core/show/ops.ts). */
 export type Op = import('../../core/show/ops').Op;
 /** A row of the cue list as drawn (`flatten`). */
 export interface Row { cue: Cue; depth: number; parent: Cue | null; heading?: boolean; section?: Cue | null }
@@ -85,7 +85,7 @@ export function typingIn(el: Element | null = document.activeElement) {
 }
 
 /** Every cue of a list, flattened for the table: [{ cue, depth, parent }]. */
-// The rows as drawn. A section (a heading, core/show/sections.js) holds the top-level rows after it up to the next
+// The rows as drawn. A section (a heading, core/show/sections.ts) holds the top-level rows after it up to the next
 // one: folded, they are left out as a folded group's children are. Each row says the section it is in (`section`).
 export function flatten(cues: Cue[] | null | undefined, collapsed: Set<string>, depth = 0, parent: Cue | null = null, out: Row[] = [], within: Cue | null = null): Row[] {
   let sec = within, shut = false;
@@ -121,7 +121,7 @@ export function relTime(iso: string | number) {
 // ── the keys that can be changed (Settings ▸ Keys) ────────────────────────────
 // Each action has the key it comes with; a person may give it others (kept on this computer). The ⌘ shortcuts
 // are the menus' and are not in this table. `key` is the event's own name for it (KeyboardEvent.key).
-// Both tables are core/ui/keys.js's (the menus and the assistant's guide read the same one), handed over by the preload.
+// Both tables are core/ui/keys.ts's (the menus and the assistant's guide read the same one), handed over by the preload.
 /** [id, what it does, its keys as KeyboardEvent.key names] */
 export type KeyAction = [id: string, what: string, keys: string[]];
 const UI: Partial<UiTables> = (ec && ec.ui) || {};

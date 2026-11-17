@@ -4,7 +4,7 @@
  *   MyShow.ecshow/
  *     show.json        this document (pretty-printed, stable key order: it diffs)
  *     media/           the show's sound files (a cue's `file` is relative to the folder)
- *     versions/        saved versions (versions.js)
+ *     versions/        saved versions (versions.ts)
  *
  * Plain data in, plain data out; nothing here touches the disk or Electron.
  * The format is specified in docs/specs/03-show-file.md.
@@ -50,7 +50,7 @@ function defaultSettings(): Settings {
       levels: { min: -60, max: 12 },
       // the monitor feed: a mono copy of what outputs 1–2 get, on one more output of the device (`out`, counted from 1)
       monitor: { on: false, out: 3, db: -12 },
-      // a newly added sound is listened to and put on the bus for its kind (core/audio/kinds.js): off unless asked for
+      // a newly added sound is listened to and put on the bus for its kind (core/audio/kinds.ts): off unless asked for
       sortNew: false,
     },
     // how the list behaves while the show is being built
@@ -60,7 +60,7 @@ function defaultSettings(): Settings {
       lockPlayhead: true,        // selecting a cue makes it the one standing by; off, the selection and the playhead go their own ways
       longSoundsToMusic: false,  // a sound added with no bus chosen goes on the Music bus when it is half a minute or longer (off: every new sound is on the bus an Audio cue starts on)
     },
-    // what a new cue of a type starts with: { fade: { duration: 5 }, audio: { bus: 'music' } } (core/show/templates.js)
+    // what a new cue of a type starts with: { fade: { duration: 5 }, audio: { bus: 'music' } } (core/show/templates.ts)
     templates: {},
     network: {
       // [{ id, name, host, port, protocol: 'udp' | 'tcp', framing: 'slip' | 'length', device, listenPort, notes,
@@ -83,15 +83,15 @@ function defaultSettings(): Settings {
       // MIDI messages that run the show, written as a MIDI trigger is ("note 36", "cc 64 127"): '' is none
       commands: { go: '', panic: '', pause: '', resume: '', next: '', previous: '' },
     },
-    // the app's own lighting: where DMX goes, the patch, groups, the show's fixtures (core/light/patch.js)
+    // the app's own lighting: where DMX goes, the patch, groups, the show's fixtures (core/light/patch.ts)
     light: lightPatch.defaults(),
     // the Live view (the mixing desk)
     live: {
       overlap: false,            // false: a clip launched on a track takes over from the one playing there; true: both play
       tempo: 0,                  // the desk's tempo, which a warped clip plays at (0: the tempo of the music playing)
-      map: [],                   // [{ on: 'key q' | 'cc 7 ch 1' | 'note 60 ch 1', to: 'clip:<cue id>' | 'fader:<bus>' | … }] (core/audio/desk-map.js)
+      map: [],                   // [{ on: 'key q' | 'cc 7 ch 1' | 'note 60 ch 1', to: 'clip:<cue id>' | 'fader:<bus>' | … }] (core/audio/desk-map.ts)
     },
-    // the rig: the equipment this show talks to (core/rig/devices.js), the operator's own checklist, and the script
+    // the rig: the equipment this show talks to (core/rig/devices.ts), the operator's own checklist, and the script
     rig: {
       devices: [],               // [{ id, name, kind, via, host, port, commands: [...], alive: {...}, … }]: changed only by device.add / device.set / device.remove
       checks: [],                // [{ id, text }]: the operator's own lines on the Rig page ("Fresh batteries in both lanterns")
@@ -218,7 +218,7 @@ function normalise(input: any): { doc: ShowDoc; warnings: string[] } {
     lists: [],
   };
   if (!Array.isArray(doc.settings.audio.buses) || !doc.settings.audio.buses.length) doc.settings.audio.buses = DEFAULT_BUSES.map((b) => ({ ...b }));
-  // a strip's eq with every band back at rest is no eq (core/audio/strip.js)
+  // a strip's eq with every band back at rest is no eq (core/audio/strip.ts)
   for (const b of doc.settings.audio.buses) if (b && b.eq && typeof b.eq === 'object' && !Object.keys(b.eq).length) delete b.eq;
   // the rig: each device as this version wants it (what it does not know is kept; what cannot be understood is said and left out)
   {
@@ -258,7 +258,7 @@ function normalise(input: any): { doc: ShowDoc; warnings: string[] } {
     return cue;
   };
   for (const [i, l] of (Array.isArray(input.lists) ? input.lists : []).entries()) {
-    // (`cart`: the list is drawn as a grid of buttons, cart.js; a plain list has no such key)
+    // (`cart`: the list is drawn as a grid of buttons, cart.ts; a plain list has no such key)
     doc.lists.push({ id: l.id || newId('list'), name: String(l.name || `List ${i + 1}`), ...(cart.cleanCart(l.cart) ? { cart: cart.cleanCart(l.cart)! } : {}), cues: (l.cues || []).map((c: unknown, j: number) => cleanCue(c, `${l.name || 'list'} #${j + 1}`)).filter(isCue) });
   }
   if (!doc.lists.length) doc.lists.push({ id: newId('list'), name: 'Main', cues: [] });
@@ -399,7 +399,7 @@ function problems(doc: ShowDoc): Problem[] {
 }
 
 /**
- * The document as the engine plays it (core/engine/cue-engine.js): the same
+ * The document as the engine plays it (core/engine/cue-engine.ts): the same
  * cues with the show file's friendlier fields turned into the engine's, and
  * anything that cannot work marked `broken` instead of thrown.
  */
@@ -437,7 +437,7 @@ function toEngineDoc(doc: ShowDoc): EngineDoc {
     // naming nothing at all, it takes its target out: the sound to silence (the default level) and the picture to nothing.
     if (c.type === 'fade') {
       const t = c.target === undefined ? undefined : byId.get(c.target);
-      // (left alone, a fade to silence stops what it faded: cue-types.js stopsTarget)
+      // (left alone, a fade to silence stops what it faded: cue-types.ts stopsTarget)
       e.stopTarget = stopsTarget(c, t || null, floor);
       if (t && STAGE_TYPES.includes(t.type)) {
         const named = Object.keys(movesOf(c)).length > 0;
@@ -469,7 +469,7 @@ function toEngineDoc(doc: ShowDoc): EngineDoc {
     return e;
   };
   // A section is a heading for the eye: it is not in the list the engine plays, so GO, the playhead, continues and
-  // auto-follows run from the cue before it to the cue after it as if it were not there (core/show/sections.js).
+  // auto-follows run from the cue before it to the cue after it as if it were not there (core/show/sections.ts).
   return { format: 'ec-cuelist', version: 1, lists: doc.lists.map((l) => ({ id: l.id, name: l.name, cues: l.cues.filter((c) => c.type !== 'section').map(conv) })) };
 }
 

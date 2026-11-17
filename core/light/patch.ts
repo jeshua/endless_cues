@@ -10,7 +10,7 @@
  *   instruments  [{ name: 'front', fixture: 'dimmer', universe: 1, address: 1, note: '' }]
  *                `address` is the first DMX channel (1–512); a fixture of several channels takes the next ones
  *   groups       [{ name: 'wash', members: ['front', 'side L', 'another group'] }]
- *   fixtures     the show's own fixture definitions (core/light/fixtures.js)
+ *   fixtures     the show's own fixture definitions (core/light/fixtures.ts)
  *
  * Names are how cues talk about lights ("front = 80"), so they are compared without case, are unique
  * across instruments and groups, and cannot be "all" (every instrument, always there) or look like a

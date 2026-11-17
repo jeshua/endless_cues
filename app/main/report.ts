@@ -1,7 +1,7 @@
 /**
  * Report a problem, the app's side: the picture of the main window, what the app knew when it was taken, and the
  * outbox that sends it (core/report). Help ▸ Report a Problem… and Settings ▸ About open the form
- * (app/renderer/Report.js); nothing here sends anything until the person presses Send.
+ * (app/renderer/Report.ts); nothing here sends anything until the person presses Send.
  *
  *   report-capture  { view, selected }   the picture now (before the form is drawn), and the context with it
  *   report-send     { … }                one report: built, sent, and kept on disk when the service cannot take it
@@ -140,7 +140,7 @@ function createReports({ app, mainWindow, host, getConfig, saveConfig, log, logL
   return api;
 }
 
-/** Report a problem, as main.js has it. */
+/** Report a problem, as main.ts has it. */
 export type Reports = ReturnType<typeof createReports>;
 
 const currentOf = () => current;

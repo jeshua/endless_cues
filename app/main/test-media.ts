@@ -1,5 +1,5 @@
 /**
- * Pictures made by code, for the test run (smoke.js): a still of one colour, and a short video of flat colours
+ * Pictures made by code, for the test run (smoke.ts): a still of one colour, and a short video of flat colours
  * with a tone for its sound. Nothing is downloaded and nothing is kept in the repository; a few kilobytes are
  * written into the test's own temporary show.
  *

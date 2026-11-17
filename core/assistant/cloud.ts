@@ -1,14 +1,14 @@
 /**
  * The Endless Cues account, from the app's side: the device flow that signs this computer in, this month's use,
  * and signing out (docs/specs/17-service-protocol.md, sections 4.3, 4.4 and 7). The model calls themselves go
- * through the `cloud` provider in assistant.js, which is the OpenAI-compatible one pointed at the service.
+ * through the `cloud` provider in assistant.ts, which is the OpenAI-compatible one pointed at the service.
  *
  *   client({ endpoint, fetchImpl, version })      → { start, poll, usage, signOut }
  *   signIn({ client, name, open, onState, sleep }) → a sign-in under way: { done (a promise of { token, email }), cancel() }
  *   said(err)                                     → what went wrong, in one short line
  *
  * Nothing here runs until a person chooses the Endless Cues assistant: no request at start-up, none in the
- * background. The token is kept by the app (main.js, sealed with the OS keychain), never in a show.
+ * background. The token is kept by the app (main.ts, sealed with the OS keychain), never in a show.
  */
 const ENDPOINT = 'https://api.endlesscues.com';
 

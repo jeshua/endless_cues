@@ -6,7 +6,7 @@
  *
  * Makes test/users/runs/<run>/<person>/ for each person: their desk (the files of their show) and BRIEF.md,
  * which is everything an agent needs to be that person. Then give each brief to an agent, and afterwards run
- * collect.js on the same run.
+ * collect.ts on the same run.
  */
 import * as fs from 'fs';
 import * as path from 'path';

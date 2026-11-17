@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { PictureSpec } from '../../core/engine/cue-engine';
 import type { Geometry } from '../../core/video/stage';
 
-/** What the main process tells the stage window (app/main/stage.js `send`). */
+/** What the main process tells the stage window (app/main/stage.ts `send`). */
 export type StageCmd =
   | { op: 'stage'; width: number; height: number; matrix?: number[] | null }
   | ({ op: 'show'; id: string; url: string; from: number; geometry?: Partial<Geometry>; paused?: boolean } & PictureSpec)
@@ -18,7 +18,7 @@ export type StageCmd =
   | { op: 'blackout'; on?: boolean; secs?: number }
   | { op: 'cameras' };
 
-/** What the stage window says back (app/main/stage.js, 'stage-event'). */
+/** What the stage window says back (app/main/stage.ts, 'stage-event'). */
 export type StageReport =
   | { type: 'ready' }
   | { type: 'shown'; id: string }

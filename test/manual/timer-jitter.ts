@@ -1,9 +1,9 @@
 /**
  * How late does a timer wake? Measured in the main process and in a hidden window (as the audio window is), which
  * is why MIDI that must leave on time is stamped with its time rather than sent when a timer fires
- * (core/net/playout.js). Not part of `npm test`: it needs Electron and ten seconds.
+ * (core/net/playout.ts). Not part of `npm test`: it needs Electron and ten seconds.
  *
- *   npx electron test/manual/timer-jitter.js          (SECS=30 for longer)
+ *   npx electron test/manual/timer-jitter.ts          (SECS=30 for longer)
  *
  * Prints, in milliseconds, how late a 10 ms timer aimed at fixed times woke in each process, and how far apart the
  * two processes think the same moment is (which bounds the error in handing a time from one to the other; it

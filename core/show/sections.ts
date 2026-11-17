@@ -5,7 +5,7 @@
  * and an older show is unchanged. It holds the top-level rows after it, up to the next section or the end of the
  * list. Sections are flat (never one inside a group, never one in a cart) and may hold groups.
  *
- * The engine never sees one: show.js toEngineDoc leaves sections out, so GO, the playhead, continues and
+ * The engine never sees one: show.ts toEngineDoc leaves sections out, so GO, the playhead, continues and
  * auto-follows go from the cue before a section to the cue after it. What can still name a section (the
  * window's selection, Stand By Here, Jump, Load) goes to its first cue instead: `landing`.
  *

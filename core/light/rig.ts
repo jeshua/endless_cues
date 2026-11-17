@@ -20,7 +20,7 @@
  * there and nowhere else (each instrument's intensity goes out as 0), so the levels underneath are
  * untouched and come back as they were.
  *
- * Pure: no clock of its own, no sockets. core/light/output.js sends what `render()` gives.
+ * Pure: no clock of its own, no sockets. core/light/output.ts sends what `render()` gives.
  */
 import * as commands from './commands';
 import * as patchLib from './patch';

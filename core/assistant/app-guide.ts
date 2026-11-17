@@ -4,12 +4,12 @@
  * prompt only says it is there).
  *
  * The screens are written here by hand, short, one item a thing a person looks for. Each item names the place it is
- * about in [brackets], a name in core/ui/places.js, so the model knows what show_in_app can point at; a test checks
- * that every name in brackets is one. The keys are not written here: they are core/ui/keys.js's, the table the menus
+ * about in [brackets], a name in core/ui/places.ts, so the model knows what show_in_app can point at; a test checks
+ * that every name in brackets is one. The keys are not written here: they are core/ui/keys.ts's, the table the menus
  * and the window are built from, so the guide cannot say a key the app does not have.
  *
- * The built-in helper (helper.js, no model) answers "where is…" and "what is the key for…" from the same items:
- * `ask` is the words a person uses for the thing, `keys` the ids of its keys in core/ui/keys.js.
+ * The built-in helper (helper.ts, no model) answers "where is…" and "what is the key for…" from the same items:
+ * `ask` is the words a person uses for the thing, `keys` the ids of its keys in core/ui/keys.ts.
  */
 import * as uiKeys from '../ui/keys';
 import * as places from '../ui/places';

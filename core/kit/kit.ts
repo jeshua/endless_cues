@@ -2,7 +2,7 @@
  * The prop kit: firmware for a light or a switch on an ESP32, set up for one prop of one show.
  *
  * The kit is two Arduino sketches and a header (core/kit/firmware/), one protocol (PROTOCOL below; the
- * models ec-prop-light and ec-prop-switch in core/net/devices.js describe it to the app), and this
+ * models ec-prop-light and ec-prop-switch in core/net/devices.ts describe it to the app), and this
  * generator, which fills in a prop's settings and writes the steps for putting it on the board. Nothing
  * here is written by a model: the assistant's make_prop_files and the Rig's "Write firmware…" both call
  * `files` with a few options, and the text is the kit's own.
@@ -13,7 +13,7 @@
  *                            sentence to show, for an option that cannot be used (a boot pin, an address that is not one)
  *   protocol()               the kit's protocol as text, for the steps and for the guide for coding agents
  *
- * The files are staged on a proposal and written when a person accepts it (core/show/files.js), and
+ * The files are staged on a proposal and written when a person accepts it (core/show/files.ts), and
  * secrets.h, once it is there, is never replaced: it holds the person's Wi-Fi password, which is never
  * asked for, never in a show and never sent to a model.
  *

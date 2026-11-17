@@ -5,7 +5,7 @@
  *   SMOKE_SHOTS=dir npm run smoke       also saves pictures of the window
  *
  * Offscreen, silent (the master is muted), no network ports, its own temporary
- * settings folder, and it never becomes the front app (main.js sets the
+ * settings folder, and it never becomes the front app (main.ts sets the
  * activation policy): safe to run on a computer that is busy doing a show.
  */
 import * as fs from 'fs';
@@ -216,7 +216,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     // the Live view: tracks, strips, the crossfader
     host.openUntitled(); host.open(dir);
     await until(() => snap().mixer.audioReady && snap().rows.length >= 10);
-    // (the Live view is off as the app comes: checked, then switched on for the checks of it; smoke-defaults.js)
+    // (the Live view is off as the app comes: checked, then switched on for the checks of it; smoke-defaults.ts)
     await (require('./smoke-defaults') as typeof import('./smoke-defaults')).plain({ host, win, check, until, page, sleep });
     win.webContents.send('ec-menu', 'view-live');
     check('the Live view shows a mixer strip for each bus and the master', await until(() => page(`document.querySelectorAll('.desk .mstrip').length`).then((n) => n === snap().mixer.buses.length + 1), 3000));
@@ -470,7 +470,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       while (host.document.undoStack.length > undoTo) host.cmd({ op: 'undo' });
       await sleep(200);
     }
-    // where sound goes: a cue's own outputs, four-channel files, audition, trims, the effects (smoke-routing.js)
+    // where sound goes: a cue's own outputs, four-channel files, audition, trims, the effects (smoke-routing.ts)
     await (require('./smoke-routing') as typeof import('./smoke-routing')).routingChecks({ host, check, until, sleep, page, win, shot });
     // sequencing: a list with a playhead of its own that a Start cue GOes, a cue that ducks the others, a Mix cue on the mixer, = and -
     host.cmd({ op: 'panic', hard: true });
@@ -519,7 +519,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     check('the playhead can be on no cue: GO does nothing', snap().engine.playhead === null && (await sleep(400), host.cmd({ op: 'go' }), snap().engine.active.length === 0), snap().engine);
     host.cmd({ op: 'panic', hard: true });
     host.cmd({ op: 'undo' });
-    // the stage: Video, Text and Camera cues, drawn offscreen and read back as pixels (smoke-video.js)
+    // the stage: Video, Text and Camera cues, drawn offscreen and read back as pixels (smoke-video.ts)
     await (require('./smoke-video') as typeof import('./smoke-video')).run({ host, check, until, sleep, log, shot: async (name: string) => { if (!shots) return; fs.mkdirSync(shots, { recursive: true }); await sleep(200); fs.writeFileSync(path.join(shots, `${name}.png`), (await host.stage.window()!.webContents.capturePage()).toPNG()); } });
     // the app's own lights: a patch, a Light cue that holds levels, the dashboard. A test run makes every packet and sends none
     // (and the universes here are aimed at this computer itself, so a run with real ports open reaches no network either)
@@ -596,7 +596,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     check('…and the page shows it so', await until(() => page(`!!document.querySelector('[data-access-row="0"]') && [...document.querySelector('[data-access-row="none"]').querySelectorAll('input')].every((i) => !i.checked)`), 3000));
     await shot('9-osc-access');
     await page(`document.querySelector('.modal .close').click()`);
-    // the Live view's desk: one clip per track, tempo sections, warp, desk recall, mapping, dragging (smoke-live.js)
+    // the Live view's desk: one clip per track, tempo sections, warp, desk recall, mapping, dragging (smoke-live.ts)
     await (require('./smoke-live') as typeof import('./smoke-live')).live({ host, win, check, timed, until, page, shot, sleep, dir });
     // ── timecode and the rest of MIDI ──────────────────────────────────────────────────────────────────────
     // (a test run opens no MIDI port: what would be sent, and the time each message is due, is read from the host)
@@ -825,13 +825,13 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       await page(`window.ec.app({ op: 'template-new', path: ${JSON.stringify(tpl)} })`);
       check('a new show starts from a template: the same cues, untitled, a show of its own', await until(() => snap().show.untitled && snap().doc.id !== idWas && snap().rows.length === cuesWere, 4000), [snap().show.untitled, snap().rows.length, cuesWere]);
     }
-    // what one sound can do: formats, fade shapes, rate, the envelope, limits, the monitor, a lost output (smoke-audio.js)
+    // what one sound can do: formats, fade shapes, rate, the envelope, limits, the monitor, a lost output (smoke-audio.ts)
     await (require('./smoke-audio') as typeof import('./smoke-audio')).audioDepth({ host, win, check, timed, until, page, sleep, log, shot });
-    // sound design (a cue's chain of tools, measured offline) and the kinds of sound (ducking by kind, the guess at a new sound) (smoke-sound.js)
+    // sound design (a cue's chain of tools, measured offline) and the kinds of sound (ducking by kind, the guess at a new sound) (smoke-sound.ts)
     await (require('./smoke-sound') as typeof import('./smoke-sound')).soundChecks({ host, win, check, timed, until, page, sleep, shot, log });
-    // simple until asked: the Live view hidden again, a show that uses it, a new sound's bus (smoke-defaults.js)
+    // simple until asked: the Live view hidden again, a show that uses it, a new sound's bus (smoke-defaults.ts)
     await (require('./smoke-defaults') as typeof import('./smoke-defaults')).after({ host, win, check, until, page, sleep });
-    // the cue list's own rescue tools, the MUTED chip and a quantised GO, all with the Live view hidden (smoke-rescue.js)
+    // the cue list's own rescue tools, the MUTED chip and a quantised GO, all with the Live view hidden (smoke-rescue.ts)
     await (require('./smoke-rescue') as typeof import('./smoke-rescue')).rescue({ host, win, check, until, page, sleep, shot });
     // the rig, the assistant on it, and its pages (docs/specs/15-assistant-and-rig.md): each part's checks are a file of its own, run if it is there
     for (const part of ['./smoke-rig', './smoke-assistant-rig', './smoke-rig-pages', './smoke-qirx', './smoke-tabs']) {
@@ -839,23 +839,23 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       try { mod = require(part); } catch (err) { if (!((err as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND' && String((err as Error).message).includes(`'${part}'`))) throw err; }
       if (mod) await mod.run({ host, win, check, until, page, sleep, shot, dir });
     }
-    // sections and folding: the heading, GO passing over it, folding by click, keys and menu, Show mode (smoke-sections.js)
+    // sections and folding: the heading, GO passing over it, folding by click, keys and menu, Show mode (smoke-sections.ts)
     await (require('./smoke-sections') as typeof import('./smoke-sections')).run({ host, win, check, until, page, sleep, shot });
-    // Report a problem: the form, its picture, and what it sends (to a fake in this process) (smoke-report.js)
+    // Report a problem: the form, its picture, and what it sends (to a fake in this process) (smoke-report.ts)
     await (require('./smoke-report') as typeof import('./smoke-report')).run({ host, win, check, until, page, sleep, shot });
-    // Updates: the title bar's line, Show mode hiding it, Download, Restart now refused while sound plays (smoke-update.js)
+    // Updates: the title bar's line, Show mode hiding it, Download, Restart now refused while sound plays (smoke-update.ts)
     await (require('./smoke-update') as typeof import('./smoke-update')).run({ host, win, check, until, page, sleep, shot });
-    // the cue list's run tools: chains, a row's stop and level, Find taking you there, the zoomed-out list (smoke-showlist.js)
+    // the cue list's run tools: chains, a row's stop and level, Find taking you there, the zoomed-out list (smoke-showlist.ts)
     await (require('./smoke-showlist') as typeof import('./smoke-showlist')).run({ host, win, check, until, page, sleep, shot, log });
-    // the safety net: a fade to silence stopping, Check the show, Run from here, a trigger's double GO, the show log (smoke-safety.js)
+    // the safety net: a fade to silence stopping, Check the show, Run from here, a trigger's double GO, the show log (smoke-safety.ts)
     await (require('./smoke-safety') as typeof import('./smoke-safety')).run({ host, win, check, until, page, sleep, shot });
-    // a sound's lines heard: a pan on the meters, a Pan line, a filter's line, a bent Volume line (smoke-lanes.js)
+    // a sound's lines heard: a pan on the meters, a Pan line, a filter's line, a bent Volume line (smoke-lanes.ts)
     await (require('./smoke-lanes') as typeof import('./smoke-lanes')).heard({ host, check, until, sleep });
-    // the calmer window: colours, the add-cue list, Save's count, the ⋯ menu, columns, knobs, Report (smoke-declutter.js)
+    // the calmer window: colours, the add-cue list, Save's count, the ⋯ menu, columns, knobs, Report (smoke-declutter.ts)
     await (require('./smoke-declutter') as typeof import('./smoke-declutter')).run({ host, win, check, until, page, sleep, shot, log });
-    // the assistant pointing at the window: the helper's where-is and keys, a tab, a cue, a pane, Show mode refusing (smoke-guide.js)
+    // the assistant pointing at the window: the helper's where-is and keys, a tab, a cue, a pane, Show mode refusing (smoke-guide.ts)
     await (require('./smoke-guide') as typeof import('./smoke-guide')).run({ host, win, check, until, page, sleep, shot });
-    // a show from another computer, held back until Turn on; OSC control with no passcode, and no answers to a forged sender (smoke-hardening.js)
+    // a show from another computer, held back until Turn on; OSC control with no passcode, and no answers to a forged sender (smoke-hardening.ts)
     await (require('./smoke-hardening') as typeof import('./smoke-hardening')).run({ host, win, check, until, page, sleep, shot });
     check('nothing was logged as an error by the page', true);
   } catch (err) {

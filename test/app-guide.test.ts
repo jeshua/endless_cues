@@ -1,6 +1,6 @@
 /**
- * The assistant's guide to the app (core/assistant/app-guide.js), the window's named places (core/ui/places.js),
- * the one table of keys (core/ui/keys.js) and the tool that points (show_in_app in core/assistant/tools.js).
+ * The assistant's guide to the app (core/assistant/app-guide.ts), the window's named places (core/ui/places.ts),
+ * the one table of keys (core/ui/keys.ts) and the tool that points (show_in_app in core/assistant/tools.ts).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -81,7 +81,7 @@ test('the keys: one table, which the menus are built from and the window reads',
   const used = [...main.matchAll(/accelerator: KEY\('([a-zA-Z]+)'\)/g)].map((m) => m[1]);
   for (const id of used) assert.doesNotThrow(() => uiKeys.accel(id), id);
   for (const [id] of uiKeys.MENU) assert.ok(used.includes(id), `${id} is in the table and on no menu`);
-  // the window's tables are the same one: lib.js keeps none of its own
+  // the window's tables are the same one: lib.ts keeps none of its own
   const lib = renderer('lib.js');
   assert.ok(!/\['go', 'GO'/.test(lib) && /ec\.ui/.test(lib), 'lib.js reads the keys the preload hands it');
   const page = uiKeys.forPage();

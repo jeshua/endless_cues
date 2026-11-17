@@ -1,5 +1,5 @@
 /**
- * The smoke run's checks of where sound goes (called from smoke.js): a cue's own outputs, a file of four
+ * The smoke run's checks of where sound goes (called from smoke.ts): a cue's own outputs, a file of four
  * channels, audition to a pair of its own, the outputs' trims, the reverb and the delay, a cue's eq.
  *
  * The test run's device is pretended (eight outputs, no device open), so all of this is read from meters: one per

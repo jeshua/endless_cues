@@ -1,4 +1,4 @@
-// The check: one function that says whether the show is ready, from invented facts (core/rig/check.js; docs/specs/15, section 3.7).
+// The check: one function that says whether the show is ready, from invented facts (core/rig/check.ts; docs/specs/15, section 3.7).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

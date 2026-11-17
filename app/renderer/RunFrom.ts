@@ -1,5 +1,5 @@
 // Run from here (right-click a cue ▸ Run from Here…, or Tools ▸ Run from the Selected Cue…): a rehearsal at that
-// cue with what would be going on there had the show run up to it (core/engine/run-from.js). It says what it will
+// cue with what would be going on there had the show run up to it (core/engine/run-from.ts). It says what it will
 // start before it starts anything; Edit mode only.
 import { html, useState, useEffect, ec } from './lib.js';
 import type { Reply } from './lib.js';

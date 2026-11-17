@@ -1,8 +1,8 @@
 /**
- * The smoke run's checks of sound design and of the kinds of sound (called from smoke.js).
+ * The smoke run's checks of sound design and of the kinds of sound (called from smoke.ts).
  *
  * A test run plays to no device, so NOTHING HERE IS LISTENED TO. A chain is checked by measuring it: the audio
- * window renders the same node-building code (core/audio/chain.js `build`) on an offline context with a
+ * window renders the same node-building code (core/audio/chain.ts `build`) on an offline context with a
  * synthesised signal through it, and hands back levels and a pitch (`measure` in audio.html). What a playing
  * sound is doing is read from its voice in the audio window; ducking from the host's snapshot.
  * The show is left as it was found (every edit is undone).

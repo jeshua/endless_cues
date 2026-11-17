@@ -1,4 +1,4 @@
-// The inspector: the selected cue's settings, drawn from the cue-type table (core/show/cue-types.js), so a
+// The inspector: the selected cue's settings, drawn from the cue-type table (core/show/cue-types.ts), so a
 // new field or cue type appears here without this file changing.
 import { html, useState, useEffect, useLayoutEffect, useRef, ec, cmd, edit, setCue, clock, db, cx, mod, keys, parseTime } from './lib.js';
 import * as Tidy from './tidy.js';
@@ -117,7 +117,7 @@ function Field({ f, cues, s, byId, info, pending, reveal }: FieldProps) {
   const ids = cues.map((c) => c.id);
   const set = (v: unknown) => setCue(ids, { [f.key]: v === '' ? null : v }, f.label.toLowerCase());
   let control: unknown;
-  // a Device cue: its device, its command and that command's values are drawn from the show's devices (Rig.js)
+  // a Device cue: its device, its command and that command's values are drawn from the show's devices (Rig.ts)
   if (first.type === 'device' && deviceCueHides(f, cues, s)) return null;
   if (f.kind === 'device' || f.kind === 'command' || f.kind === 'args') return html`<${DeviceCueField} f=${f} cues=${cues} s=${s} pending=${pending} />`;
   switch (f.kind) {
@@ -378,7 +378,7 @@ export function Inspector({ s, info, selected, byId, pending, focus, reveal, say
       el.focus(); if (el.select) el.select();
     }, 40);
   }, [focus]);
-  // the assistant pointing at a tab or a field (Point.js): the tab comes forward, More opens; nothing takes the keyboard
+  // the assistant pointing at a tab or a field (Point.ts): the tab comes forward, More opens; nothing takes the keyboard
   useEffect(() => {
     const on = (e: Event) => { const d = (e as CustomEvent<{ tab?: string; more?: boolean }>).detail || {}; if (d.tab) setTab(d.tab); if (d.more) setMore(true); };
     window.addEventListener('ec-reveal', on);

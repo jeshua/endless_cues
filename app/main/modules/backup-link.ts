@@ -5,7 +5,7 @@
  *
  *   on the MAIN     role "main": every transport command carried out here (GO, the playhead, starts, stops,
  *                   pauses, panic, reset, Load to Time) is said again to the backup, as OSC control messages
- *                   (core/net/mirror.js), to a network patch that is the backup's address and input port.
+ *                   (core/net/mirror.ts), to a network patch that is the backup's address and input port.
  *                   A "/thump" goes once a second, so each end knows the other is there.
  *   on the BACKUP   role "backup", and the OSC control module on (it is what obeys). This module only watches:
  *                   it says whether the main is being heard, and says so loudly when it stops.

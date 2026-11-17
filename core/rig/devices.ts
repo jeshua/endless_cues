@@ -4,15 +4,15 @@
  * A device is its address, its named commands (messages with typed holes in them), one way of telling
  * whether it is there, and what to read out of what it says about itself. Devices live in the show file
  * (`settings.rig.devices`, docs/specs/15-assistant-and-rig.md) and change only through the three device
- * operations in core/show/ops.js. Nothing in a device is code: a show from a stranger stays safe to open.
+ * operations in core/show/ops.ts. Nothing in a device is code: a show from a stranger stays safe to open.
  *
- * The tables below are to a device what core/show/cue-types.js is to a cue: validation here, the device
+ * The tables below are to a device what core/show/cue-types.ts is to a cue: validation here, the device
  * editor in the app and the assistant's reference all read them. Add a field here, not in four places.
  *
  *   clean(raw)                         the reading side: forgiving. { device, warnings }
  *   trouble(device, doc?)              the writing side: strict. Sentences; none means it may be kept
  *   compose(device, commandId, args)   the message a command makes: { ok, message } or { ok: false, why }
- *   fromModel(modelId, over)           a new device started from a description in core/net/devices.js
+ *   fromModel(modelId, over)           a new device started from a description in core/net/devices.ts
  *   patchesOf(doc)                     the network devices as the hub wants them (a device is also a patch to it)
  *   line(device)                       one line for the assistant's outline
  *   idFrom(name, taken)                an id made from a name
@@ -386,7 +386,7 @@ function trouble(device: unknown, doc: { settings?: { network?: { patches?: { id
 // ── models, the hub, the outline ──────────────────────────────────────
 
 /**
- * A new device started from a model (core/net/devices.js): its commands, how it is asked, what it reports,
+ * A new device started from a model (core/net/devices.ts): its commands, how it is asked, what it reports,
  * its kind, port and protocol are copied in, so they can be edited and a model changing later never changes
  * a show. `over` is what the person said (name, host, …) and wins. null: no such model.
  */

@@ -2,7 +2,7 @@
  * The rig, in the running app: what the host knows about the show's equipment and its readiness
  * (docs/specs/15-assistant-and-rig.md, sections 3.6, 3.7 and 5.1).
  *
- * Kept beside app/main/host.js and not in it, so that the host's own file changes by a few lines: the host
+ * Kept beside app/main/host.ts and not in it, so that the host's own file changes by a few lines: the host
  * makes one of these, gives it the hub and the open show, and asks it for:
  *
  *   service        what the assistant's tools are given as `ctx.rig`: { status, monitor, senders, ask, scan, locked }

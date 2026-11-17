@@ -1,5 +1,5 @@
 /**
- * The smoke run's checks of the Live view's desk (called from smoke.js, which has the rest): one clip per track,
+ * The smoke run's checks of the Live view's desk (called from smoke.ts, which has the rest): one clip per track,
  * tempo sections, warp, a desk kept in a Mix cue, keys and MIDI mapped to the desk, dragging and renaming.
  * Meters, positions and what the audio window says it is doing: nobody hears a test run.
  */

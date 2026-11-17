@@ -1,6 +1,6 @@
 // A round knob, as the mixer's bus levels and the sound-design devices have it. `DialFace` is the drawing alone (the
 // mixer's level knob wraps it in its own dB handling); `ParamKnob` is a whole knob for one setting of a table
-// (core/audio/chain.js): its name above, the dial, its value and unit below. The arithmetic is dial.js.
+// (core/audio/chain.ts): its name above, the dial, its value and unit below. The arithmetic is dial.ts.
 import { html, useState, useRef, useEffect, cx } from './lib.js';
 import { toPos, fromPos, format, parseTyped, scaleOf } from './dial.js';
 import type { DialParam } from './dial.js';
@@ -40,7 +40,7 @@ export function DialFace({ pos, origin = 0, peak = null, title, cls = 'kdial', c
  * "350 ms", "30%"). A drag is shown as it is made and kept (one undoable edit) when the button is let go; the wheel
  * keeps its turn once it rests. `p`: { key, label, unit, min, max, def }. `id` goes on as data-knob.
  */
-/** A setting of a tool's table (core/audio/chain.js TOOLS): `def` is what a double-click puts back. */
+/** A setting of a tool's table (core/audio/chain.ts TOOLS): `def` is what a double-click puts back. */
 export interface KnobParam extends DialParam { key: string; label: string; def?: number }
 export interface ParamKnobProps {
   p: KnobParam;

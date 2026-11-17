@@ -1,7 +1,7 @@
 /**
- * Every key the window answers to, in one table: the menus are built from it (app/main/main.js), the window's own
- * handler and Settings ▸ Keys read it (app/renderer/lib.js, handed it by the preload), and the assistant's guide
- * to the app is written from it (core/assistant/app-guide.js). So a key changed here is changed everywhere, and
+ * Every key the window answers to, in one table: the menus are built from it (app/main/main.ts), the window's own
+ * handler and Settings ▸ Keys read it (app/renderer/lib.ts, handed it by the preload), and the assistant's guide
+ * to the app is written from it (core/assistant/app-guide.ts). So a key changed here is changed everywhere, and
  * the guide cannot say a key the app does not have.
  *
  *   ACTIONS   the single keys that run the show and edit the list, each with the key it comes with; a person may
@@ -66,7 +66,7 @@ const MENU: MenuRow[] = [
   ['ownInspector', 'Shift+CmdOrCtrl+I', 'Inspector in a window', 'Window ▸ Inspector in Its Own Window'],
 ];
 
-// [id, what it does, the keys as shown]: the window's own (app/renderer/app.js handles each)
+// [id, what it does, the keys as shown]: the window's own (app/renderer/app.ts handles each)
 const PAGE: PageRow[] = [
   ['undo', 'Undo / redo', '⌘Z  ⇧⌘Z'], ['selectAll', 'Select all', '⌘A'], ['duplicate', 'Duplicate', '⌘D'],
   ['group', 'Group · Ungroup', '⌘G  ⇧⌘G'], ['move', 'Move cue up / down', '⌥⌘↑  ⌥⌘↓'], ['extend', 'Extend the selection', '⇧↑  ⇧↓'],
@@ -89,7 +89,7 @@ function glyphs(accel: string) {
   const has = (w: string) => parts.some((p) => p.toLowerCase() === w);
   return `${has('alt') ? '⌥' : ''}${has('shift') ? '⇧' : ''}${has('cmdorctrl') || has('cmd') || has('ctrl') || has('commandorcontrol') ? '⌘' : ''}${key.length === 1 ? key.toUpperCase() : key}`;
 }
-/** A menu item's accelerator, for main.js. Throws on an id that is not in the table, so a typo cannot drop a key. */
+/** A menu item's accelerator, for main.ts. Throws on an id that is not in the table, so a typo cannot drop a key. */
 function accel(id: string) { const r = MENU_BY_ID[id]; if (!r) throw new Error(`no menu key "${id}"`); return r[1]; }
 /** The keys for one SHOWN line: a page id's own, or each menu id's accelerator. */
 function shownKeys(ref: string) {

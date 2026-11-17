@@ -1,5 +1,5 @@
 /**
- * The calmer window's rules (app/renderer/tidy.js) and a cue's colour as the show keeps it (core/show/cue-types.js):
+ * The calmer window's rules (app/renderer/tidy.ts) and a cue's colour as the show keeps it (core/show/cue-types.ts):
  * a named colour or one from the wheel, the list's empty columns and Show mode holding them, the add-cue list's filter.
  */
 import test from 'node:test';

@@ -55,10 +55,10 @@
  * network messages itself.
  *
  *   audio:  { play(key, {file, gainDb, from, loop}), move(key, {to, region, sync}), fade(key, db, secs), stop(key), setLoop(key, on) }
- *           play may also carry `pan` (−100 … 100), `automation` (its other lines: core/audio/lanes.js),
+ *           play may also carry `pan` (−100 … 100), `automation` (its other lines: core/audio/lanes.ts),
  *           `rate` (and `preservePitch`) and `envelope` ([[seconds, dB], …]: the sound's level drawn
  *           over its length, which the backend follows by where the sound is); fade(key, db, secs, range, shape, from):
- *           `shape` is the fade's curve (core/audio/curves.js; none: a straight line in dB) and `from` how far into that
+ *           `shape` is the fade's curve (core/audio/curves.ts; none: a straight line in dB) and `from` how far into that
  *           curve it starts (a paused fade taken up again); rate(key, rate, secs) moves how fast the sound plays.
  *           move: when sound `key` reaches sync.at s into its file (about sync.lead s from now) it
  *           crossfades, inside itself, to `to` over sync.xf s ('cut' | 'fade' | 'dj'), looping `region`
@@ -89,7 +89,7 @@ import { soundKinds, type SoundKinds } from './sound-kinds';
 import type { CueFields, Region, Shape, Envelope, Automation, Sweep } from '../show/types';
 import type { Geometry } from '../video/stage';
 
-/** A cue as the engine plays it (show.js toEngineDoc makes one): the show file's fields, its continue mode as two
+/** A cue as the engine plays it (show.ts toEngineDoc makes one): the show file's fields, its continue mode as two
  *  flags, a video as an audio cue with a `picture`, a still, a title or a camera as a `picture` cue, a Devamp as a
  *  `release`, and anything that cannot work marked `broken`. */
 export interface EngineCue extends Omit<CueFields, 'continue' | 'onBeat' | 'target' | 'fadeTo'> {
@@ -353,7 +353,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
     // them on its way to the sound. None: levels are played as written.
     this.limits = limits || null;
     this.reverts = new Map();       // Fade cue id -> what it moved, as it was before ("revert fade")
-    this.busRules = {};             // what the buses' kinds ask for: { busId: { stopFade, oneAtATime, live } } (sound-kinds.js; the host sets it)
+    this.busRules = {};             // what the buses' kinds ask for: { busId: { stopFade, oneAtATime, live } } (sound-kinds.ts; the host sets it)
     this.midiHook = midi || (() => {});
     this.runHook = run || (() => 0);     // a cue the host plays out itself (timecode, a MIDI file): told to start, answers with its length
     this.random = random || Math.random;
@@ -417,7 +417,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
 
   // ── loading ───────────────────────────────────────────────────────────
 
-  /** Load a cue list document (format 'ec-cuelist'; show.js's toEngineDoc makes one). Keeps the playhead on the same
+  /** Load a cue list document (format 'ec-cuelist'; show.ts's toEngineDoc makes one). Keeps the playhead on the same
    *  cue when it is still there, so a regenerated list does not lose the place. */
   load(doc: EngineDoc) {
     if (!doc || (doc.format !== 'ec-cuelist' && doc.format !== 'ef-cuelist') || !Array.isArray(doc.lists)) {
@@ -1607,13 +1607,13 @@ class CueEngine extends EventEmitter<EngineEvents> {
         const keepPitch = rate !== 1 && ((!!cue.preservePitch && clampRate(cue.rate) !== 1) || (!!(warp && warp.keepPitch) && warpRate !== 1));
         const exact = this.loopsExactly(cue) && !keepPitch;
         // `fadeIn`: from silence up to its level (a scene's mix as its GO starts it); the level itself stays db
-        const over = this.takeOver(cue);                                  // (a bus that plays one sound at a time: sound-kinds.js)
+        const over = this.takeOver(cue);                                  // (a bus that plays one sound at a time: sound-kinds.ts)
         const fadeIn = Number(cue.fadeIn) || this.fadeInOnce || over || 0;       // (fadeInOnce: a playlist crossfading into it)
         this.running.set(cue.id, { startedAt: this.clock.now(), from, file: cue.file, db: fadeIn > 0 ? SILENT_DB : db, fade: null, loop: whole, ...(rate !== 1 ? { rate } : {}), ...(warpRate !== 1 ? { warp: warpRate } : {}), ...(keepPitch ? { stretched: true } : {}) });
         this.audio.play(cue.id, { file: cue.file, gainDb: fadeIn > 0 ? SILENT_DB : db, from, loop: whole, exact, bus: busOf(cue),
                                   ...(rate !== 1 ? { rate, preservePitch: keepPitch } : {}),
                                   ...(Array.isArray(cue.envelope) && cue.envelope.length ? { envelope: cue.envelope } : {}),
-                                  // (its pan, and its other lines: core/audio/lanes.js; read at a place in the file, as the envelope is)
+                                  // (its pan, and its other lines: core/audio/lanes.ts; read at a place in the file, as the envelope is)
                                   ...(Number(cue.pan) ? { pan: Number(cue.pan) } : {}), ...(cue.automation ? { automation: cue.automation } : {}) });
         if (cue.picture) this.showPicture(cue, from, fadeIn);         // a video: its picture, in step with its sound
         if (fadeIn > 0) this.fadeAudio(cue.id, db, fadeIn, false, `level:${cue.id}`, cue.fadeInShape);
@@ -1665,7 +1665,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
         const targets = many ? [...this.running.keys()].filter((k) => this.within(k, cue.target)) : this.running.has(cue.target) ? [cue.target!] : [];
         // how each was, for "revert fade"
         if (targets.length) this.reverts.set(cue.id, targets.map((k) => ({ id: k, db: levelOf(k), band: this.running.get(k)!.band || 0, rate: this.rateOf(this.running.get(k)) })));
-        this.sweepDesign(cue, targets, dur);                    // its `chainTo`: settings of the sounds' design move too (sound-kinds.js)
+        this.sweepDesign(cue, targets, dur);                    // its `chainTo`: settings of the sounds' design move too (sound-kinds.ts)
         const move = (k: string, db: number, fadeId: string) => {
           // (a picture is not re-timed: a video's sound keeps the speed its picture has)
           const rated = toRate && !this.running.get(k)!.pic;
@@ -1816,7 +1816,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
         this.retarget(cue.target!, cue.to as string);
         break;
       case 'network': {
-        // What it sends over its time is worked out in core/net/network-cue.js: one message, the same one again
+        // What it sends over its time is worked out in core/net/network-cue.ts: one message, the same one again
         // and again for a duration, or a value (or a point on a path) that moves. Anything with a duration is a
         // fade like any other: it shows in Active Cues, pauses, and stops.
         const p = networkCue.plan(cue);
@@ -1902,7 +1902,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
   }
 
   /**
-   * A Script cue: its commands in order, each wait on this engine's clock (core/show/script.js says what a
+   * A Script cue: its commands in order, each wait on this engine's clock (core/show/script.ts says what a
    * script may say, and why it is a list and not a program). The run is filed like a wait under the cue's id,
    * so it shows in Active Cues, pauses with the cue, and a Stop on the cue (or a panic) ends it where it is.
    */
@@ -2239,7 +2239,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
     this.endPlaylist(id);
     this.cancelWait(id);
     for (const k of [id, `hold:${id}`]) if (this.fades.has(k)) { this.clock.clearTimeout(this.fades.get(k)!.timer); this.fades.delete(k); }
-    // (`soft`: a Stop cue or the operator's stop; a sound on a bus that fades its stops goes out over that time: sound-kinds.js)
+    // (`soft`: a Stop cue or the operator's stop; a sound on a bus that fades its stops goes out over that time: sound-kinds.ts)
     if (cue.type === 'audio' || cue.type === 'mic' || cue.type === 'picture') { if (!(soft && this.softStop(id))) this.stopAudio(id); }
     for (const child of cue.children || []) this.stopTree(child.id, soft);
   }

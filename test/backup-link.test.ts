@@ -1,6 +1,6 @@
 /**
  * Main and backup: what the main does to its transport is said again to the backup in OSC control's own
- * addresses (core/net/mirror.js), and the backup, which is only the OSC control module obeying, ends up in step.
+ * addresses (core/net/mirror.ts), and the backup, which is only the OSC control module obeying, ends up in step.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -78,7 +78,7 @@ function pair({ passcode = '' } = {}) {
   const beats: (() => void)[] = [];
   const link = backupLink.create({ host: main, net, every: (fn: () => void) => { beats.push(fn); return beats.length; }, never() {} } as unknown as ModuleContext);
   link.start({ enabled: true, role: 'main', patch: 'backup', passcode } as Parameters<typeof link.start>[0]);
-  // the main's `cmd`, as host.js runs it: the command, then the modules told of it
+  // the main's `cmd`, as host.ts runs it: the command, then the modules told of it
   const cmd = (c: Cmd) => { const before = { playhead: main.engine.playhead }; const r = main.cmd(c); link.onCommand(c as HostCommand, r, before, { playhead: main.engine.playhead }); return r; };
   const state = (h: FakeHost) => ({ playhead: h.engine.playhead, running: [...h.engine.running.keys()].sort(), paused: [...h.engine.running].filter(([, r]) => r.pausedAt != null).map(([k]) => k).sort(), waits: h.engine.active().filter((a) => a.kind === 'wait').map((a) => a.id).sort() });
   const advance = (secs: number) => { main.rig.advance(secs); backup.rig.advance(secs); };

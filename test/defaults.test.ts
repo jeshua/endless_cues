@@ -178,7 +178,7 @@ test('updates: the daily check is on (the owner\'s decision: one GET of the feed
   const { settingsOf, FEED } = require('../core/update/updates') as typeof import('../core/update/updates');
   assert.deepEqual(settingsOf({}), { auto: true, test: false, lastCheck: 0 });
   assert.equal(FEED, 'https://downloads.endlesscues.com/');
-  // (that nothing downloads before Download, nor installs before quit or Restart now, is test/updates.test.js)
+  // (that nothing downloads before Download, nor installs before quit or Restart now, is test/updates.test.ts)
 });
 
 test('OSC control’s no-passcode row never edits, and a show this computer has no record of is not taken for its own', () => {

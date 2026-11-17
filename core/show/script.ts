@@ -16,7 +16,7 @@
  * panic, and wait. No files, no network of its own, no editing, no saving, no
  * loops, no variables. Everything it does is a line a person can read.
  *
- * The words are the OSC control module's (app/main/modules/osc-control.js), so
+ * The words are the OSC control module's (app/main/modules/osc-control.ts), so
  * whoever has driven the app from a Stream Deck already knows them, and a line
  * can be copied from one to the other:
  *
@@ -29,7 +29,7 @@
  *   # a note                             (and blank lines) are skipped
  *
  * parse() never throws: a line it cannot read is reported with its number and
- * left out of the steps, and show.js lists it among the cue's problems.
+ * left out of the steps, and show.ts lists it among the cue's problems.
  */
 import { parseSmart } from './cue-types';
 

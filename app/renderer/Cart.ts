@@ -1,12 +1,12 @@
 // A cue cart: a list drawn as a grid of buttons. Each button starts its cue, as a hotkey or a remote would:
 // the cue fires, and the playhead of the list being run stays where it is. Which cue is on which button is
-// decided by the host (core/show/cart.js) and arrives in `s.carts`.
+// decided by the host (core/show/cart.ts) and arrives in `s.carts`.
 import { html, useState, useRef, ec, cmd, edit, clock, cx } from './lib.js';
 import * as Tidy from './tidy.js';
 import type { State, Info, CueList, CueIndex, Active } from './lib.js';
 import type { Problem } from './Sections.js';
 
-/** Which cue is on which button (core/show/cart.js `layout`): cue ids (or null) in reading order, and the cues with no button. */
+/** Which cue is on which button (core/show/cart.ts `layout`): cue ids (or null) in reading order, and the cues with no button. */
 export interface CartLayout { rows: number; columns: number; cells: (string | null)[]; extra: string[] }
 /** One button of the grid. */
 export interface CartCell { at: number; row: number; column: number; cell: string; id: string | null }

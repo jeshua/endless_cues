@@ -3,7 +3,7 @@
  *
  * docs/specs/17-service-protocol.md section 3 is the contract (POST /v1/reports, multipart, no account). This file
  * is that section in code, with no Electron in it: the window makes the picture (a WebP, because the service only
- * checks images and never re-encodes them), app/main/report.js gathers what the app knows, and everything here is
+ * checks images and never re-encodes them), app/main/report.ts gathers what the app knows, and everything here is
  * plain data and `fetch`, so it is tested against a fake server.
  *
  * What may go out is narrow on purpose (the protocol's "never send" list): the words the person wrote, the picture
@@ -26,7 +26,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** A picture as it may arrive: bytes, a Buffer that went through JSON, or base64. */
 export type Bytes = Uint8Array | ArrayBuffer | string | { type?: string; data?: number[] };
-/** What the app gathers for one report (app/main/report.js): buildReport's input. */
+/** What the app gathers for one report (app/main/report.ts): buildReport's input. */
 export interface ReportInput {
   clientId?: string; submissionId?: string; category?: string; comment?: string; appVersion?: string; os?: string; email?: string;
   capturedAt?: string | number | Date; context?: Context | null; screenshot?: Bytes | null; thumbnail?: Bytes | null;
@@ -122,7 +122,7 @@ function makeContext(about: About = {}, scrub = scrubber()) {
   if (about.locale) out.locale = String(about.locale).slice(0, 20);
   const errors = errorLines(about.log, scrub);
   if (errors.length) out.errors = errors;
-  // (the line the status bar offered to report, when the form was opened from there: core/report/issues.js)
+  // (the line the status bar offered to report, when the form was opened from there: core/report/issues.ts)
   if (about.issue) out.issue = scrub(String(about.issue)).slice(0, LIMITS.errorLength);
   if (about.includeShowName && about.showName) out.show_name = String(about.showName).slice(0, 200);
   // (within 64 KB as text: the oldest errors go first)
@@ -239,7 +239,7 @@ function outcomeOf(status: number, body: unknown): Outcome {
 
 /**
  * Send one built report. Never throws: a network failure (or no answer within `timeoutMs`) is `held: 'offline'`.
- * `url` is required: a test run has none unless it is given a fake one (main.js), so it can never reach the service.
+ * `url` is required: a test run has none unless it is given a fake one (main.ts), so it can never reach the service.
  */
 async function send(built: Built, { url, fetch: fetchImpl = globalThis.fetch, userAgent = '', token = '', timeoutMs = 30000 }: SendOptions = {}): Promise<Outcome> {
   if (!url) return { refused: 'no_endpoint', message: 'Reports are not sent from a test run.' };

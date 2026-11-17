@@ -1,14 +1,14 @@
 /**
  * Endless Cues: the Electron entry.
  *
- * Thin on purpose. The show lives in host.js (the document, the engine, the
+ * Thin on purpose. The show lives in host.ts (the document, the engine, the
  * audio window, the modules); this file makes the window, the menu and the
  * file dialogs, and keeps per-computer settings (config.json: the last show,
  * the audio output, the assistant's sign-in) apart from the show file.
  *
  *   electron .                      the app
  *   electron . path/to/My.ecshow    open that show
- *   electron . --smoke              the end-to-end check (smoke.js): offscreen, silent, never takes focus
+ *   electron . --smoke              the end-to-end check (smoke.ts): offscreen, silent, never takes focus
  */
 import { app, BrowserWindow, Menu, dialog, ipcMain, protocol, net, powerSaveBlocker, shell, safeStorage, screen, clipboard } from 'electron';
 import * as fs from 'fs';
@@ -21,7 +21,7 @@ import type { Relay } from './preload';
 import { createAssistant, COMPATIBLE, CLI, findBinary } from '../../core/assistant/assistant';
 import { createBridge } from '../../core/assistant/mcp';
 import * as cueTypes from '../../core/show/cue-types';
-// every key the window answers to, the menus' among them, is one table (core/ui/keys.js): the menus are built from it
+// every key the window answers to, the menus' among them, is one table (core/ui/keys.ts): the menus are built from it
 import * as uiKeys from '../../core/ui/keys';
 const KEY = uiKeys.accel;
 import { makeDemo } from '../../examples/make-demo';
@@ -42,7 +42,7 @@ export interface AppConfig extends UpdateConfig {
   /** outputs held back for a rehearsal: { osc, midi, timecode, dmx } */
   overrides?: Record<string, boolean>;
   remoteSalt?: string;
-  /** which show folders are this computer's own (core/show/trust.js) */
+  /** which show folders are this computer's own (core/show/trust.ts) */
   shows?: Record<string, string | true>;
   assistant?: AssistantSettings;
   keys?: KeyOver;
@@ -50,7 +50,7 @@ export interface AppConfig extends UpdateConfig {
   view?: ViewSettings;
   folds?: Record<string, string[]>;
   listZoom?: Record<string, number>;
-  /** the stage's display (app/main/stage.js) */
+  /** the stage's display (app/main/stage.ts) */
   stage?: { open?: boolean; display?: string | null; label?: string };
   clientId?: string;
 }
@@ -61,7 +61,7 @@ interface AssistantSettings {
   provider?: string; endpoint?: string; baseURL?: string; model?: string; cloudEmail?: string; autoApply?: boolean; agents?: boolean;
   secrets?: Record<string, string>; models?: Record<string, { model: string; baseURL: string }>;
 }
-/** The assistant's configuration as the code uses it (core/assistant/assistant.js `config`): keys in the clear, in memory only. */
+/** The assistant's configuration as the code uses it (core/assistant/assistant.ts `config`): keys in the clear, in memory only. */
 interface AssistantRun {
   provider: string; endpoint: string; baseURL: string; model: string; autoApply: boolean; agents: boolean; mcpServer: typeof mcpServer;
   version: string; email: string; cloudSignedOut: () => void; token?: string; apiKey?: string;
@@ -124,13 +124,13 @@ type Updates = ReturnType<typeof createAppUpdates>;
 declare global { var ecCueMenu: { items: CueMenuItem[]; picks: (string | null)[] } | undefined }
 
 const SMOKE = process.argv.some((a) => a.startsWith('--smoke'));
-// A virtual user's session (test/users): the app as the smoke test runs it, driven through app/main/drive.js.
+// A virtual user's session (test/users): the app as the smoke test runs it, driven through app/main/drive.ts.
 const DRIVE = (process.argv.find((a) => a.startsWith('--drive=')) || '').slice(8);
 const DRIVE_NET = !!DRIVE && process.argv.includes('--drive-net');   // this session may open network ports
 const TEST = SMOKE || !!DRIVE;
 const RENDERER = path.join(__dirname, '../renderer');
 import VERSION_json from '../../package.json'; const VERSION = VERSION_json.version;
-// A packaged build carries which commit it was made from and when (bin/release.js writes it; a run from source has none)
+// A packaged build carries which commit it was made from and when (bin/release.ts writes it; a run from source has none)
 let BUILD: AppInfo['build'] = null;
 try { BUILD = require('../build-info.json'); } catch { /* run from source */ }
 const SOUND_EXT = ['wav', 'aif', 'aiff', 'mp3', 'm4a', 'aac', 'flac', 'ogg', 'opus'];
@@ -163,7 +163,7 @@ function showArg(args: string[]) {
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'ec', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 // Every window (the main one, its own-window lists, the audio window, the stage) stays on the page it was opened
-// on, and hands only http(s) and mailto to the system (app/main/navigation.js): each page has the bridge to the host.
+// on, and hands only http(s) and mailto to the system (app/main/navigation.ts): each page has the bridge to the host.
 import * as navigation from './navigation';
 app.on('web-contents-created', (_e, wc) => navigation.guard(wc, { open: (url) => { if (!TEST) shell.openExternal(url); } }));
 
@@ -177,7 +177,7 @@ function saveConfig(change: Partial<AppConfig>) {
 }
 
 const logLines: string[] = [];
-// something gone wrong, for the status bar's "Report it?" (core/report/issues.js): the window is told, and asks
+// something gone wrong, for the status bar's "Report it?" (core/report/issues.ts): the window is told, and asks
 const issues = (require('../../core/report/issues') as typeof import('../../core/report/issues')).createIssues();
 function log(line: string) {
   const text = `${new Date().toISOString().slice(11, 23)} ${line}`;
@@ -226,7 +226,7 @@ function assistantInfo() {
            providers: Object.fromEntries(Object.entries(COMPATIBLE).map(([k, v]) => [k, { label: v.label, baseURL: v.baseURL, env: v.env, needsKey: v.needsKey }])) };
 }
 
-// ── the Endless Cues account (core/assistant/cloud.js, docs/specs/17 sections 4.3 and 7) ─────────────────────
+// ── the Endless Cues account (core/assistant/cloud.ts, docs/specs/17 sections 4.3 and 7) ─────────────────────
 // Nothing here runs until the person chooses the Endless Cues assistant: no request at start-up or in the background.
 import * as cloud from '../../core/assistant/cloud';
 // (a test run never reaches the service: a port nothing listens on, so no network is what it meets)
@@ -281,7 +281,7 @@ async function cloudUsage() {
   }
 }
 
-// ── the door for coding agents (Claude Code, Codex): bin/ec-mcp.js talks to the app through this ──────────
+// ── the door for coding agents (Claude Code, Codex): bin/ec-mcp.ts talks to the app through this ──────────
 const MCP_SCRIPT = path.join(__dirname, '../../bin/ec-mcp.js');
 let bridge: ReturnType<typeof createBridge> | null = null;
 /** How an agent this app starts reaches our tools: this same program, run as plain Node, running the MCP server. */
@@ -302,8 +302,8 @@ let win: BrowserWindow | null = null;
 // (made as the app is ready, before any window or menu that uses them)
 let host!: Host;
 let assistant!: Assistant;
-let reports!: Reports;            // Report a problem (app/main/report.js)
-let updates: Updates | null = null;               // new versions (app/main/updates.js)
+let reports!: Reports;            // Report a problem (app/main/report.ts)
+let updates: Updates | null = null;               // new versions (app/main/updates.ts)
 let quitAskedAt = 0;
 let quitting = false;               // a quit that nothing has refused is under way: windows may close
 
@@ -368,7 +368,7 @@ function openShow(dir: string): HostResult {
 }
 async function pickShow(): Promise<HostResult> {
   // a show is a package on a Mac (chosen like a file) and a folder everywhere else, or when it is not named .ecshow:
-  // both are allowed (Windows and Linux show a folder chooser for this pair), and picked.js says which was meant
+  // both are allowed (Windows and Linux show a folder chooser for this pair), and picked.ts says which was meant
   const r = await dialog.showOpenDialog(win!, { title: 'Open a show', defaultPath: SHOWS_DIR(), properties: ['openFile', 'openDirectory'], message: 'Choose a show (….ecshow)' });
   if (r.canceled || !r.filePaths[0]) return { canceled: true };
   const p = showFolderFrom(r.filePaths[0]);
@@ -617,7 +617,7 @@ app.whenReady().then(async () => {
   if (!TEST && (config.assistant || {}).cloudEmail) assistant.setAccount({ email: config.assistant!.cloudEmail });
   host = createHost({ BrowserWindow, ipcMain, getConfig: () => config, saveConfig: (c) => { if (!SMOKE) { saveConfig(c); if ('recent' in c || 'overrides' in c) buildMenu(); } }, log, smoke: TEST, net: DRIVE_NET, assistant, trash: (p) => shell.trashItem(p), screen, userDir: app.getPath('userData') });
 
-  // the keys, asked for once by the preload before the page's modules load (core/ui/keys.js)
+  // the keys, asked for once by the preload before the page's modules load (core/ui/keys.ts)
   ipcMain.on('ec-ui-tables', (e) => { e.returnValue = { keys: uiKeys.forPage() }; });
   ipcMain.handle('ec-init', (): AppInfo => ({ version: VERSION, build: BUILD, platform: process.platform, smoke: SMOKE,
     keys: config.keys || {},
@@ -627,11 +627,11 @@ app.whenReady().then(async () => {
     types: cueTypes.TYPES, typeOrder: cueTypes.TYPE_ORDER, common: cueTypes.COMMON, colors: cueTypes.COLORS, palette: cueTypes.PALETTE, devices: (require('../../core/net/devices') as typeof import('../../core/net/devices')).list(),
     // sound design (the tools, the eq's bands, the built-in presets) and the kinds of sound, for the inspector and Settings
     sound: (() => { const C = require('../../core/audio/chain') as Chain, K = require('../../core/audio/kinds') as Kinds; return { tools: C.TOOLS, eq: C.EQ_BANDS, presets: C.PRESETS, offer: C.OFFER, sweepable: C.SWEEPABLE, kinds: K.KINDS, kindOrder: K.KIND_ORDER, kindDefaults: Object.fromEntries(K.KIND_ORDER.map((k) => [k, K.defaultsOf(k)])), ducking: K.DUCKING }; })(),
-    // the Rig: the tables a device is drawn and edited from (core/rig/devices.js; the models are `devices` above), and
+    // the Rig: the tables a device is drawn and edited from (core/rig/devices.ts; the models are `devices` above), and
     // what the prop kit can be told when it writes firmware (absent in a build without the kit)
     rig: (() => { const R = require('../../core/rig/devices') as RigDevices; return { fields: R.FIELDS, commandFields: R.COMMAND_FIELDS, paramFields: R.PARAM_FIELDS, aliveFields: R.ALIVE_FIELDS, reportFields: R.REPORT_FIELDS, kinds: R.KINDS, vias: R.VIAS }; })(),
     kit: (() => { try { return { options: (require('../../core/kit/kit') as typeof import('../../core/kit/kit')).OPTIONS }; } catch { return null; } })(),
-    // a test run may lay invented Rig states over what the host pushes, to look at pages no equipment is here to make (app/renderer/Rig.js `layFixture`)
+    // a test run may lay invented Rig states over what the host pushes, to look at pages no equipment is here to make (app/renderer/Rig.ts `layFixture`)
     fixtures: TEST,
     theme: THEMES.includes(config.theme!) ? config.theme! : 'lab', themes: THEMES,
     assistant: TEST ? { provider: 'demo', providers: {} } : assistantInfo(),
@@ -698,14 +698,14 @@ app.whenReady().then(async () => {
       // how the list is drawn on this computer (the row size): a matter of the screen and the eyes, not of the show
       case 'view': return setView(c.view);
       // which sections and groups are folded, per show folder: how this computer looks at a show, never the show's
-      // own (core/show/sections.js keepFolds). With `ids`, kept; without, read.
+      // own (core/show/sections.ts keepFolds). With `ids`, kept; without, read.
       case 'folds': {
         if (!Array.isArray(c.ids)) return { ids: ((config.folds || {})[c.dir] || []) };
         const folds = require('../../core/show/sections').keepFolds(config.folds, c.dir, c.ids);
         if (SMOKE || TEST) config.folds = folds; else saveConfig({ folds });
         return { ok: true };
       }
-      // how far the cue list is zoomed out, per show folder: this computer's too (app/renderer/list-view.js keepZoom).
+      // how far the cue list is zoomed out, per show folder: this computer's too (app/renderer/list-view.ts keepZoom).
       // With `z`, kept; without, read (1: as it is).
       case 'list-zoom': {
         if (!Number.isFinite(c.z)) { const z = (config.listZoom || {})[c.dir]; return { z: Number.isFinite(z) ? z : 1 }; }
@@ -741,7 +741,7 @@ app.whenReady().then(async () => {
   const named = showArg(process.argv.slice(1));
   const qlab = named && /\.qlab[45](backup)?$/i.test(named) ? named : null;
   const arg = named && !qlab ? (/show\.json$/i.test(named) ? path.dirname(named) : named.replace(/[\\/]+$/, '')) : null;
-  if (SMOKE) { /* smoke.js opens its own show */ }
+  if (SMOKE) { /* smoke.ts opens its own show */ }
   else if (arg) openShow(arg);
   else if (qlab) importQlabFile(qlab);
   else if (openWhenReady && /\.qlab[45](backup)?$/i.test(openWhenReady)) importQlabFile(openWhenReady);

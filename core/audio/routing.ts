@@ -90,7 +90,7 @@ function describe(matrix: MatrixRow[] | null | undefined) {
   return `outputs ${run ? `${o[0]}–${o[o.length - 1]}` : o.join(', ')}`;
 }
 
-/** A cue's eq as the show keeps it (four bands now: core/audio/chain.js, which the sound window loads too). */
+/** A cue's eq as the show keeps it (four bands now: core/audio/chain.ts, which the sound window loads too). */
 import { cleanEq } from './chain';
 
 const FX_DEFAULTS = {

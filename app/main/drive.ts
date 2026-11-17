@@ -4,7 +4,7 @@
  *   electron . --drive=<session folder> [--drive-net] [a show or a QLab workspace]
  *
  * The app runs as it does for the smoke test (silent, its own settings folder, never the front app) and opens
- * a door on this computer only, which `bin/ec-user.js` talks to. Through it a user can do what a person at
+ * a door on this computer only, which `bin/ec-user.ts` talks to. Through it a user can do what a person at
  * the keyboard can do and nothing more:
  *
  *   look      a picture of the window, and what is on it as text, each thing with where it is
@@ -115,7 +115,7 @@ function accelKey(text: string) {
   return [...parts.sort(), key].join('+');
 }
 
-/** What a virtual user's client sends (bin/ec-user.js): the verb, and whatever it needs. */
+/** What a virtual user's client sends (bin/ec-user.ts): the verb, and whatever it needs. */
 interface DriveCmd { op: string; x: number; y: number; x2: number; y2: number; text?: string; nth?: number; double?: boolean; right?: boolean; mods?: string[]; by?: number;
                     key: string; path?: string; cancel?: boolean; button?: string; paths?: string[]; option?: string; code?: string }
 interface Reply { error?: string; text?: string; shot?: string }

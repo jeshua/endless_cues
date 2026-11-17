@@ -1,5 +1,5 @@
 /**
- * Report a problem (app/main/report.js, app/renderer/Report.js), run by smoke.js near its end. Checked here: a test
+ * Report a problem (app/main/report.ts, app/renderer/Report.ts), run by smoke.ts near its end. Checked here: a test
  * run has no endpoint until it is given one; Help ▸ Report a Problem… opens the form with the window's picture shown
  * small; Send sends one multipart report in the protocol's fields (a WebP within 2400 px and its thumbnail within
  * 480 px and 256 KB, this install's client id, the context with no home folder in it, the show's name only when its
@@ -25,7 +25,7 @@ async function run({ win, check, until, page, sleep, shot: take }: Pick<Smoke, '
   const status = () => page<string | null>(`(() => { const el = document.querySelector('[data-report-status]'); return el ? el.dataset.reportStatus : null; })()`);
   const closeForm = async () => { await page(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`); await until(async () => !(await has('[data-report]')), 2000); };
 
-  // (a resize first: a window nothing has redrawn for a while gives an empty picture in a test run, as in smoke.js's own pictures)
+  // (a resize first: a window nothing has redrawn for a while gives an empty picture in a test run, as in smoke.ts's own pictures)
   win.setContentSize(1480, 940); await sleep(350);
   const first = await page<{ sends: boolean; png: boolean }>(`window.ec.app({ op: 'report-capture' }).then((r) => ({ sends: r.sends, png: !!r.png }))`);
   check('a test run has nowhere to send a report until it is given one', first.sends === false && first.png, first);

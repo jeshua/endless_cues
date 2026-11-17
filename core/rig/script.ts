@@ -4,7 +4,7 @@
  * A mark is a line that is "@cue <number>" and, if you like, a name: "@cue 12 Thunder". It may sit inside a
  * comment ("<!-- @cue 12 Thunder -->"), so a Markdown script still reads cleanly. The line of text above a
  * mark is the line it is called on. The app never writes the script: it reads the marks, and says which have
- * no cue (core/rig/check.js). docs/specs/15-assistant-and-rig.md, section 3.8.
+ * no cue (core/rig/check.ts). docs/specs/15-assistant-and-rig.md, section 3.8.
  *
  *   read(showDir, file)   → { ok, why, lines, marks: [{ line, number, name, quote, section }], sections: [{ line, name }] }
  *   compare(doc, marks)   → { missing: [mark…] }        the marks whose number no cue has

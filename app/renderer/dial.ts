@@ -1,5 +1,5 @@
 // The arithmetic behind a knob, and the little response curves drawn on a filter or an eq: no view, no import, so
-// the unit tests run it in Node (test/dial.test.js) and the window imports the same file.
+// the unit tests run it in Node (test/dial.test.ts) and the window imports the same file.
 //
 // A knob turns through a position from 0 to 1; a parameter is turned into one and back by its scale. A frequency,
 // a time or a ratio that spans a wide range turns along a ratio (each turn of the wrist is the same musical step,

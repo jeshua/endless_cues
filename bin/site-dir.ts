@@ -2,7 +2,7 @@
  * Where the website's files are. The site (endlesscues.com: the landing page and the manual) is not in this
  * repository: it lives in the service repository's `site/` folder, a private repo checked out beside this one
  * (docs/specs/17-service-protocol.md says how the two meet). The few things here that write into it
- * (bin/release.js site, build/mark.js) and read it (the virtual users' brief) find it through this.
+ * (bin/release.ts site, build/mark.ts) and read it (the virtual users' brief) find it through this.
  *
  *   --site-dir <dir>      on the command line, first
  *   EC_SITE_DIR=<dir>     in the environment, next

@@ -1,5 +1,5 @@
 /**
- * The safety net, run by smoke.js near its end: a fade to silence stopping its target by itself, Check the show
+ * The safety net, run by smoke.ts near its end: a fade to silence stopping its target by itself, Check the show
  * (its list, in the window), Run from here (its preview, and what it starts), double-GO protection on a cue's own
  * trigger, and the show log (the Log view, its file beside the show, and the report's copy with no names in it).
  * Pictures: safety-check, safety-run-from, safety-log.

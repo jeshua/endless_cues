@@ -1,4 +1,4 @@
-// Endless Cues — the window. A view of the show host (app/main/host.js): it sends commands and draws the state it is pushed.
+// Endless Cues — the window. A view of the show host (app/main/host.ts): it sends commands and draws the state it is pushed.
 import { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, ec, cmd, edit, setCue, setErrorHandler, clock, cx, typingIn, mod, keys, flatten, sectionsIn, indexCues, parseTime, comboOf, keymapOf, defaultKeyOf, DEFAULT_COMBOS, nextNumber } from './lib.js';
 import { CueList, NEXT_CONTINUE, HAS_DURATION } from './CueList.js';
 import { SectionStrip, foldAll } from './Sections.js';
@@ -32,15 +32,15 @@ const OWN_LIST = WIN.get('list');
 const OWN_INSPECTOR = WIN.has('inspector');
 const OWN = !!OWN_LIST || OWN_INSPECTOR;
 
-/** A changed field of a cue, not saved yet (host.js `snapshot`: show.unsaved). */
+/** A changed field of a cue, not saved yet (host.ts `snapshot`: show.unsaved). */
 export interface PendingField { field: string; label: string; from: unknown; to: unknown; rawFrom: unknown }
 /** What is pending, by cue and by setting (its path, to what it was): each changed control marks itself from this. */
 export interface Pending { cues: Map<string, { kinds: Set<string>; fields: Map<string, PendingField> }>; paths: Map<string, unknown>; count: number }
 type Say = (text: string, bad?: boolean) => void;
 type Select = (ids: string[], opts?: { playhead?: boolean }) => void;
-/** Invented Rig states a test run lays over what the host pushes (Rig.js `layFixture`). */
+/** Invented Rig states a test run lays over what the host pushes (Rig.ts `layFixture`). */
 type Fixture = NonNullable<Parameters<typeof layFixture>[1]>;
-/** What came across from a QLab workspace (host.js `snapshot`: imported). */
+/** What came across from a QLab workspace (host.ts `snapshot`: imported). */
 interface ImportSummary { title: string; qlabVersion?: string; counts: { cues: number; lists: number; patches?: number }; summary: string[] }
 
 declare global {
@@ -224,7 +224,7 @@ function ToolStrip({ tool, s, sel, rows, close, say, select, byId, reveal }: { t
 /** The side panel's Network section, shown or not: a viewer's own choice, kept in this browser (never the show's). */
 function keepSideNet(on: boolean) { try { localStorage.setItem('ec.sideNetwork', on ? '1' : '0'); } catch { /* no storage: it is only for now */ } return on; }
 
-/** The cue types the add-cue bar shows; the rest are behind its "+" (AddCue.js). Every type keeps its ⌘ key. */
+/** The cue types the add-cue bar shows; the rest are behind its "+" (AddCue.ts). Every type keeps its ⌘ key. */
 const COMMON_TOOLS = ['group', 'audio', 'fade', 'stop', 'memo'];
 
 /** Whether selecting a cue also makes it the one standing by (the show's setting; on unless it says otherwise). */
@@ -248,7 +248,7 @@ type CartLayout = Parameters<typeof cellsOf>[0];
 
 function App() {
   const [s0, setS] = useState<State | null>(null);
-  // (a test run may lay invented Rig states over what the host pushes: Rig.js `layFixture`. Outside one, `fix` is never set.)
+  // (a test run may lay invented Rig states over what the host pushes: Rig.ts `layFixture`. Outside one, `fix` is never set.)
   const [fix, setFix] = useState<Fixture | null>(null);
   const s = useMemo(() => layFixture(s0, fix), [s0, fix]);
   const [info, setInfo] = useState<Info | null>(null);
@@ -267,7 +267,7 @@ function App() {
   const [tool, setTool] = useState<string | null>(null);             // 'load' | 'jump' | 'renumber': in the toolbar's place
   const [view, setView] = useState('cues');           // 'cues' | 'rig' | 'live': the cue list, the Rig (⇧⌘R), or the mixing desk (⌘L)
   const [focus, setFocus] = useState<{ key: string; n: number; pick?: boolean } | null>(null);           // { key, n }: a field the inspector is asked to bring forward
-  // something went wrong (core/report/issues.js): the status bar offers to report it; in Show mode only a mark until Edit
+  // something went wrong (core/report/issues.ts): the status bar offers to report it; in Show mode only a mark until Edit
   const [issue, setIssue] = useState<{ line: string } | null>(null);
   const askIssue = () => ec.app({ op: 'issue' }).then((r) => setIssue((r && r.issue) || null));
   useEffect(() => { askIssue(); }, []);
@@ -279,7 +279,7 @@ function App() {
   const [runFrom, setRunFrom] = useState<{ id: string; label: string } | null>(null);       // Run from here, while its preview is open: { id, label }
   const [checks, setChecks] = useState(false);        // the list of flagged cues and problems, over the footer
   const [revealed, setRevealed] = useState(0);        // counts up when a cue is gone to: the list brings the selection into view
-  const listZoom = useRef<ListZoom | null>(null);                      // the cue list's zoom (ListTools.js useListZoom), for ⌘− ⌘=
+  const listZoom = useRef<ListZoom | null>(null);                      // the cue list's zoom (ListTools.ts useListZoom), for ⌘− ⌘=
   const [linked, setLinked] = useState<{ ids: string[]; at: number } | null>(null);         // { ids }: a continue a deletion has pointed at a new cue, shown for a moment
   const lastProps = useRef<string[] | null>(null);                     // the properties pasted last time
   const [cartId, setCartId] = useState<string | null>(null);         // a cart being shown in place of the list (the list being run stays the engine's)
@@ -302,7 +302,7 @@ function App() {
     else if (t === 'live' && ref.current.liveOn) setView('live');
   };
   ref.current.goTab = goTab;
-  // Report a problem (Help, or Settings ▸ About): the window is pictured as it is, then the form opens (Report.js).
+  // Report a problem (Help, or Settings ▸ About): the window is pictured as it is, then the form opens (Report.ts).
   // What was on screen goes with it: the tab (or the Settings page), the drawer, and the one selected cue's number and type.
   const report = useReport(() => {
     const st = ref.current, one = st.sel.length === 1 && st.byId && st.byId.get(st.sel[0]);
@@ -310,7 +310,7 @@ function App() {
     return { view: `${where}${st.drawer ? ` + ${st.drawer} drawer` : ''}`, selected: one ? { number: one.cue.number || '', type: one.cue.type } : null, closeSettings: () => setSettings(null) };
   });
   ref.current.report = !!report.taken;
-  const update = useUpdate();          // a newer version (Update.js): one line in the title bar, never in Show mode
+  const update = useUpdate();          // a newer version (Update.ts): one line in the title bar, never in Show mode
   // a show just read from a QLab file says what came across, in the cue list
   useEffect(() => { if (s && s.imported) setView('cues'); }, [s && s.imported]);
 
@@ -571,7 +571,7 @@ function App() {
     setView('cues');
     setSel([id]); setRevealed((n) => n + 1);
   };
-  // the assistant pointing at a place (Point.js): the steps that bring it into view are these, and change only what is shown
+  // the assistant pointing at a place (Point.ts): the steps that bring it into view are these, and change only what is shown
   usePointer(OWN ? null : s, {
     mode: () => ref.current.s && ref.current.s.mode, settingsOpen: () => !!ref.current.settings, openSettings: (x?: string) => setSettings(x), closeSettings: () => setSettings(null),
     showCues: () => setView('cues'), reveal,
@@ -609,7 +609,7 @@ function App() {
   };
 
   // a right-click on a cue: what can be done to it (or to the selection it is part of)
-  // the six colours of the inspector, and Other… for any colour (core/show/cue-types.js PALETTE)
+  // the six colours of the inspector, and Other… for any colour (core/show/cue-types.ts PALETTE)
   const colourMenu = (key: 'color' | 'color2', label: string, cue: Cue, edits: boolean) => ({ label, enabled: edits, submenu: [
     ...(info!.palette || ['none']).map((o) => ({ id: `${key}:${o}`, label: o.charAt(0).toUpperCase() + o.slice(1), checked: (cue[key] || 'none') === o })),
     { sep: true }, { id: `${key}:other`, label: 'Other…', checked: !!cue[key] && !(info!.palette || []).includes(cue[key]) }] });
@@ -711,7 +711,7 @@ function App() {
       if (typing) return;
       // (a part of the window that has something of its own selected takes Delete first: points on a sound's line)
       if (typeof window.ecKeyHook === 'function' && st.s.mode !== 'show' && window.ecKeyHook(e)) return;
-      // a mixer knob that Tab gave the keyboard takes the arrows and Enter (Sidebar.js); every other key is the window's
+      // a mixer knob that Tab gave the keyboard takes the arrows and Enter (Sidebar.ts); every other key is the window's
       if (!mod(e) && /^(Arrow|Enter$)/.test(e.key) && document.activeElement && document.activeElement.closest && document.activeElement.closest('.kdial')) return;
       // a cue's hotkey fires it (the playhead stays), in Edit and in Show mode alike
       if (!mod(e) && !e.ctrlKey && st.hotkeys && st.hotkeys.size) {

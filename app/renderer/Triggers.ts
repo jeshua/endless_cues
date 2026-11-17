@@ -1,6 +1,6 @@
 // What starts a cue besides GO, for the whole show: the table of every trigger (Settings ▸ Integrations ▸ Triggers), and the
-// timecode card (Settings ▸ Integrations ▸ Network). Both only draw what the host worked out (core/show/triggers.js,
-// core/timecode/transport.js).
+// timecode card (Settings ▸ Integrations ▸ Network). Both only draw what the host worked out (core/show/triggers.ts,
+// core/timecode/transport.ts).
 import { html, edit, cx } from './lib.js';
 import type { State } from './lib.js';
 import type { TriggerRow } from '../../core/show/triggers';
@@ -10,7 +10,7 @@ const KIND: Record<string, string> = { hotkey: 'Hotkey', osc: 'OSC', midi: 'MIDI
 const RATES = [['24', '24'], ['25', '25'], ['29.97df', '29.97 drop'], ['30', '30']];
 
 /** Every trigger in the show, by kind, with whatever else each would set off beside its own cue. */
-/** A trigger as the host lists it (core/show/triggers.js): the cue it starts, or what it does to the show. */
+/** A trigger as the host lists it (core/show/triggers.ts): the cue it starts, or what it does to the show. */
 export type { TriggerRow };
 
 export function TriggersPane({ s }: { s: State }) {

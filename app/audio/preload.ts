@@ -15,7 +15,7 @@ type Bytes = Uint8Array<ArrayBuffer> | (ArrayBuffer & { buffer?: undefined });
 type Span = { start: number; end: number };
 /** What a sound has of its own: its eq and sound design, and outputs of its own (a matrix, or the audition pair). */
 export interface Own { eq?: EqValue | null; chain?: ChainValue | null; audition?: number; outputs?: MatrixRow[] }
-/** One rule of the ducker, as the host sends it (core/audio/kinds.js duckRules). */
+/** One rule of the ducker, as the host sends it (core/audio/kinds.ts duckRules). */
 export type DuckerRule = Partial<Omit<DuckRule, 'keys' | 'range'>> & { keys?: (string | undefined)[]; range?: string };
 
 /** What the host tells the audio window, by `op` (app/audio/audio.ts says what each does). */

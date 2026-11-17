@@ -10,7 +10,7 @@
  *  - Reset and Target cues;
  *  - a Devamp that starts the next cue when the loop ends.
  *
- * These are methods of CueEngine (cue-engine.js installs them); they are here so that file stays about
+ * These are methods of CueEngine (cue-engine.ts installs them); they are here so that file stays about
  * what a cue does and this one about when.
  */
 import type { CueEngine, EngineCue } from './cue-engine';

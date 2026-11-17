@@ -14,7 +14,7 @@
  * `test` is a message that is safe to send to see whether the device is there; `answers` is true
  * when the device replies to it (so the app can say "answering" rather than only "sent").
  *
- * An entry is also a MODEL: what a device in a show (core/rig/devices.js) is started from. For that it may
+ * An entry is also a MODEL: what a device in a show (core/rig/devices.ts) is started from. For that it may
  * say more, all optional: `kind` (a label: desk, prop, sound…), `alive` (how a device of this model is asked
  * whether it is there; without it, a model that answers its `test` is asked with that), `reports` (what it
  * says about itself), `resend`, `listenPort`, and `tryCommand` (the id of the command that is safe to send at
@@ -179,7 +179,7 @@ Object.assign(DEVICES, <Record<string, DeviceModel>>{
 });
 
 /** The message a command makes from its parameters. With `fade`, that parameter becomes "#v#" (a faded value).
- *  (One function with a device in a show: core/rig/devices.js `compose`. A template never checked a value, so here none is refused.) */
+ *  (One function with a device in a show: core/rig/devices.ts `compose`. A template never checked a value, so here none is refused.) */
 function compose(deviceId: string, commandId: string, values: Record<string, unknown> = {}, { fade = false } = {}): string | null {
   const dev = DEVICES[deviceId];
   if (!dev) return null;

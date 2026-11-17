@@ -4,7 +4,7 @@
  * QLab starts a rehearsal at cue 40 in silence: the rain loop that cue 31 started, the music cue 35 faded to −12,
  * the lamp cue 38 turned blue are all missing, and the operator fires them by hand, guessing. Here the show is run
  * up to the cue in a moment, by the real engine on a clock of its own with no sound and nothing sent (as
- * dry-run.js does), and what it leaves behind is what is brought back:
+ * dry-run.ts does), and what it leaves behind is what is brought back:
  *
  *   - the sounds still going at that cue: anything that loops (a loop, a held section, a microphone, a picture that
  *     stays until it is stopped), and anything the show itself stops or fades at or after the cue (so it must

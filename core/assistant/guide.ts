@@ -31,7 +31,7 @@ export interface Runner { command: string; env: Record<string, string>; packaged
 const q = (p: string, win?: boolean) => (/^[\w@%+=:,./-]+$/.test(p) ? p : win ? `"${p}"` : `"${String(p).replace(/(["\\$`])/g, '\\$1')}"`);
 
 /**
- * How a script of this app (bin/ec.js, bin/ec-mcp.js) is run from a terminal on this computer.
+ * How a script of this app (bin/ec.ts, bin/ec-mcp.ts) is run from a terminal on this computer.
  * From source: `node`. From an installed app the scripts are inside the app's archive, which plain Node cannot
  * read, and the person may have no Node at all: the app's own program is run as Node instead (ELECTRON_RUN_AS_NODE),
  * which reads the archive. → { command, env }

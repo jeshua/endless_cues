@@ -1,4 +1,4 @@
-// The files a proposal may carry into the show folder (core/show/files.js; docs/specs/15, section 3.9).
+// The files a proposal may carry into the show folder (core/show/files.ts; docs/specs/15, section 3.9).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

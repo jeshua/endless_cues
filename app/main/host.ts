@@ -207,7 +207,7 @@ interface Commands {
 }
 /** A command of the host's own, by its op. */
 type OwnCommand = { [K in keyof Commands]: { op: K } & Omit<CueNamed, keyof Commands[K]> & Commands[K] }[keyof Commands];
-/** The Lights view's commands (core/light/lighting.js `cmd`). */
+/** The Lights view's commands (core/light/lighting.ts `cmd`). */
 type LightCommand = Omit<LightCmd, 'op'> & { op: `light-${string}` };
 /** Every command `cmd` takes: the window's, OSC control's, the web remote's, the modules' and the menus'. */
 export type HostCommand = OwnCommand | ((StageCommand | RigCommand | LightCommand) & CueNamed);
@@ -274,20 +274,20 @@ interface HostRun {
   added?: { at: number; items: { id: string; name: string; kind: string | null; why: string; bus: string; loop: boolean; template: boolean }[] } | null;
   point?: (PointAt & { id: number; at: number }) | null;
 }
-/** What came across from another program's file (core/import/qlab.js `report`). */
+/** What came across from another program's file (core/import/qlab.ts `report`). */
 type ImportReport = ReturnType<typeof importQlab>['report'];
 /** What `cmd(c)` returns for that command. */
 export type ResultOf<C extends { op: string }> = C extends { op: LaterOp } ? HostResult | Promise<HostResult> : HostResult;
 
 // ── modules (app/main/modules/*.js): each is { id, name, summary, fields, create } ──
 type Hub = ReturnType<typeof createHub>;
-/** A place in the window to ring (core/ui/places.js), with what is said beside it and the cue it is about. */
+/** A place in the window to ring (core/ui/places.ts), with what is said beside it and the cue it is about. */
 export type PointAt = Place & { say?: string; cue?: string | null };
 /** The window's answer to a place pointed at: rung, or why not (and what it did instead). */
 interface Pointed { ok: boolean; why: string; instead?: string }
 /** A sound the engine is playing, as `active()` lists it (with its loop regions held and armed). */
 type ActiveSound = Extract<ReturnType<CueEngine['active']>[number], { holding: unknown }>;
-/** A pending change (core/show/diff.js), whichever kind it is. */
+/** A pending change (core/show/diff.ts), whichever kind it is. */
 type AnyChange = { kind: string; id?: string; path?: string; label?: string; from?: unknown; to?: unknown; count?: number; fields?: FieldChange[] };
 /** A row of the cue list as the window draws it. */
 export interface Row { id: string; depth: number; parent: string | null; type: string; number: string; name: string; notes: string; color: string }
@@ -297,7 +297,7 @@ export type ViewCue = Cue & { hasGrid?: boolean; children?: ViewCue[] };
 export type ViewDoc = Omit<ShowDoc, 'lists'> & { lists: (Omit<CueList, 'cues'> & { cues: ViewCue[] })[] };
 /** A bus of the show's mixer. */
 type Bus = ShowDoc['settings']['audio']['buses'][number];
-/** One change to the show (core/show/ops.js), as `document.edit` takes them. */
+/** One change to the show (core/show/ops.ts), as `document.edit` takes them. */
 type EditOp = Parameters<ShowDocument['edit']>[0][number];
 /** What the modules are given of the host (`host` in each module's `create`). */
 export interface HostApi {
@@ -362,12 +362,12 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   let audioWin: Win | null = null;
   let pushPending = false;
   let ticker: ReturnType<typeof setInterval> | undefined;
-  // ── the show log (core/log/show-log.js): what happened as the show ran, in the show's logs folder, one file a sitting ──
+  // ── the show log (core/log/show-log.ts): what happened as the show ran, in the show's logs folder, one file a sitting ──
   const showLog = new ShowLog({ version: require('../../package.json').version });
   let goFrom = '', startFrom = '';  // who sent the GO, or what started a cue, while the engine is told (its own GO and START lines carry it)
   const FROM: Record<string, string> = { osc: 'OSC control', 'osc-command': 'an OSC show command', 'web-remote': 'the web remote', midi: 'a MIDI show command', msc: 'MIDI Show Control', backup: 'the main computer', hotkey: 'its hotkey', cart: 'the cart', assistant: 'the assistant', remote: 'a remote' };
   const fromText = (f?: string) => (f ? FROM[f] || String(f) : 'this window');
-  // double-GO protection, whichever way a GO or a trigger arrives (core/engine/go-guard.js)
+  // double-GO protection, whichever way a GO or a trigger arrives (core/engine/go-guard.ts)
   const goGuard = createGoGuard({ now: () => Date.now(), secs: () => document.doc.settings.go.doubleGoProtection });
   /** A cue started by something other than GO (its trigger, a cart, a remote): the same trigger again within the
    *  double-GO time is a bounce, and ignored. `how`: what started it, said in the log ("OSC /sm/thunder"). */
@@ -419,7 +419,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   const probeWaits = new Map<string, (secs: number) => void>();     // a file being measured before it is added -> its resolver
   const listeners = new Set<() => void>();
 
-  // Where a sound goes when not to its bus's pair (core/audio/routing.js): the cue's own outputs and eq, or, for a
+  // Where a sound goes when not to its bus's pair (core/audio/routing.ts): the cue's own outputs and eq, or, for a
   // cue being auditioned (V) in a show that has an audition pair, that pair.
   const audition = new routing.Audition();
   let lostFor = '', lostNow: ReturnType<typeof routing.lost> = [];
@@ -427,7 +427,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     const c: Partial<EngineCue> = engine.byId.get(key) || {};
     const own: { eq?: unknown; chain?: unknown; audition?: unknown; outputs?: unknown } = {};
     if (c.eq) own.eq = c.eq;
-    // its sound design (core/audio/chain.js): the chain, and the bytes of its reverb's impulse response if it names one
+    // its sound design (core/audio/chain.ts): the chain, and the bytes of its reverb's impulse response if it names one
     if (c.chain) { own.chain = c.chain; sendIr(c.chain); }
     designSent.set(key, JSON.stringify([c.chain || null, c.eq || null]));
     if (audition.take(key)) own.audition = routing.settingsOf(document.doc.settings.audio).audition;
@@ -436,7 +436,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   // ── sound design and the kinds of sound ──
   const guessWanted = new Set<string>();    // files being added with "sort new sounds by kind" on: only these are guessed at
-  const kindGuess = new Map<string, ReturnType<typeof kinds.guessKind>>();      // a file that has been listened to -> { kind, why, features } (core/audio/kinds.js)
+  const kindGuess = new Map<string, ReturnType<typeof kinds.guessKind>>();      // a file that has been listened to -> { kind, why, features } (core/audio/kinds.ts)
   const designSent = new Map<string, string>();     // a playing sound -> the chain and eq it was last told (an edit to either is heard at once)
   const irSent = new Set<string>();         // impulse-response files the audio window has been given
   /** A reverb that names an impulse-response file: its bytes to the audio window, once. */
@@ -461,7 +461,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       sendIr(c.chain);
       audioCmd({ op: 'design', key, chain: c.chain || null, eq: c.eq || null });
     }
-    // its lines (the envelope, its pan and its automation: core/audio/lanes.js), drawn while it plays: heard at once
+    // its lines (the envelope, its pan and its automation: core/audio/lanes.ts), drawn while it plays: heard at once
     for (const key of [...lanesSent.keys()]) if (!engine.running.has(key)) lanesSent.delete(key);
     for (const key of engine.running.keys()) {
       const c: Partial<EngineCue> = engine.byId.get(key) || {}, now = lanesKey(c);
@@ -500,7 +500,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   const audioCmd = (cmd: AudioCommand | LtcCmd) => { if (audioWin && !audioWin.isDestroyed() && state.audioReady) audioWin.webContents.send('audio-cmd', cmd); };
   // The file the sound is read from: the show's own, but for AIFF and CAF (which Chromium cannot read), a WAV copy
-  // of the same samples made beside the system's temporary files (core/audio/pcm-container.js).
+  // of the same samples made beside the system's temporary files (core/audio/pcm-container.ts).
   const copyFails = new Map<string, string>();      // a file that could not be copied -> why (said once)
   function playPath(file: string | undefined) {
     const abs = document.resolveFile(file);
@@ -562,18 +562,18 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // ── overrides: outputs held back for a rehearsal (this computer's choice, kept through a restart, and always shown) ──
   const HELD = (what: string) => `held back: ${what} is switched off for rehearsal (Tools ▸ Hold Back, or the chip in the title bar)`;
   const overrides = Object.fromEntries(OVERRIDES.map((o) => [o.id, !!(((getConfig() || {}).overrides || {})[o.id])]));
-  // ── a show from another computer (core/show/trust.js): its network features are held back until a person turns them on ──
+  // ── a show from another computer (core/show/trust.ts): its network features are held back until a person turns them on ──
   let away = false;
   const AWAY = 'held back: this show came from another computer, and its network features are off until you turn them on';
   const heldNet = () => (overrides.osc ? HELD('OSC out') : away ? AWAY : '');
   hub.hold(heldNet());
-  // the rig: the show's devices, whether each is there, and the readiness check (app/main/rig-service.js)
+  // the rig: the show's devices, whether each is there, and the readiness check (app/main/rig-service.ts)
   const rig = createRig({ hub, state, engine, overrides, HELD, held: heldNet, away: () => (away ? AWAY : ''), smoke, net, log: (l) => log(`[rig] ${l}`), notice: (t, ms) => notice(t, ms), changed: () => schedulePush(), cmd: (c) => cmd(c),
     document: () => document, facts: () => rigFacts(), sendMidi: (text, o) => sendMidi(text, o) });
   const isMtc = (b: ArrayLike<number>) => b[0] === 0xf1 || (b[0] === 0xf0 && b[1] === 0x7f && b[3] === 0x01);      // a quarter frame, or a full-frame message
   const ltcRuns = new Map<string, LtcCmd>();        // Timecode cue id -> the command that started its LTC
   let heldSaid = 0;
-  // ── the playback log: every sound that played, written down as it ends (core/engine/playlog.js) ──
+  // ── the playback log: every sound that played, written down as it ends (core/engine/playlog.ts) ──
   const playlogFile = () => (document.showDir ? path.join(document.showDir, 'logs', 'playback.csv') : null);
   const playlog = new PlayLog({ onEntry: (e) => {
     const file = playlogFile();
@@ -581,7 +581,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     try { fs.mkdirSync(path.dirname(file), { recursive: true }); if (!fs.existsSync(file)) fs.writeFileSync(file, CSV_HEAD + '\n'); fs.appendFileSync(file, csvLine(e) + '\n'); } catch (err) { log(`[playlog] ${(err as Error).message}`); }
   } });
   engine.skipLights = !!(getConfig() || {}).skipLights;
-  // The stage (the output window for Video, Text and Camera cues): app/main/stage.js. The engine tells it what to show.
+  // The stage (the output window for Video, Text and Camera cues): app/main/stage.ts. The engine tells it what to show.
   const stage = createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, log, test: smoke, engine, fileUrl, audioCmd: (c) => audioCmd(c), notice: (t, ms) => notice(t, ms), changed: () => schedulePush(),
     operatorWindow: () => { for (const wc of views) { const w = !wc.isDestroyed() && BrowserWindow.fromWebContents(wc); if (w) return w; } return null; } });
   engine.video = stage.hooks;
@@ -593,7 +593,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   function holdOut() { hub.hold(heldNet()); lighting.hold(!!overrides.dmx || away); }
   engine.on('change', () => { schedulePush(); decodeAhead(); });
 
-  // ── timecode and MIDI files: played out against the engine's clock (core/timecode/transport.js) ──
+  // ── timecode and MIDI files: played out against the engine's clock (core/timecode/transport.ts) ──
   // MIDI that must leave on time is handed to the audio window stamped with when it is due, as a time both
   // processes share (their clocks agree to within half a millisecond, measured); LTC is made there, as sound.
   // The engine's clock (performance.now()) as the wall clock's milliseconds, which is what this process and the audio
@@ -644,7 +644,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     settings: () => (away ? { ...(document.doc.settings.timecode || {}), source: 'off' } : document.doc.settings.timecode),
   });
 
-  /** A Network cue: one OSC message to its patch (or to a device, which may ask for each command to be sent again: rig-service.js). */
+  /** A Network cue: one OSC message to its patch (or to a device, which may ask for each command to be sent again: rig-service.ts). */
   function sendNetwork(message: string, cue?: EngineCue) {
     rig.send(cue && cue.patch ? cue.patch : null, message, { label: cue ? `${cue.number || ''} ${cue.name || ''}`.trim() : '', format: (cue && cue.format) || 'osc',
       faded: !!cue && (/#[vxy]#/.test(String(cue.message || '')) || Number(cue.duration) > 0) });       // (a value on its way somewhere is never sent twice)
@@ -820,7 +820,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     }
     engine.panicFade = Number(doc.settings.go.panicFade) >= 0 ? Number(doc.settings.go.panicFade) : 1;
     engine.limits = cleanLimits(doc.settings.audio.levels);
-    engine.busRules = kinds.rulesOf(doc.settings.audio);      // what the buses' kinds ask of a stop and a start (core/engine/sound-kinds.js)
+    engine.busRules = kinds.rulesOf(doc.settings.audio);      // what the buses' kinds ask of a stop and a start (core/engine/sound-kinds.ts)
     sendMixer();
     sendDesigns();
     readVoices();
@@ -847,7 +847,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     sendStrips();
     audioCmd({ op: 'masterDb', db: state.muted ? -60 : liveMaster !== undefined ? liveMaster : Number(a.masterDb) || 0 });
     audioCmd({ op: 'limiter', on: a.limiter !== false });
-    // ducking: by kind (music and ambience under voices), or an older show's one pair, as rules (core/audio/kinds.js)
+    // ducking: by kind (music and ambience under voices), or an older show's one pair, as rules (core/audio/kinds.ts)
     const rules = kinds.duckRules(a);
     // (only ducking by kind reads a voice ahead: an older show's pair listens to levels, as it always did)
     duckKeys = new Set(kinds.duckingOf(a) ? rules.flatMap((r) => r.keys) : []);
@@ -1036,7 +1036,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       default: break;
     }
   }
-  // ── the output device, watched (core/audio/device-watch.js decides; this carries it out and says so) ──
+  // ── the output device, watched (core/audio/device-watch.ts decides; this carries it out and says so) ──
   let outWatch: WatchState = { wanted: null, fallback: null };
   const sinkTo = (id: string) => { if (smoke) onAudioEvent({ type: 'sink', id, ok: true, fallback: true }); else audioCmd({ op: 'sink', id, fallback: true }); };      // (a test run opens no device, ever)
   function watchOutput(event: WatchEvent) {
@@ -1096,7 +1096,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   function clearLaunches() { for (const l of launches.values()) clearTimeout(l.timer); launches.clear(); }
   /** A launch from the Live view, now: the clip (or the scene) takes over the tracks it plays on, unless the show
-   *  lets clips overlap. What it takes over is faded out under it and stopped (core/audio/launch.js). */
+   *  lets clips overlap. What it takes over is faded out under it and stopped (core/audio/launch.ts). */
   function launchNow(id: string) {
     const cue = engine.byId.get(id);
     if (!cue) return;
@@ -1153,7 +1153,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // ── what the views are sent ───────────────────────────────────────────
   let rowsFor = -1, rows: Row[] = [], labels: Record<string, string> = {}, docForView: ViewDoc | null = null, docProblems: Problem[] = [], triggerRows: TriggerRow[] = [], carts: Record<string, ReturnType<typeof cartOf.layout>> = {};
   let fadeStops: string[] = [];               // Fade cues that stop their target because they were left alone (a fade to silence: cueTypes.stopsTarget)
-  let liveUsed: ReturnType<typeof usesLive> = [];                // what in this show came from the Live view (core/show/uses-live.js): said when that view is hidden
+  let liveUsed: ReturnType<typeof usesLive> = [];                // what in this show came from the Live view (core/show/uses-live.ts): said when that view is hidden
   function derive() {
     if (rowsFor === rev) return;
     rowsFor = rev;
@@ -1177,7 +1177,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     liveUsed = usesLive(doc);
     for (const [file, secs] of midiFiles) if (!(secs > 0)) show.walk(doc, (c) => { if (c.type === 'midifile' && c.file === file) docProblems.push({ id: c.id, level: 'error', why: 'its file is missing, or is not a MIDI file' }); });
     triggerRows = triggersOf(doc);
-    // each cart's buttons, decided in one place (core/show/cart.js): list id -> { rows, columns, cells, extra }
+    // each cart's buttons, decided in one place (core/show/cart.ts): list id -> { rows, columns, cells, extra }
     carts = Object.fromEntries(doc.lists.filter((l) => l.cart).map((l) => [l.id, cartOf.layout(l)]));
     // the beat grids are the engine's business; the view gets the cues without them
     const strip = (c: Cue): ViewCue => { const { beats, downbeats, ...rest } = c; return { ...rest, ...(beats ? { hasGrid: true } : {}), ...(c.children ? { children: c.children.map(strip) } : {}) }; };
@@ -1247,7 +1247,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       noticeAt: state.notice && state.notice.until > Date.now() ? state.notice.at : 0,   // (the page shows whichever was said last: this or its own)
     };
   }
-  /** What only the running app knows, for the readiness check (core/rig/check.js `items`). */
+  /** What only the running app knows, for the readiness check (core/rig/check.ts `items`). */
   function rigFacts() {
     const label = (id: string) => (state.devices.find((d) => d.id === id) || {}).label || (id === 'default' || !id ? 'this computer’s default output' : String(id));
     const files = new Set<string>(), broken: { id: string; why: string }[] = [];
@@ -1416,7 +1416,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       }
       case 'launch-q': state.launchQ = ['none', 'beat', 'bar'].includes(c.q) ? c.q : 'bar'; break;
       case 'tempo-find': return findTempos(c).catch((err) => ({ error: err.message }));
-      // a tempo changed by hand in the Clip view: a section's bpm or beats in a bar, "1 is here", a new section (core/audio/tempo.js)
+      // a tempo changed by hand in the Clip view: a section's bpm or beats in a bar, "1 is here", a new section (core/audio/tempo.ts)
       case 'tempo-edit': {
         const cue = show.index(document.doc).byId.get(c.id);
         if (!cue || cue.type !== 'audio' || !cue.tempo) return { error: 'that sound has no tempo yet' };
@@ -1464,7 +1464,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         if (wr && wr.enabled && !String(wr.key || '').trim()) document.edit([{ op: 'show.set', path: 'modules.web-remote.key', value: remoteKey() }], { label: 'web remote key' });
         return r;
       }
-      // the cue clipboard (core/show/clipboard.js): this computer's, so it is still there when another show is opened
+      // the cue clipboard (core/show/clipboard.ts): this computer's, so it is still there when another show is opened
       case 'clip-copy': {
         clip = clipboard.take(document.doc, c.ids || [], { showDir: document.showDir, cut: !!c.cut });
         if (!clip.cues.length) { clip = null; return { error: 'select a cue first' }; }
@@ -1494,7 +1494,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         if (!AUDIO_EXT.test(String(c.path || ''))) return { error: 'not a sound file: wav, aiff, mp3, m4a, flac or ogg' };
         return document.edit([{ op: 'cue.set', id: cue.id, props: { file: adopt(c.path) } }], { label: 'file' });
       }
-      // cue templates (core/show/templates.js): new cues of this cue's type start like it, or (clear) plain again
+      // cue templates (core/show/templates.ts): new cues of this cue's type start like it, or (clear) plain again
       case 'template': {
         const cue = c.id ? show.index(document.doc).byId.get(c.id) : null;
         const type = cue ? cue.type : c.type;
@@ -1537,7 +1537,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         sendStrips();
         break;
       }
-      // ── the desk played from keys and a controller (settings.live.map; core/audio/desk-map.js) ──
+      // ── the desk played from keys and a controller (settings.live.map; core/audio/desk-map.ts) ──
       // a control moved by a controller: heard and shown, and not the show's until a hand writes it
       case 'desk-live': {
         const a = document.doc.settings.audio;
@@ -1689,7 +1689,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'reject': document.reject(c.id); break;
       case 'ask': if (!assistant) return { error: 'the assistant is not available' }; agentSessions.delete('app');      // (a draft the last turn edited and never proposed does not carry into this one)
         return assistant.ask(c.text, { document, engine, rig: rig.service, ui: pointer, canApply: () => state.mode !== 'show' });
-      // pointing at a place in the window (core/ui/places.js): the assistant's, or a test's; `pointed` is the window's answer
+      // pointing at a place in the window (core/ui/places.ts): the assistant's, or a test's; `pointed` is the window's answer
       case 'point': { const r = require('../../core/ui/places').resolve(c.target, { doc: document.doc, cue: c.cue || null }); if (!r.ok) return { error: r.why }; if (r.place.sel === null) return { ok: false, words: r.place.words }; return pointer.point({ ...r.place, say: String(c.say || '').slice(0, 80), cue: c.cue || null }); }
       case 'pointed': pointer.answered(c); break;
       case 'assistant-reset': if (assistant) assistant.reset(); agentSessions.delete('app'); break;
@@ -1720,7 +1720,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         log(`[override] ${c.what} out ${overrides[c.what] ? 'HELD BACK' : 'sent again'}`);
         return { overrides: { ...overrides } };
       }
-      // timed backups (core/show/backups.js): the list, one taken now, and going back to one (an edit: undoable, unsaved)
+      // timed backups (core/show/backups.ts): the list, one taken now, and going back to one (an edit: undoable, unsaved)
       case 'backups': return { backups: backupDir() ? backups.list(backupDir()!).map(({ name, day, time, bytes }) => ({ name, day, time, bytes })) : [], dir: backupDir() };
       case 'backup-now': { const b = backupNow(); return { backup: b ? { name: b.name, day: b.day, time: b.time } : null }; }
       case 'restore-backup': {
@@ -1729,7 +1729,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         return { restored: changed };
       }
       // Run from here: what would be going on at a cue had the show run to it, said first (`preview`), then started
-      // (core/engine/run-from.js). A rehearsal's tool: Show mode refuses it, so a show running is never reset by it.
+      // (core/engine/run-from.ts). A rehearsal's tool: Show mode refuses it, so a show running is never reset by it.
       case 'run-from': {
         if (state.mode === 'show') return { error: 'Show mode: Run from here is for rehearsals. Switch to Edit.' };
         const asked = idOf(c);
@@ -1748,7 +1748,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         rowsFor = -1;
         return { ok: true, text: p.text, playhead: engine.playhead };
       }
-      // Check the show: everything that would go wrong in it, without playing anything (core/show/check.js)
+      // Check the show: everything that would go wrong in it, without playing anything (core/show/check.ts)
       case 'check': { const snap = snapshot(false); const lines = showCheck.checkShow(document.doc, { problems: snap.problems, rig: snap.rig.items, triggers: triggerRows }); return { lines, summary: showCheck.summary(lines) }; }
       // the Log view: the lines after `since`, and where the sitting's file is
       case 'log-tail': return { lines: showLog.since(Number(c.since) || 0, 1000), file: showLog.file ? `${showLog.file}.log` : null, dir: showLog.dir };
@@ -1811,7 +1811,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   /** With "Sort new sounds by kind" on (settings.audio.sortNew; it is off unless a person turned it on), and no
    *  bus asked for: each sound is listened to first and put on the show's first bus of the kind it sounds
-   *  like (core/audio/kinds.js `guessKind`: speech, a steady pulse, short, long and steady), and what was guessed
+   *  like (core/audio/kinds.ts `guessKind`: speech, a steady pulse, short, long and steady), and what was guessed
    *  is shown for the person to confirm or change (`state.added`: the chooser in the window). A guess is never
    *  silent, and a template that names a bus is kept over it. */
   function importSorted(paths: string[], opts: ImportOptions = {}): HostResult | Promise<HostResult> {
@@ -1905,7 +1905,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
 
   // ── opening shows ─────────────────────────────────────────────────────
-  // which shows are this computer's own (core/show/trust.js): kept in config.json as `shows`
+  // which shows are this computer's own (core/show/trust.ts): kept in config.json as `shows`
   let shows: TrustRecord | null = null;
   function record() {
     if (shows) return shows;
@@ -1951,7 +1951,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     log(`[show] imported ${report.source}: ${report.counts.cues} cues, ${report.issues.length} notes`);
     schedulePush();
   }
-  /** A new show started from a template (core/show/show-templates.js): open, untitled, nothing saved. */
+  /** A new show started from a template (core/show/show-templates.ts): open, untitled, nothing saved. */
   function openTemplate(doc: ShowDoc) { madeHere(); bind(new ShowDocument({ doc })); saveConfig({ lastShow: null }); log(`[show] new from a template: ${doc.lists.reduce((n, l) => n + l.cues.length, 0)} cues`); }
   /** Save an untitled show (or a copy of this one) to a new folder and carry on there. */
   function saveAs(showDir: string) {
@@ -1976,7 +1976,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     return doc;
   }
 
-  // ── pointing: the assistant rings a place in the window (show_in_app, core/ui/places.js) ───────────────
+  // ── pointing: the assistant rings a place in the window (show_in_app, core/ui/places.ts) ───────────────
   // The place goes out with the state; the main window brings it into view, rings it, and says (`pointed`) whether it
   // could. Never in Show mode: nothing is drawn over the show while it runs.
   const pointer = (() => {
@@ -2050,7 +2050,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     try { if (file && fs.existsSync(file)) return fs.readFileSync(file, 'utf8'); } catch { /* fall through to memory */ }
     return toCsv(playlog.entries());
   }
-  /** This show as a template, and its settings as a file (core/show/show-templates.js). */
+  /** This show as a template, and its settings as a file (core/show/show-templates.ts). */
   const templateOf = (name: string) => showTemplates.templateOf(document.doc, { name, showDir: document.showDir });
   const settingsFile = () => showTemplates.settingsOf(document.doc);
 
@@ -2100,7 +2100,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     if (away) return;                 // (a show from another computer: no clock trigger until it is turned on)
     const day = now.toDateString();
     if (day !== clockDay) { clockDay = day; clockFired = new Set<string>(); }
-    // (which are due, and that a time long past does not fire: core/show/triggers.js)
+    // (which are due, and that a time long past does not fire: core/show/triggers.ts)
     for (const c of clockDue(document.doc, now, clockFired)) {
       if (!engine.byId.has(c.id)) continue;
       log(`[clock] ${c.clockTrigger} fires ${c.number || c.id}`); notice(`${c.clockTrigger}: ${c.number ? `${c.number} · ` : ''}${labels[c.id] || c.name || 'a cue'} started by its clock`, 6000); startBy(c.id, `the clock, ${c.clockTrigger}`);
@@ -2116,7 +2116,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     ticker = setInterval(() => { if (engine.active().length || state.level) schedulePush(); }, TICK_MS);
     bind(document);                 // the untitled show the app starts on is a show like any other: its edits reach the engine
   }
-  /** The show log's last lines as a problem report may carry them: no cue's name and no file's (core/log/show-log.js). */
+  /** The show log's last lines as a problem report may carry them: no cue's name and no file's (core/log/show-log.ts). */
   function reportLog(count = 200) {
     const names = [];
     show.walk(document.doc, (c) => { names.push(c.name, labels[c.id]); if (c.file) names.push(path.basename(String(c.file)), String(c.file)); });
@@ -2142,7 +2142,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
            showLog, reportLog };      // (a test run sends and hears nothing: this stands in for a device's answer)
 }
 
-/** The show host, as main.js and the modules have it. */
+/** The show host, as main.ts and the modules have it. */
 export type Host = ReturnType<typeof createHost>;
 /** What the host pushes to each window on 'ec-state' (`window.ec.onState`): everything on a show's first push and
  *  whenever the document has changed since that window was last sent it (`doc`, `labels`, …), less otherwise. */

@@ -11,7 +11,7 @@
 // It sits beside the cue list, not in place of it: GO, the playhead and Panic work here as they do there.
 //
 // Map (in the control bar) gives a key or a MIDI control to anything marked `data-map` (a clip, a fader, a knob):
-// click the control, then press the key or move the controller. The targets are core/audio/desk-map.js's.
+// click the control, then press the key or move the controller. The targets are core/audio/desk-map.ts's.
 import { html, useState, useRef, useEffect, cmd, ec, setCue, clock, db, cx } from './lib.js';
 import * as Tidy from './tidy.js';
 import { Waveform, usePin, PinControls, Was, toPos, toDb } from './Sidebar.js';
@@ -371,7 +371,7 @@ export function Live({ s, list, byId, pending, editMode, say }: { s: State; list
   const root = useRef<HTMLDivElement>(null);
   const buses: MixBus[] = m.buses;
   const ids = buses.map((b) => b.id);
-  // where a cue with no bus (or one that is gone) plays: as the engine decides it (core/show/show.js)
+  // where a cue with no bus (or one that is gone) plays: as the engine decides it (core/show/show.ts)
   const busOf = (cue: Partial<Cue>) => (typeof cue.bus === 'string' && ids.includes(cue.bus) ? cue.bus : ids[ids.length > 1 ? 1 : 0]);
   const audio: Playing[] = e.active.filter((a) => a.kind === 'audio');
   const activeOf = (id: string) => audio.find((a) => a.id === id) || null;

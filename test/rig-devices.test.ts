@@ -1,4 +1,4 @@
-// Devices: the equipment a show talks to, as part of the show (core/rig/devices.js; docs/specs/15-assistant-and-rig.md, section 3).
+// Devices: the equipment a show talks to, as part of the show (core/rig/devices.ts; docs/specs/15-assistant-and-rig.md, section 3).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as show from '../core/show/show';

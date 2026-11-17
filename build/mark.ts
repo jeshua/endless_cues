@@ -13,7 +13,7 @@
  * use which file.
  *
  * The site's copies (site/… below) are written into the website, which lives in the service repository
- * (bin/site-dir.js: ../endless_cues_service/site beside this repo, or EC_SITE_DIR). Without it they are skipped,
+ * (bin/site-dir.ts: ../endless_cues_service/site beside this repo, or EC_SITE_DIR). Without it they are skipped,
  * and it says so.
  */
 import * as fs from 'fs';

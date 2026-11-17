@@ -1,5 +1,5 @@
 /** How cues run one after another: lists with their own playheads, second triggers, ducks, Reset, Target and Load
- *  cues, a Devamp that starts the next cue. (core/engine/sequencing.js and the parts of cue-engine.js it hangs on.) */
+ *  cues, a Devamp that starts the next cue. (core/engine/sequencing.ts and the parts of cue-engine.ts it hangs on.) */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rig, build } from './helpers';

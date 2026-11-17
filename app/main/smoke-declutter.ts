@@ -1,5 +1,5 @@
 /**
- * The calmer window, run by smoke.js near its end. Checked here: the inspector's six colours and "…", a colour from
+ * The calmer window, run by smoke.ts near its end. Checked here: the inspector's six colours and "…", a colour from
  * the wheel drawn in the list, the list's right-click Colour menu; the add-cue bar's five types and its "+" list that
  * narrows as you type; Save carrying the count, the ⋯ menu (Versions, the side panel's Network); Panic large and
  * Reset only in Edit; the side panel's one line when nothing plays; empty columns left out and held through Show

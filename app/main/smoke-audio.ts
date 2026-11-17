@@ -1,5 +1,5 @@
 /**
- * The smoke run's checks of what one sound can do (smoke.js calls this): fade shapes, rate, the level envelope,
+ * The smoke run's checks of what one sound can do (smoke.ts calls this): fade shapes, rate, the level envelope,
  * the level limits, putting a fade back, the monitor feed, the output device going away, every file format, and
  * the waveform a sound is edited on.
  *
@@ -170,7 +170,7 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
   await page(`document.querySelector('.wavedit [data-zoom="in"]').click()`);
   check('the waveform zooms in', await until(() => page(`/×2/.test(document.querySelector('.wavedit .wavebar').textContent)`), 2000));
   await page(`document.querySelector('.wavedit [data-zoom="fit"]').click()`);
-  // the lines, the markers and the loop regions on it are smoke-lanes.js's
+  // the lines, the markers and the loop regions on it are smoke-lanes.ts's
   await (require('./smoke-lanes') as typeof import('./smoke-lanes')).editing({ host, check, until, page, sleep, cue, edit: (n) => { edits += n; } });
   host.cmd({ op: 'fire', id: ad6 });
   await sleep(700);

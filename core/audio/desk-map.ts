@@ -55,7 +55,7 @@ function onOfKey(key: unknown, { meta = false, ctrl = false, alt = false } = {})
   if (meta || ctrl || alt || !k || RESERVED.has(k) || k.length > 12) return null;
   return `key ${k}`;
 }
-/** A decoded MIDI message (core/net/midi.js) as an `on` and the value it carries (null: not something to map). */
+/** A decoded MIDI message (core/net/midi.ts) as an `on` and the value it carries (null: not something to map). */
 function onOfMidi(msg: MidiIn | null | undefined) {
   if (!msg) return null;
   const ch = msg.channel || 1;

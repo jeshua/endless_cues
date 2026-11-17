@@ -9,11 +9,11 @@
  *  - a bus whose sounds are left alone (`noDuck`: microphones): they are left out of another cue's "Duck others while running".
  *  - a Fade cue's `chainTo`: settings of its target's sound design moved over the Fade's time (a filter sweep).
  *
- * `engine.busRules` is { busId: { stopFade, oneAtATime, live } } (core/audio/kinds.js `rulesOf`; the host sets
+ * `engine.busRules` is { busId: { stopFade, oneAtATime, live } } (core/audio/kinds.ts `rulesOf`; the host sets
  * it from the show; `live` is the bus's `noDuck`). Empty, as it is for a new show and for every show that has
  * switched none of these on, nothing here does anything.
  *
- * These are methods of CueEngine (cue-engine.js installs them).
+ * These are methods of CueEngine (cue-engine.ts installs them).
  */
 import type { CueEngine, EngineCue, BusRule } from './cue-engine';
 export function soundKinds({ SILENT_DB, busOf }: { SILENT_DB: number; busOf: (cue: { id: string; bus?: string }) => string }) {

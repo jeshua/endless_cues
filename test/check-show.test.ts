@@ -1,4 +1,4 @@
-// Check the show (core/show/check.js): what would go wrong, found without playing anything.
+// Check the show (core/show/check.ts): what would go wrong, found without playing anything.
 import test from 'node:test';
 import assert from 'node:assert';
 import { build } from './helpers';

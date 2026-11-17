@@ -1,5 +1,5 @@
 /**
- * The cue list as it is looked at (app/renderer/list-view.js): chains of continues, what one GO starts, the line drawn
+ * The cue list as it is looked at (app/renderer/list-view.ts): chains of continues, what one GO starts, the line drawn
  * down the linked rows, what a deletion leaves linked, what Find unfolds, and the zoomed-out list's arithmetic.
  */
 import test from 'node:test';
@@ -8,7 +8,7 @@ import * as LV from '../app/renderer/list-view';
 import { rig, build } from './helpers';
 const flatten = (cues: LV.ListCue[], shut: Set<string>) => flattenRows(cues, shut);
 
-// the rows as the window draws them (app/renderer/lib.js `flatten`, which is an ES module there)
+// the rows as the window draws them (app/renderer/lib.ts `flatten`, which is an ES module there)
 function flattenRows(cues: LV.ListCue[] | undefined, collapsed: Set<string>, depth = 0, out: LV.ListRow[] = []) {
   let shut = false;
   for (const c of cues || []) {

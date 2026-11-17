@@ -1,4 +1,4 @@
-// A newer version, in one line in the title bar (a pill in the accent, its one action a primary button) (app/main/updates.js decides when there is one). Never in
+// A newer version, in one line in the title bar (a pill in the accent, its one action a primary button) (app/main/updates.ts decides when there is one). Never in
 // Show mode or while anything plays: the line is not drawn, and the app does nothing about updates meanwhile.
 import { html, useState, useEffect, ec } from './lib.js';
 import type { State } from './lib.js';

@@ -60,7 +60,7 @@ export interface CueList {
   cart?: Cart;
 }
 
-/** A bus: where a cue's sound goes. `kind` is a label (core/audio/kinds.js); the rest is said only when used. */
+/** A bus: where a cue's sound goes. `kind` is a label (core/audio/kinds.ts); the rest is said only when used. */
 export interface Bus {
   id: string;
   name: string;
@@ -79,7 +79,7 @@ export interface Bus {
   stopFade?: number;
   oneAtATime?: number;
   noDuck?: boolean;
-  /** its tint in the Live view: one of the cue colours (cue-types.js `COLORS`) */
+  /** its tint in the Live view: one of the cue colours (cue-types.ts `COLORS`) */
   color?: string;
 }
 
@@ -102,7 +102,7 @@ export interface Patch {
   destinations?: Destination[];
 }
 
-/** One of a device command's parameters (core/rig/devices.js PARAM_FIELDS). */
+/** One of a device command's parameters (core/rig/devices.ts PARAM_FIELDS). */
 export interface DeviceParam {
   key: string;
   label: string;
@@ -120,7 +120,7 @@ export interface DeviceCommand { id: string; label: string; template: string; pa
 export interface DeviceAlive { how: 'none' | 'ask' | 'heartbeat'; send?: string; reply?: string; every?: number; hears?: string; within?: number }
 /** What is read out of what a device says about itself (REPORT_FIELDS). */
 export interface DeviceReport { key: string; label: string; from: string; arg: number; unit?: string; warnBelow?: number; warnAbove?: number; none?: unknown }
-/** A piece of the show's equipment (settings.rig.devices), as core/rig/devices.js `clean` leaves it. */
+/** A piece of the show's equipment (settings.rig.devices), as core/rig/devices.ts `clean` leaves it. */
 export interface Device {
   id: string;
   name: string;
@@ -156,7 +156,7 @@ export interface ShowCommands { go: string; panic: string; pause: string; resume
 /** How one kind dips under the ones listened to (settings.audio.ducking.under). */
 export interface DuckUnder { depth: number; attack: number; hold: number; release: number; range: 'voice' | 'all' }
 
-/** The show's settings (show.json `settings`): `defaultSettings()` in show.js, and what is written only when used. */
+/** The show's settings (show.json `settings`): `defaultSettings()` in show.ts, and what is written only when used. */
 export interface Settings {
   go: { doubleGoProtection: number; panicFade: number };
   audio: {
@@ -196,7 +196,7 @@ export interface Settings {
 /** Who may do what over OSC: a passcode and what it allows. */
 export interface Passcode { code: string; view?: boolean; edit?: boolean; control?: boolean }
 
-/** The show's modules (show.json `modules`): `defaultModules()` in show.js. */
+/** The show's modules (show.json `modules`): `defaultModules()` in show.ts. */
 export interface Modules {
   'osc-control': { enabled: boolean; passcode: string; replyPort: number; passcodes?: Passcode[]; noPasscode?: { view?: boolean; edit?: boolean; control?: boolean } };
   'show-feedback': { enabled: boolean; patch: string; prefix: string };

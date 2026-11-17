@@ -8,7 +8,7 @@ import { TextBox } from './Inspector.js';
 import type { State, CueIndex } from './lib.js';
 import type { LightUniverse, LightInstrument, LightGroup } from '../../core/light/patch';
 
-/** The lights as the host has them now (core/light/lighting.js `snapshot`). */
+/** The lights as the host has them now (core/light/lighting.ts `snapshot`). */
 type LightState = State['light'];
 /** An instrument as the dashboard shows it: its level, its parameters and where it is patched. */
 type Instrument = LightState['instruments'][number];

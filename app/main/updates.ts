@@ -1,5 +1,5 @@
 /**
- * Updates, the app's side: which updater runs (core/update/updates.js decides when it may do anything), the
+ * Updates, the app's side: which updater runs (core/update/updates.ts decides when it may do anything), the
  * window's line about a new version, and Help ▸ Check for Updates….
  *
  *   update-state                     what the window shows now
@@ -134,7 +134,7 @@ function createAppUpdates({ app, host, getConfig, saveConfig, log, version, test
   return api;
 }
 
-/** New versions, as main.js has them. */
+/** New versions, as main.ts has them. */
 export type AppUpdates = ReturnType<typeof createAppUpdates>;
 
 const currentOf = () => current;

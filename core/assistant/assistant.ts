@@ -1,7 +1,7 @@
 /**
  * The assistant: a conversation that ends in proposals.
  *
- * `ask(text)` runs one turn: the model reads the show (tools.js), stages a
+ * `ask(text)` runs one turn: the model reads the show (tools.ts), stages a
  * proposal if the request calls for one, and replies. Nothing here can change
  * the show: accepting a proposal is the person's act, in the app.
  *
@@ -9,7 +9,7 @@
  * in a show file):
  *
  *   cloud       the Endless Cues assistant: an account (signed in with the device
- *               flow, cloud.js); requests go through the Endless Cues service,
+ *               flow, cloud.ts); requests go through the Endless Cues service,
  *               which holds the model key and chooses the model. Free in the beta.
  *   anthropic   your own Anthropic key, straight from this computer.
  *   openrouter  your own OpenRouter key: any model OpenRouter carries.
@@ -19,8 +19,8 @@
  *               (LM Studio, Groq, Gemini's compatible endpoint, a company proxy…).
  *   claude-code Claude Code, if it is installed on this computer: it does the thinking with the
  *   codex       account it is already signed in to (no key here), and uses Endless Cues' tools
- *               through the MCP server (mcp.js). Codex likewise.
- *   demo        no model at all: the built-in helper (helper.js), which does a few set jobs
+ *               through the MCP server (mcp.ts). Codex likewise.
+ *   demo        no model at all: the built-in helper (helper.ts), which does a few set jobs
  *               through the same tools (cues from a folder, a device from a model, "is
  *               everything ready?"). Shown as "Built-in helper"; the id stays `demo`.
  *   off         no assistant.
@@ -64,7 +64,7 @@ export interface Call { system: string; tools: Tool[]; messages: Message[]; ctx?
 export type ProviderError = Error & { status?: number; code?: string; missing?: boolean };
 /** The month, as the Endless Cues service's answers say it. */
 export interface CloudUsage { tier?: string; used?: number; resets?: string; asks?: number; of?: number }
-/** How to start the MCP server an agent is given (bin/ec-mcp.js). */
+/** How to start the MCP server an agent is given (bin/ec-mcp.ts). */
 export interface McpServer { command: string; args: string[]; env?: Record<string, string> }
 /**
  * Who answers. A model is called one step at a time (`create`); an agent that is installed here (Claude Code, Codex)
@@ -138,7 +138,7 @@ function sdkProvider(name: string, clientOptions?: ClientOptions): Provider {
         fallbacks: 'default',
         // the instructions and the cue reference never change within a session: cached
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-        // and so is the conversation, up to its newest message: it only ever grows at the end (history.js), so each
+        // and so is the conversation, up to its newest message: it only ever grows at the end (history.ts), so each
         // call reads all of it before from the cache
         cache_control: { type: 'ephemeral' },
         tools: tools as BetaToolUnion[],
@@ -284,7 +284,7 @@ function cloudProvider({ endpoint = CLOUD_ENDPOINT, token, version = '', fetchIm
 
 // ── Claude Code and Codex: an agent that is already installed does the turn ─────────────
 // These do not answer one model call at a time: they run their own loop, calling Endless Cues' tools over MCP
-// (bin/ec-mcp.js → the app's bridge), and come back with what they have to say. So a provider of this kind has
+// (bin/ec-mcp.ts → the app's bridge), and come back with what they have to say. So a provider of this kind has
 // `turn()` instead of `create()`. They get only our tools: no shell, no files.
 const TOOL_NAMES = TOOLS.map((t) => t.name);      // (from the one table, so the allow-list can never fall behind it)
 const CLI: Record<string, { label: string; bin: string }> = {
@@ -360,7 +360,7 @@ function cliProvider(name: string, { mcpServer, spawn = (require('child_process'
   };
 }
 
-/** No model: the built-in helper (helper.js). The name is kept for the tests and the configurations that have it. */
+/** No model: the built-in helper (helper.ts). The name is kept for the tests and the configurations that have it. */
 function demoProvider(): Provider { return (require('./helper') as typeof import('./helper')).helperProvider(); }
 
 /** The provider a configuration asks for, or null with the reason it cannot be used yet. A key typed into
@@ -401,7 +401,7 @@ function missingFor(config: AssistantConfig = {}, env: NodeJS.ProcessEnv = proce
 function createAssistant({ config = {}, log = () => {}, changed = () => {}, provider = null }: { config?: AssistantConfig; log?: (line: string) => void; changed?: () => void; provider?: Provider | null } = {}) {
   let cfg = { ...config };
   let active = provider || providerFor(cfg);
-  let messages: Message[] = [];            // what the model is sent: append-only, a message once sent is never changed (history.js)
+  let messages: Message[] = [];            // what the model is sent: append-only, a message once sent is never changed (history.ts)
   let told: history.Sent | null = null;              // what `messages` has told the model of the show so far (history.note's state)
   let transcript: TranscriptLine[] = [];          // what the person sees: { role, text, proposal?, error? }
   let busy = false;
@@ -459,7 +459,7 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
       ? `\n<waiting_for_review>A change you proposed is still waiting for the person to accept or reject: “${waiting.summary}”. It is not in the show yet, but the outline above and your draft already include it. If this request adds to it or adjusts it, edit and call propose_changes: the new proposal takes its place and carries both. If the person wants something else instead of it, undo its parts in your draft first.</waiting_for_review>`
       : pending ? `\n<waiting_for_review>A change is still waiting for the person to accept or reject: “${pending.summary}”. It is NOT in the show or in the outline above, and a new proposal replaces it.</waiting_for_review>` : '';
     // the show as it is at this moment travels with the question: the whole outline the first time, then only what
-    // changed since the conversation last said (earlier messages are never edited: history.js says why)
+    // changed since the conversation last said (earlier messages are never edited: history.ts says why)
     const now = outline(waiting ? waiting.doc : document.doc, { engine, rig: opts.rig || null, showDir: document.showDir });
     const sketch = `<show_outline>\n${now}\n</show_outline>${about}`;
     const wasTold = told;
@@ -538,10 +538,10 @@ function createAssistant({ config = {}, log = () => {}, changed = () => {}, prov
     /** A change proposed by an agent the person is running themselves (Claude Code in a terminal, say). */
     noteExternal(client: string, summary: string, applied: boolean) { if (busy) return; transcript.push({ role: 'assistant', text: `${client} proposed a change: ${summary}`, external: true, applied }); changed(); },
     get busy() { return busy; },
-    /** What the app knows of the Endless Cues account (main.js tells it): signed in as, a sign-in under way, this month. null forgets it. */
+    /** What the app knows of the Endless Cues account (main.ts tells it): signed in as, a sign-in under way, this month. null forgets it. */
     setAccount(patch: Account | null) { account = patch === null ? null : { ...(account || {}), ...patch }; changed(); },
     configure(next: AssistantConfig) { cfg = { ...cfg, ...next }; active = providerFor(cfg); messages = []; told = null; changed(); return cfg; },
-    /** `ctx` ({ document, engine, rig, imported }), when the host gives it, adds `first`: what the drawer shows before the first message (starters.js). */
+    /** `ctx` ({ document, engine, rig, imported }), when the host gives it, adds `first`: what the drawer shows before the first message (starters.ts). */
     status(ctx: StatusContext | null = null) {
       const provider = active ? active.name : 'off';
       const out: AssistantStatus = { available: !!active, provider, label: active && active.label ? active.label : (CLI[provider] || COMPATIBLE[provider] || {}).label || '', model: active && COMPATIBLE[active.name] ? cfg.model : '', busy, activity: busy ? activity.slice(-6) : [], autoApply: !!cfg.autoApply, transcript: transcript.slice(-60), signedIn: !!cfg.token,

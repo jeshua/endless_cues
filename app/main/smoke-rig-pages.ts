@@ -1,5 +1,5 @@
 /**
- * The smoke run's checks of the Rig's pages (docs/specs/15-assistant-and-rig.md, section 5; called from smoke.js):
+ * The smoke run's checks of the Rig's pages (docs/specs/15-assistant-and-rig.md, section 5; called from smoke.ts):
  * the view switch and its page, the device editor, Try, the checklist, Show mode, a Device cue's row, the review
  * card's devices and files, the assistant drawer with no model, and Space on the Rig page.
  *
@@ -8,7 +8,7 @@
  * session, never the app as a person starts it), so that a page no equipment is here to produce can be drawn and
  * pictured: a rig in four states at once, a prop that answered a look (a smoke run sends nothing, so nothing
  * answers), and the first screen of shows this run does not build. Everything else below is checked against what
- * the host really pushes: the rows of core/rig/check.js, the assistant's own first screen, the kit's own options.
+ * the host really pushes: the rows of core/rig/check.ts, the assistant's own first screen, the kit's own options.
  */
 import * as fs from 'fs';
 import * as os from 'os';

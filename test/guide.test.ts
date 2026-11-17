@@ -1,4 +1,4 @@
-/** The hand-over (core/assistant/guide.js): the guide a coding agent reads first, written from the show. */
+/** The hand-over (core/assistant/guide.ts): the guide a coding agent reads first, written from the show. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

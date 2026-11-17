@@ -47,7 +47,7 @@ const fail = (text: string): never => { console.error(text); process.exit(1); };
 function door() {
   try { return JSON.parse(fs.readFileSync(path.join(dir, 'door.json'), 'utf8')); } catch { return null; }
 }
-/** What the app's drive answers (app/main/drive.js). */
+/** What the app's drive answers (app/main/drive.ts). */
 interface Answer { text?: string; shot?: string; error?: string }
 
 function send(c: Record<string, unknown>) {

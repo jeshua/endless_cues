@@ -23,7 +23,7 @@
  *   a session    /connect <passcode>  /thump  /updates 1  /forgetMeNot 1  /disconnect
  *                /alwaysReply 1  /udpReplyPort <port>
  *   follow it    /listen  /listen/<event>  /listen/<event>/<field>  /ignore…  /eventFormat <text>
- *                (QLab's show control broadcast: core/net/qlab-events.js)
+ *                (QLab's show control broadcast: core/net/qlab-events.ts)
  *
  * A "/workspace/<id>" prefix is accepted and ignored. A message that asks for something, or that is
  * refused, gets a QLab-style reply: "/reply/<address>" with one string, JSON { workspace_id, address,
@@ -47,7 +47,7 @@
  * does nothing.
  *
  * It listens on the app's one OSC input port (Settings ▸ Network), through the network hub
- * (core/net/hub.js), so everything it hears is in the OSC monitor.
+ * (core/net/hub.ts), so everything it hears is in the OSC monitor.
  *
  * docs/specs/06-control-surfaces.md has the whole table, and what is not covered.
  */
@@ -633,7 +633,7 @@ export function create({ log, changed, host, net, now = Date.now }: Pick<ModuleC
       return status === 'ok' ? 'done' : true;        // ('done': it did something; a command for a cue that is not there did not)
     }
 
-    // ── "/listen": QLab's show control broadcast (core/net/qlab-events.js has the wording) ────────────
+    // ── "/listen": QLab's show control broadcast (core/net/qlab-events.ts has the wording) ────────────
     /** What is going on, as far as an event is about it: the last GO, the cues running or paused, the playhead. */
     function heardNow() {
       const v = view();

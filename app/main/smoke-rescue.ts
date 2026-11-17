@@ -1,6 +1,6 @@
 /**
  * The smoke run's checks of the tools a show needs when it leaves the script, in the cue list's own window with
- * the Live view HIDDEN (called from smoke.js after smoke-defaults.js has switched that view off again):
+ * the Live view HIDDEN (called from smoke.ts after smoke-defaults.ts has switched that view off again):
  *
  *   the Playing strip   go round the next seconds or bars from here with no region drawn, and let go (the button, L);
  *                       bar lines and the bar.beat count once the sound has a tempo; "+ here"; a marker's button,

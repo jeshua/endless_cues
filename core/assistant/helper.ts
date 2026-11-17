@@ -3,13 +3,13 @@
  *
  * Many people open the assistant before they have set up a model, and some never will. This is what answers
  * then (the provider called `demo`, shown as "Built-in helper"): no network, nothing sent anywhere, and a short
- * list of jobs it really does, each a scripted turn through the same tools a model uses (tools.js). So every
+ * list of jobs it really does, each a scripted turn through the same tools a model uses (tools.ts). So every
  * job here ends, like a model's, in a proposal a person reviews, and each is also a test of the tools.
  *
  *   cues from the sounds in the folder · add a device from a model · look for props · a cue that sends a
  *   device's command · is everything ready? · why is X not answering? · firmware for a prop · the hand-over ·
  *   renumber a list in tens · check the show · make a patch a device · five one-line edits · and where a thing is
- *   in the window, or its key (from app-guide.js, with the place pointed at)
+ *   in the window, or its key (from app-guide.ts, with the place pointed at)
  *
  * It matches phrasings loosely and understands nothing: asked anything else it says what it does, in the
  * words to use, and that a model does the rest. It must never pretend to more than its list.
@@ -87,7 +87,7 @@ function helperProvider(): Provider {
     // ── the folder ──
     if (/how do i start from a folder/i.test(text)) return say('Choose File ▸ Start from a Folder… and pick your sounds’ folder. Nothing is moved or copied.');
 
-    // ── where things are, and their keys: the app's own guide (app-guide.js), and the place pointed at ──
+    // ── where things are, and their keys: the app's own guide (app-guide.ts), and the place pointed at ──
     if (ASKS_WHERE.test(text)) {
       const hit = appGuide.find(text);
       if (hit) {

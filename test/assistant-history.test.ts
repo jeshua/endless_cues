@@ -1,7 +1,7 @@
 /**
  * The conversation sent to a model is append-only: no message is changed once it has been sent, on any provider's
  * path. Prompt caching depends on it everywhere, and Anthropic's current models can refuse a request whose earlier
- * messages were edited (core/assistant/history.js says more). The show still travels with every question: whole the
+ * messages were edited (core/assistant/history.ts says more). The show still travels with every question: whole the
  * first time, then as what changed, and what the model is told adds up to the show as it is.
  */
 import test from 'node:test';

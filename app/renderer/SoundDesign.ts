@@ -1,9 +1,9 @@
 // Sound design in the window: the inspector's tab for one sound's chain of tools and its eq, and the little
-// editor for what of a chain a Fade cue moves. What each tool is and does is core/audio/chain.js (the table comes
+// editor for what of a chain a Fade cue moves. What each tool is and does is core/audio/chain.ts (the table comes
 // in `info.sound`); nothing here holds show state.
 //
 // The tab is a rack, as a sound engineer knows it from a channel strip or a DAW: one device per tool in use, left to
-// right in the order they run, each with a power button and its main settings as knobs (Knob.js).
+// right in the order they run, each with a power button and its main settings as knobs (Knob.ts).
 import { html, useState, useEffect, useRef, ec, edit, setCue, cx } from './lib.js';
 import type { Cue, State, Info } from './lib.js';
 import type { LanePoint } from '../../core/show/types';
@@ -109,7 +109,7 @@ function Device({ id, label, help, on, power = true, pending, curve, zero = 12 /
 
 /**
  * The inspector's Sound design tab: the cue's chain as a rack of devices, left to right in the order they run. Only
- * the tools in use are drawn; "+" adds one. The order is fixed (core/audio/chain.js): a device added is placed where
+ * the tools in use are drawn; "+" adds one. The order is fixed (core/audio/chain.ts): a device added is placed where
  * it runs, so there is nothing to drag. Every change is one edit through the show's ops (undo works); a device or a
  * knob changed since the show was saved is marked in the standby colour.
  */
@@ -132,7 +132,7 @@ export function SoundDesign({ cue, s, info, pending }: SoundDesignProps) {
   const [opened, setOpened] = useState(() => new Set<string>());
   const [pop, setPop] = useState<{ kind: 'add' | 'presets'; anchor: HTMLElement } | null>(null);                   // { kind: 'add' | 'presets', anchor }
   useEffect(() => { setName(''); setEqShown(false); setPop(null); setOpened(new Set()); }, [cue.id]);
-  // (a device removed takes its lines with it, in the same edit: core/audio/lanes.js pruneFor)
+  // (a device removed takes its lines with it, in the same edit: core/audio/lanes.ts pruneFor)
   const withLanes = (props: { chain: Rack | null; eq?: Bands | null }) => { const kept = Lanes.pruneFor(cue.automation, props.chain); return kept === cue.automation ? props : { ...props, automation: kept }; };
   const put = (next: Rack, label: string) => {
     const tools = Object.keys(next).filter((k) => next[k] && typeof next[k] === 'object');

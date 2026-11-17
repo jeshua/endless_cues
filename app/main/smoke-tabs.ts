@@ -1,6 +1,6 @@
 /**
  * The title bar's tabs (Edit · Rig · Show, and Live once that view is on) and the window's room for the list; run by
- * smoke.js after the rig's pages. Checked here: each tab shows its page; the Show tab IS Show mode, with everything
+ * smoke.ts after the rig's pages. Checked here: each tab shows its page; the Show tab IS Show mode, with everything
  * Show mode locks (the host refuses an edit, the toolbar and inspector are gone, the assistant is not there at all);
  * the Rig from Show stays in Show mode, and only Edit unlocks; ⇧⌘M goes between Edit and Show; Live is a tab only
  * while that view is switched on; a brand-new show has no dot on its Rig tab; the add-cue bar is one row of the common

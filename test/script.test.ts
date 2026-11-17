@@ -1,4 +1,4 @@
-/** The Script cue: a list of show commands, not a program (core/show/script.js; run by the engine). */
+/** The Script cue: a list of show commands, not a program (core/show/script.ts; run by the engine). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as show from '../core/show/show';

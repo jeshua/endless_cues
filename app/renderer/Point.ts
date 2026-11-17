@@ -1,4 +1,4 @@
-// The assistant pointing at a place in the window (its tool show_in_app; the places are core/ui/places.js). The host
+// The assistant pointing at a place in the window (its tool show_in_app; the places are core/ui/places.ts). The host
 // pushes the place (`s.point`); this brings it into view with the place's own steps (Settings at a pane, the cue
 // list, a cue selected, an inspector tab, More), rings it with a calm pulse and a few words beside it, and tells the
 // host whether it could. The ring takes no clicks and no keyboard, and goes after a few seconds or at the first
@@ -6,9 +6,9 @@
 import { useEffect, useRef, cmd } from './lib.js';
 import type { State } from './lib.js';
 
-/** A step that brings a place on screen (core/ui/places.js). */
+/** A step that brings a place on screen (core/ui/places.ts). */
 export interface PlaceStep { do: 'settings' | 'cues' | 'reveal' | 'select' | 'tab' | 'more'; section?: string; cue?: string; types?: string[]; tab?: string }
-/** A place as the host sends it (core/ui/places.js `resolve`), `say` the assistant's words beside the ring. */
+/** A place as the host sends it (core/ui/places.ts `resolve`), `say` the assistant's words beside the ring. */
 export interface Place { label: string; sel: string; steps?: PlaceStep[]; settings?: boolean; fallback?: Place; absent?: string; menu?: string; say?: string }
 /** The window's part in pointing: what it shows, and how to change that. `choose` answers why it could not, or ''. */
 export interface PointUI {
@@ -118,7 +118,7 @@ export async function pointAt(place: Place | null | undefined, ui: PointUI): Pro
 export function usePointer(s: State | null, ui: PointUI) {
   const done = useRef<unknown>(0);
   const uiRef = useRef(ui); uiRef.current = ui;
-  const p = (s && s.point) as (Place & { id: number }) | null;      // (the host sends what core/ui/places.js resolved)
+  const p = (s && s.point) as (Place & { id: number }) | null;      // (the host sends what core/ui/places.ts resolved)
   useEffect(() => {
     if (!p || p.id === done.current) return;
     done.current = p.id;

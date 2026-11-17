@@ -1,4 +1,4 @@
-// The show folder, read: its files, and the text of a text file (core/rig/folder.js; docs/specs/15, section 3.9).
+// The show folder, read: its files, and the text of a text file (core/rig/folder.ts; docs/specs/15, section 3.9).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';

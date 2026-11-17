@@ -1,5 +1,5 @@
 /**
- * The assistant's drawer and its face, as a person meets them (docs/brand-assistant.md): run by smoke.js after
+ * The assistant's drawer and its face, as a person meets them (docs/brand-assistant.md): run by smoke.ts after
  * the rig's pages. Checked here: choosing who answers never leaves the drawer sitting unchanged, the few words the
  * first screen is allowed, and the resident (the assistant's eye in the side panel): there on a new show, a way into the
  * drawer, gone in Show mode, saying a waiting change with the app's own dot and words, hidden when
@@ -43,7 +43,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Sm
       await shot('qirx-01-why-not');
     }
     if (r.id === 'cloud') {
-      // a test run has no way to the service (main.js points it at a port nothing listens on): the sign-in it starts
+      // a test run has no way to the service (main.ts points it at a port nothing listens on): the sign-in it starts
       // ends in one line saying so, and the rows stay there to choose another
       const line = await until(async () => /internet/.test((await text('[data-whynot]')) || ''), 6000);
       const said = ((await text('[data-whynot]')) || '').trim();

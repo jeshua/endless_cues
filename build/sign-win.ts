@@ -4,7 +4,7 @@
  * (https://ebourg.github.io/jsign/, `brew install jsign`), so the Windows installers are still built on a Mac.
  *
  *   EC_WIN_SIGNING="<endpoint> <account> <profile>"   Azure Artifact Signing (docs/RELEASING.md, "Windows");
- *                                                     EC_WIN_SIGN_TOKEN is the access token release.js got from az
+ *                                                     EC_WIN_SIGN_TOKEN is the access token release.ts got from az
  *   EC_WIN_SIGN_P12=<file.p12>                        a certificate of your own, for trying the signing path
  *                                                     (EC_WIN_SIGN_P12_PASS its password); Windows trusts none
  *
@@ -27,7 +27,7 @@ function jsignArgs(file: string, env: NodeJS.ProcessEnv = process.env) {
 
 /**
  * How many bytes of Authenticode signature a Windows program carries (the PE header's certificate table), 0 when it
- * has none. What release.js checks every installer with, since nothing on a Mac can ask Windows.
+ * has none. What release.ts checks every installer with, since nothing on a Mac can ask Windows.
  */
 function signatureBytes(buf: Buffer) {
   if (buf.length < 64 || buf.toString('latin1', 0, 2) !== 'MZ') return 0;

@@ -19,7 +19,7 @@
  * What is not read: QLab's "= cue A" (a level pulled from another cue) is reported as an error.
  *
  * Pure: `parse` knows nothing of the patch; `evaluate` looks the names up in a compiled patch
- * (core/light/patch.js) and gives the levels, with what it could not understand line by line.
+ * (core/light/patch.ts) and gives the levels, with what it could not understand line by line.
  */
 import { keyOf } from './patch';
 import type { CompiledPatch } from './patch';

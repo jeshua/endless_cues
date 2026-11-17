@@ -2,18 +2,18 @@
  * The cue types, as one table.
  *
  * Everything that needs to know "what is a Fade cue" reads this: the show file's
- * validation (show.js), the edit operations (ops.js), the inspector in the app
+ * validation (show.ts), the edit operations (ops.ts), the inspector in the app
  * (which draws a field per entry), the assistant's tool description
  * (core/assistant), and docs/specs/03-show-file.md.
  *
  * A field's `kind` says how it is typed in, checked and shown:
  *   text | longtext | number | seconds | db | bool | enum | cue | file | patch | bus | color | markers | regions | tempo | camera | desk | cell
- *   | matrix (a sound's own outputs): core/audio/routing.js
- *   | eq (four bands on one sound) | chain (the tools one sound is played through) | sweep (what of a chain a Fade moves): core/audio/chain.js
+ *   | matrix (a sound's own outputs): core/audio/routing.ts
+ *   | eq (four bands on one sound) | chain (the tools one sound is played through) | sweep (what of a chain a Fade moves): core/audio/chain.ts
  *   | shape (a fade's curve: 'linear', 's-curve' or custom points) | envelope (a level drawn over a sound's length)
- *   | automation (the other lines drawn over it: pan, and settings of its chain): core/audio/lanes.js
+ *   | automation (the other lines drawn over it: pan, and settings of its chain): core/audio/lanes.ts
  *   | device (a device's id) | command (the id of one of that device's commands) | args ({ key: value } for that command's
- *     parameters): core/rig/devices.js
+ *     parameters): core/rig/devices.ts
  *
  * A number with `min` / `max` is refused outside them.
  *
@@ -157,19 +157,19 @@ const GEOMETRY: Field[] = [
 ];
 const STAGE_TYPES = ['video', 'text', 'camera'];
 
-/** What one sound is played through (the inspector's Sound design tab; core/audio/chain.js is what each means).
+/** What one sound is played through (the inspector's Sound design tab; core/audio/chain.ts is what each means).
  *  (Neither help is drawn in the window: the Sound design tab draws its own. They are the assistant's reference.) */
 const EQ: Field = { key: 'eq', kind: 'eq', label: 'EQ', tab: 'design',
   help: 'Four bands on this one sound: { low, mid, mid2, high } (a low shelf at 250 Hz, bells at 1 kHz and 3 kHz, a high shelf at 4 kHz). A band is a level in dB (−40 takes it out), or { db, hz, q } to move it: "mid": { "db": 4, "hz": 1800, "q": 2 }. Empty: none.' };
 const CHAIN: Field = { key: 'chain', kind: 'chain', label: 'Sound design', tab: 'design',
   help: `The tools this one sound is played through, one entry per tool in use, always run in this order: ${SOUND_TOOLS.map((t) => `${t.key} { ${t.params.map((p) => p.key).join(', ')} }`).join(', ')}. As in { "highpass": { "hz": 300, "slope": 24 }, "reverb": { "decay": 2.5, "mix": 0.3 }, "tail": true }. A tool with "on": false keeps its settings and is out of the path; "bypass": true takes the whole chain out; "tail": true lets a reverb or a delay ring out after the sound stops. The cue’s eq runs after the filters. Empty: the sound plays as it is.` };
 
-/** Where a sound sits between the speakers (equal power; a stereo sound is balanced): core/audio/lanes.js panGains. */
+/** Where a sound sits between the speakers (equal power; a stereo sound is balanced): core/audio/lanes.ts panGains. */
 const PAN: Field = { key: 'pan', kind: 'number', label: 'Pan', default: 0, min: -100, max: 100, help: '−100 left, 0 the middle, 100 right.' };
 
 const TYPES: Record<string, TypeDef> = {
   // A heading in the list: it organises the rows after it (up to the next section) and never plays. It holds no
-  // cues of its own, so the show file stays flat and the engine never sees it (show.js toEngineDoc leaves it out).
+  // cues of its own, so the show file stays flat and the engine never sees it (show.ts toEngineDoc leaves it out).
   // `common`: the only fields of every cue it has.
   section: {
     label: 'Section', glyph: '§', heading: true, common: ['name', 'notes', 'color'],

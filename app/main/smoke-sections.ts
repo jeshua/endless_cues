@@ -1,5 +1,5 @@
 /**
- * Sections and folding (core/show/sections.js, app/renderer/Sections.js), run by smoke.js near its end. Checked here:
+ * Sections and folding (core/show/sections.ts, app/renderer/Sections.ts), run by smoke.ts near its end. Checked here:
  * a section is drawn as a heading and listed in the strip above the list; GO passes over it; a click on the heading,
  * ← and →, View ▸ Fold All / Unfold All and ⌥-click fold; a folded heading shows the cue standing by in it; in Show
  * mode the section holding the playhead opens by itself and closes again when the playhead leaves; what is folded is

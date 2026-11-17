@@ -1,6 +1,6 @@
 /**
- * Something went wrong (core/report/issues.js): which log lines the status bar offers to report, that a repeat is
- * counted and not announced again, and that a report opened from it carries the line (core/report/report.js).
+ * Something went wrong (core/report/issues.ts): which log lines the status bar offers to report, that a repeat is
+ * counted and not announced again, and that a report opened from it carries the line (core/report/report.ts).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';

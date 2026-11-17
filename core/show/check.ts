@@ -4,20 +4,20 @@
  * QLab has no way to check a show short of running it. This reads the show and what the app knows about this
  * computer, and says in a few words each what will not work:
  *
- *   - each cue's own problems (show.js `problems`): a target that is gone, a file missing or one that cannot be
+ *   - each cue's own problems (show.ts `problems`): a target that is gone, a file missing or one that cannot be
  *     played here, a sound sent to outputs this device does not have, a hotkey used twice, and the rest;
  *   - a cue that can never play: disarmed, with no Arm cue to arm it;
  *   - cues that start each other round and round (a Start cue, a Script cue, a continue): with no wait between,
  *     the app has to stop it; with waits, it goes on until someone stops it;
- *   - two triggers answering to the same message (core/show/triggers.js);
- *   - what the Rig page (core/rig/check.js) says is wrong with the equipment and the outputs right now: an output
+ *   - two triggers answering to the same message (core/show/triggers.ts);
+ *   - what the Rig page (core/rig/check.ts) says is wrong with the equipment and the outputs right now: an output
  *     that is away, a device that does not answer, a display not connected. Nothing is asked here that the Rig
  *     page does not already ask.
  *
  *   checkShow(doc, facts) → [{ id, level: 'problem' | 'look', text, rig }]
  *     id: the cue the line is about (a click selects it), or null. rig: true when the Rig page says more.
  *     facts (each may be missing): problems (the host's list: show.problems with what the running app adds),
- *     rig (core/rig/check.js items), triggers (core/show/triggers.js rows).
+ *     rig (core/rig/check.ts items), triggers (core/show/triggers.ts rows).
  *
  * Pure: no disk, no network.
  */
@@ -32,7 +32,7 @@ import type { ShowDoc, Cue } from './types';
 export interface Firing { to: string; wait: number }
 /** Cues that fire each other round and round, and the least time one round takes. */
 export interface Loop { ids: string[]; wait: number }
-/** What checkShow reads of a Rig page item (core/rig/check.js). */
+/** What checkShow reads of a Rig page item (core/rig/check.ts). */
 export interface RigItem { id: string; group: string; label: string; state: string; text?: string; needed?: boolean; device?: string; patch?: string }
 /** What the app knows besides the show; each may be missing. */
 export interface CheckFacts { problems?: Problem[]; rig?: RigItem[]; triggers?: TriggerRow[] }

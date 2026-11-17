@@ -2,7 +2,7 @@
  * Endless Cues as a tool for other agents: an MCP server, and the bridge to a running app.
  *
  * Claude Code, Codex and anything else that speaks the Model Context Protocol can be given the
- * same tools the built-in assistant has (tools.js): read and search the show, list its folder and
+ * same tools the built-in assistant has (tools.ts): read and search the show, list its folder and
  * read a script in it, edit a private draft (cues, settings, devices), check it, dry-run it on the
  * real engine, see the Rig and the monitor, ask a device whether it is there, and hand the result
  * over as one change. Nothing else: no playing the show, no saving it, no command to a device.

@@ -13,7 +13,7 @@
  * and collects its sound files). `report` says, in the operator's terms, what came across and what did
  * not, cue by cue: { source, counts, issues: [{ id, cue, why }], summary: ["3 Video cues …", …] }.
  *
- * The file is a keyed archive (core/import/plist.js) whose `cueLists` is a second archive: one root
+ * The file is a keyed archive (core/import/plist.ts) whose `cueLists` is a second archive: one root
  * Group whose children are the cue lists (and carts). What is mapped was worked out from workspaces
  * saved by QLab 5.6; nothing here is Figure 53's code, and a file from a later QLab may hold things
  * this has not seen. Anything it cannot carry over it says so, and the cue is kept (as a Memo with
@@ -95,7 +95,7 @@ function routed(matrix: Archived | null | undefined) {
 }
 
 /**
- * A cue's level matrix as outputs of its own here (core/audio/routing.js `fromQlab`: rows are the file's channels,
+ * A cue's level matrix as outputs of its own here (core/audio/routing.ts `fromQlab`: rows are the file's channels,
  * columns QLab's cue outputs, row 0 and column 0 the masters, multiplied into each crosspoint). QLab's default
  * (channel 1 to output 1, channel 2 to output 2, all at unity) is no routing: the cue plays on its bus. QLab's cue
  * outputs pass through an output patch on their way to the device; here they are taken as the device's outputs of
@@ -121,7 +121,7 @@ function ownOutputs(q: Archived, cue: Made, note: Note) {
 /**
  * A level matrix that only shares the sound between outputs 1 and 2 (a mono file's one row to both, or a stereo
  * file's left to 1 and right to 2, at levels of their own) as a pan and what is left on the level: { pan, db }, or
- * null when it does anything else (core/audio/lanes.js panOfGains: equal power, as the pan here plays).
+ * null when it does anything else (core/audio/lanes.ts panOfGains: equal power, as the pan here plays).
  */
 function panOfMatrix(matrix: Rows) {
   const lin = (db: unknown) => Math.pow(10, Number(db) / 20), only = (row: Rows[number] | undefined, k: string[]) => row && Object.keys(row).length === k.length && k.every((x) => row[x] !== undefined);

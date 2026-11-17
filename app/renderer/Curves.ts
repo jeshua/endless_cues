@@ -1,5 +1,5 @@
 // A fade's shape, chosen and drawn: linear, an S-curve, or a curve of your own (click to add a point, drag it,
-// double-click it to take it away). The arithmetic is core/audio/curves.js; this draws the same curves.
+// double-click it to take it away). The arithmetic is core/audio/curves.ts; this draws the same curves.
 import { html, useState, useRef, cx } from './lib.js';
 import type { Shape } from '../../core/show/types';
 
@@ -8,7 +8,7 @@ const W = 132, H = 54, PAD = 5;
 type Points = number[][];
 
 const kindOf = (v: unknown) => (Array.isArray(v) ? 'custom' : v === 's-curve' ? 's-curve' : 'linear');
-/** How far along a fade of this shape is at x (0–1): as shapeAt in core/audio/curves.js. */
+/** How far along a fade of this shape is at x (0–1): as shapeAt in core/audio/curves.ts. */
 export function shapeAt(shape: Shape | Points | string | null | undefined, x: number) {
   if (Array.isArray(shape)) {
     for (let i = 1; i < shape.length; i++) { const [x0, y0] = shape[i - 1], [x1, y1] = shape[i]; if (x <= x1) return x1 > x0 ? y0 + (y1 - y0) * ((x - x0) / (x1 - x0)) : y1; }

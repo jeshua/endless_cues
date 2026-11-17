@@ -8,7 +8,7 @@
  * (re)opens is told again what is up.
  *
  * Which display is this computer's business (config.json: `stage`), like the audio output. The stage's size and
- * its corner pin are the show's (settings.video; core/video/stage.js). The test pattern and the blackout are
+ * its corner pin are the show's (settings.video; core/video/stage.ts). The test pattern and the blackout are
  * neither: they are the operator's hand, gone when the app closes.
  *
  * The window never takes the keyboard: on a display it cannot be focused at all (a click on the projector's

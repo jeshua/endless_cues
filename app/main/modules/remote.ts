@@ -1,4 +1,4 @@
-// The web remote's code (remote.html). A plain script: web-remote.ts writes remote.js
+// The web remote's code (remote.html). A plain script: web-remote.ts writes remote.ts
 // into the page it serves, so the page stays one file.
 
 /** What the page is sent (web-remote.ts `view`). */

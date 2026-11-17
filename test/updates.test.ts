@@ -1,4 +1,4 @@
-// Updates (core/update/updates.js): when the app may look, what it says, and that nothing happens during a show.
+// Updates (core/update/updates.ts): when the app may look, what it says, and that nothing happens during a show.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';

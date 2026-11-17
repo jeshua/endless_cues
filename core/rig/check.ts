@@ -28,7 +28,7 @@
  *   stage      { open, waiting, label }
  *   light      { error, held }
  *   network    the hub's status(): { input: { port, listening, error }, patches: { id: { state, text } } }
- *   liveness   { deviceId: core/rig/liveness.js state }
+ *   liveness   { deviceId: core/rig/liveness.ts state }
  *   midi       { outputs: [name], error }
  *   modules    [{ id, name, enabled, running, status: { ok, text } }]
  *   timecode   { arriving }

@@ -145,7 +145,7 @@ function main([cmd, a, b, ...more]: string[]): number | Promise<number> {
       let ops;
       try { ops = JSON.parse(fs.readFileSync(b === '-' || !b ? 0 : b, 'utf8')); } catch (err) { console.error(`The operations could not be read: ${(err as Error).message}`); return 2; }
       const d = ShowDocument.open(dir);
-      // (ops.js refuses what does not fit, with the operation's place in the list and what to send instead)
+      // (ops.ts refuses what does not fit, with the operation's place in the list and what to send instead)
       try { d.edit(ops, { label: 'command line' }); } catch (e) { const err = e as Error; if (err.name !== 'OpError') throw err; console.error(`Refused, nothing applied. ${err.message}`); return 1; }
       const changes: ChangeLine[] = d.unsaved();
       if (!changes.length) { console.log('Applied, but it changed nothing.'); return 0; }

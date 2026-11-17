@@ -1,8 +1,8 @@
 // The waveform a sound is edited on (the inspector's Time & Loops): zoomed and scrolled, with handles for Start and
 // End, a drag that draws a loop region, and the sound's lines drawn over it (its volume, its pan, the settings of its
-// sound design: core/audio/lanes.js), edited as in a DAW. Above it, the loop lane and the marker strip, whose
+// sound design: core/audio/lanes.ts), edited as in a DAW. Above it, the loop lane and the marker strip, whose
 // regions and markers are dragged where they go. The strip under the list and the Live view's decks draw the plainer
-// one (Sidebar.js); this one asks for finer peaks, so it can be zoomed into.
+// one (Sidebar.ts); this one asks for finer peaks, so it can be zoomed into.
 //
 // Everything that changes the show is one edit through its ops (undo, the unsaved marks); a drag is drawn as it is
 // made and kept when the button is let go. In Show mode it is all drawn and nothing can be moved.
@@ -81,7 +81,7 @@ export interface WaveEditProps {
   pin?: number | null;
   onPick?: (t: number) => void;
   locked?: boolean;
-  /** core/audio/chain.js TOOLS: the sound design's settings that can have a line */
+  /** core/audio/chain.ts TOOLS: the sound design's settings that can have a line */
   tools?: Parameters<typeof Lanes.lanesOf>[1];
 }
 export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, tools = [] }: WaveEditProps) {

@@ -7,7 +7,7 @@
  * shape is a list of points [[x, y], …] from (0, 0) to (1, 1), joined by straight lines.
  *
  * A Fade cue has a shape for a level going up and one for a level going down; an Audio cue has one for its fade
- * in and one for its fade out. The engine says which applies (core/engine/cue-engine.js); the host turns it into
+ * in and one for its fade out. The engine says which applies (core/engine/cue-engine.ts); the host turns it into
  * numbers with progressOf() for the audio window, which only ever plays a list of points.
  *
  * An ENVELOPE is a sound's level drawn over its length: [[seconds into the file, dB], …], on top of the cue's
@@ -87,7 +87,7 @@ function progressOf(shape: FadeShape | string | null | undefined, n = 65, from =
 }
 
 /** An envelope as a cue keeps it: [[seconds, dB, bend?], …] in time order, levels between silence and +12. null:
- *  not one. (It is the Volume lane of core/audio/lanes.js, where the arithmetic is; a point's third number bends the
+ *  not one. (It is the Volume lane of core/audio/lanes.ts, where the arithmetic is; a point's third number bends the
  *  line to the next one, and an envelope with none is the straight lines in dB it always was.) */
 function cleanEnvelope(value: unknown) { return Lanes.cleanLane(value, Lanes.VOLUME); }
 
