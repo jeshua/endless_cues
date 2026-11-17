@@ -269,15 +269,17 @@ A boolean is OSC true/false, a number (0 is false) or text (`n`, `f`, `0`… fal
 
 A UDP reply that would be over 9000 bytes (a long `/cueLists`) is replaced by an error saying to ask over TCP. Updates and events (below) go the same way as replies.
 
+**No UDP reflector.** A UDP sender's address can be forged, so a short question sent "from" someone else would make the app send them the answer: 9 KB for a `/cueLists` of a few dozen bytes. So over UDP only a sender that has sent `/connect` (successfully, and within the last 61 s, as below) is answered or sent updates and events; `/connect`, `/version` and `/workspaces` are answered to anyone (short answers). And no address is sent more than 32 KB a second over UDP, whatever it asked; the rest is dropped and logged. A command from a sender that never connects still works (a GO box that sends `/go` needs no answer). A remote built for QLab connects first and is answered on 53001 as before. Over TCP there is a real connection, and everything is answered.
+
 **The monitor.** The module tells the hub a message "did something" only when its result is `ok`.
 
 **Access.** Three permissions, as QLab's: `view` (every read: properties, `/cueLists`, `/showMode` with no argument), `edit` (writing a property, `/new`, `/move`, `/delete`, `/renumber`, `/undo`, `/redo`, `/save`) and `control` (transport, the playhead, `/load`, `/showMode <b>`). The session messages (`/updates`, `/listen`, `/alwaysReply`, `/udpReplyPort`, `/forgetMeNot`, `/thump`, `/disconnect`) need any one of them. The per-method table of QLab's dictionary was not available when this was written: the assignment above is by what each message does.
 
 - `passcodes` is a list; each has its own three permissions. `/connect <passcode>` answers `ok:view|edit|control` (only the ones granted), or `badpass` with status `denied`. A passcode of digits matches whether it is sent as text or as a number.
-- `noPasscode` is what a sender that has not connected (or sends `/connect` with nothing) may do. **Default: with no passcode set, everything; once any passcode exists, nothing**, until the row is ticked. (QLab's default is a random passcode and an empty no-passcode row; ours stays open until a passcode is made, because the module is off until it is switched on.)
+- `noPasscode` is what a sender that has not connected (or sends `/connect` with nothing) may do: `view` and `control` at most. **It never edits**: changing the show (writing a property, `/new`, `/move`, `/delete`, `/renumber`, `/undo`, `/redo`, `/save`) takes a passcode with edit access, whatever the row says (`edit: true` in a file is read as false, and Settings shows the box greyed). **Default: with no passcode set, view and control; once any passcode exists, nothing**, until the row is ticked. (QLab's default is a random passcode with full access and an empty no-passcode row; ours lets anyone on the network run the show until a passcode is made, because the module is off until it is switched on, and no further: a stranger cannot delete or save.)
 - After a wrong try, the next from that address is not listened to for 1 s, then 2, 4… up to 32 (answered `error`); a right one clears it.
 - A UDP sender is remembered (its passcode, `/updates`, `/listen`, reply port) for 61 s from its last message of any kind; `/thump` (answered `thump`) is the heartbeat, and `/forgetMeNot 1` (or `/udpKeepAlive 1`) keeps it without one. A TCP connection is remembered until it closes. `/disconnect` forgets either.
-- A sender with no permission at all gets `denied` for everything except `/version` and `/workspaces`.
+- A sender with no permission at all gets `denied` for everything except `/version` and `/workspaces` (over UDP, only once it has connected: see above).
 - Settings ▸ Integrations ▸ Modules draws this as a table (`kind: 'osc-access'`): a No passcode row, a row per passcode, Add a passcode (a random four digits with everything ticked). Passcodes are in the show file; the assistant's outline shows only that one is set.
 
 **Updates.** After `/updates 1` a sender is sent, for as long as it stays remembered (61 s of silence, as above):
@@ -321,7 +323,7 @@ None of the three has been run. Each script below is what to set, what to press 
 
 **A. Bitfocus Companion (its "Figure 53: QLab" connection).** Companion on the same computer or another on the network.
 
-1. In Endless Cues: OSC control on, no passcode in the table (No passcode row fully ticked). Settings ▸ Integrations ▸ Network shows "listening on UDP and TCP 53000".
+1. In Endless Cues: OSC control on, no passcode in the table (No passcode row: view and control ticked; edit cannot be). Settings ▸ Integrations ▸ Network shows "listening on UDP and TCP 53000".
 2. In Companion: Connections ▸ add *Figure 53: QLab*. Target IP: the show computer (127.0.0.1 if the same). Port 53000. Leave the passcode empty. Switch on its option to use TCP (its feedback needs a connection). Save. (The option and variable names below are as remembered from the module, not checked against its current version: go by what the module's own page lists.)
 3. **Expect:** the connection goes green within a few seconds. In the monitor: `/version`, `/workspaces` (or `/connect`), then `/updates 1` and `/cueLists`, each not marked "did nothing". OSC control's status reads "… · 1 connected". If it stays yellow or red: note the last message in the monitor and the reply to it (the monitor does not show replies: `ec-user osc` or Wireshark on port 53000 does).
 4. Add a button with the action *GO*. Press it. **Expect:** cue 1 plays; the playhead moves to LQ1.
@@ -333,7 +335,7 @@ None of the three has been run. Each script below is what to set, what to press 
 
 **B. The Stream Deck plugin for QLab (Elgato Marketplace, by Figure 53).** It cannot send a passcode.
 
-1. OSC control on; in its table the No passcode row has view, edit and control ticked.
+1. OSC control on; in its table the No passcode row has view and control ticked (edit cannot be: without a passcode the plugin cannot edit, so step 6 and 7 are expected to do nothing, "did nothing" in the monitor).
 2. In the Stream Deck app, drag *GO* onto a key. In its settings: Address 127.0.0.1 (or the show computer), Port 53000.
 3. Press it. **Expect:** GO. Then *Panic*, *Pause All*, *Resume All*, *Reset All*: each as named.
 4. *Move playhead* next / previous: **expect** the playhead to move. *Start a cue* with `3`: Thunder plays.

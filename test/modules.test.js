@@ -29,7 +29,7 @@ test('OSC control: QLab’s addresses become host commands', () => {
   assert.equal(m.route('/nonsense'), null);
 });
 
-test('OSC control through the hub: over UDP, with a reply; a passcode keeps strangers out; a refused step ends it', async () => {
+test('OSC control through the hub: over UDP, with a reply once connected; a passcode keeps strangers out; a refused step ends it', async () => {
   const { createHub } = require('../core/net/hub');
   const port = await freeUdp();
   const cmds = [];
@@ -41,7 +41,7 @@ test('OSC control through the hub: over UDP, with a reply; a passcode keeps stra
   await sleep(40);
   await c.send(port, '/go'); await sleep(40);
   assert.deepEqual(cmds, [], 'refused before /connect');
-  assert.match(c.got[0].args[0], /denied/);
+  assert.equal(c.got.length, 0, 'and not answered: over UDP only a sender that has connected is');
   await c.send(port, '/connect 1234'); await sleep(40);
   await c.send(port, '/alwaysReply 1'); await sleep(40);          // (a command is answered only on request, as in QLab)
   await c.send(port, '/go'); await sleep(40);

@@ -231,8 +231,8 @@ function createHub({ log = () => {}, changed = () => {}, dryRun = false, now = D
     if (inServer) { try { inServer.close(); } catch { /* closed */ } inServer = null; }
   }
 
-  function openReplyPorts() {
-    const want = new Set(patches.map((p) => Number(p.listenPort)).filter((n) => n > 0 && n !== inPort));
+  function openReplyPorts(on = true) {
+    const want = new Set(on ? patches.map((p) => Number(p.listenPort)).filter((n) => n > 0 && n !== inPort) : []);
     for (const [port, sock] of replySocks) if (!want.has(port)) { try { sock.close(); } catch { /* closed */ } replySocks.delete(port); }
     if (dryRun) return;
     for (const port of want) {
@@ -247,17 +247,18 @@ function createHub({ log = () => {}, changed = () => {}, dryRun = false, now = D
   }
 
   return {
-    /** The show's patches and input settings, whenever they change. */
-    configure({ patches: list = [], devices = [], inputPort = 0, listen = false } = {}) {
+    /** The show's patches and input settings, whenever they change. `connect` false: no TCP connection is made and no
+     *  reply port opened (a show from another computer, until it is turned on; what is sent is held back by `hold`). */
+    configure({ patches: list = [], devices = [], inputPort = 0, listen = false, connect = true } = {}) {
       // (a device of the show's rig is also a patch here, found by its id as a patch is; it comes marked `isDevice`)
       patches = [...list.map((p) => ({ ...p })), ...devices.map((d) => ({ ...d, isDevice: true }))];
       input = { port: inputPort, listen };
       const wanted = new Set();
-      for (const p of patches) destinationsOf(p).forEach((d, at) => { if (d.protocol === 'tcp' && d.host && d.port) { wanted.add(at ? `${p.id}+${at}` : p.id); connectTcp(p, d, at); } });
+      if (connect) for (const p of patches) destinationsOf(p).forEach((d, at) => { if (d.protocol === 'tcp' && d.host && d.port) { wanted.add(at ? `${p.id}+${at}` : p.id); connectTcp(p, d, at); } });
       for (const id of [...tcp.keys()]) if (!wanted.has(id)) dropTcp(id);
       for (const id of [...stat.keys()]) if (!patches.some((p) => p.id === id)) stat.delete(id);
       openInput();
-      openReplyPorts();
+      openReplyPorts(connect);
     },
 
     /** Send one message to a patch: "/address args", or with `format` 'text' or 'hex' those bytes. Returns the monitor entry: { ok, why }. */
@@ -321,6 +322,13 @@ function createHub({ log = () => {}, changed = () => {}, dryRun = false, now = D
       const m = osc.parseText(text);
       heardOne(osc.decode(osc.encode(m.address, m.args)), { address: patch.host || '127.0.0.1', port: Number(patch.port) || 0 }, { kind: 'reply', patch });
       return true;
+    },
+
+    /** In a test run nothing arrives on the input port either: this stands in for a message from `from` ({ address, port, tcp? }),
+     *  with `reply` taking what would be sent back (address, args, { port }). */
+    pretendInput(text, from, reply = () => {}) {
+      const m = osc.parseText(text);
+      heardOne(osc.decode(osc.encode(m.address, m.args)), from, { kind: 'input' }, reply);
     },
 
     /** Everything that arrives, as it arrives: fn(msg, from, patch | null, { via, alive, at }). Returns a function that stops it. */

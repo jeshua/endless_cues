@@ -56,6 +56,7 @@ const showCheck = require('../../core/show/check');
 const runFrom = require('../../core/engine/run-from');
 const rigDevices = require('../../core/rig/devices');
 const { createRig } = require('./rig-service');
+const trust = require('../../core/show/trust');
 /** The outputs a rehearsal may want held back (Tools ▸ Hold Back …). */
 const OVERRIDES = [{ id: 'osc', label: 'OSC out' }, { id: 'midi', label: 'MIDI out' }, { id: 'timecode', label: 'Timecode out' }, { id: 'dmx', label: 'DMX out' }];
 const AUDIO_EXT = /\.(wav|aiff?|aifc|caf|mp3|m4a|aac|flac|ogg|opus)$/i;
@@ -274,9 +275,13 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // ── overrides: outputs held back for a rehearsal (this computer's choice, kept through a restart, and always shown) ──
   const HELD = (what) => `held back: ${what} is switched off for rehearsal (Tools ▸ Hold Back, or the chip in the title bar)`;
   const overrides = Object.fromEntries(OVERRIDES.map((o) => [o.id, !!(((getConfig() || {}).overrides || {})[o.id])]));
-  hub.hold(overrides.osc ? HELD('OSC out') : '');
+  // ── a show from another computer (core/show/trust.js): its network features are held back until a person turns them on ──
+  let away = false;
+  const AWAY = 'held back: this show came from another computer, and its network features are off until you turn them on';
+  const heldNet = () => (overrides.osc ? HELD('OSC out') : away ? AWAY : '');
+  hub.hold(heldNet());
   // the rig: the show's devices, whether each is there, and the readiness check (app/main/rig-service.js)
-  const rig = createRig({ hub, state, engine, overrides, HELD, smoke, net, log: (l) => log(`[rig] ${l}`), notice: (t, ms) => notice(t, ms), changed: () => schedulePush(), cmd: (c) => cmd(c),
+  const rig = createRig({ hub, state, engine, overrides, HELD, held: heldNet, away: () => (away ? AWAY : ''), smoke, net, log: (l) => log(`[rig] ${l}`), notice: (t, ms) => notice(t, ms), changed: () => schedulePush(), cmd: (c) => cmd(c),
     document: () => document, facts: () => rigFacts(), sendMidi: (text, o) => sendMidi(text, o) });
   const isMtc = (b) => b[0] === 0xf1 || (b[0] === 0xf0 && b[1] === 0x7f && b[3] === 0x01);      // a quarter frame, or a full-frame message
   const ltcRuns = new Map();        // Timecode cue id -> the command that started its LTC
@@ -297,6 +302,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   const lighting = createLighting({ log: (l) => log(`[light] ${l}`), changed: () => schedulePush(), dryRun: smoke && !net });
   lighting.attach(engine);
   if (overrides.dmx) lighting.hold(true);
+  /** What goes out, held or let go: OSC (and the devices) and DMX, for a rehearsal or for a show from elsewhere. */
+  function holdOut() { hub.hold(heldNet()); lighting.hold(!!overrides.dmx || away); }
   engine.on('change', () => { schedulePush(); decodeAhead(); });
 
   // ── timecode and MIDI files: played out against the engine's clock (core/timecode/transport.js) ──
@@ -346,7 +353,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       if (!state.midi.outputs.length) return state.midi.error || 'no MIDI output on this computer';
       return port && !state.midi.outputs.includes(port) ? `the MIDI output “${port}” is not connected` : '';
     },
-    settings: () => document.doc.settings.timecode,
+    // (a show from another computer chases no timecode until it is turned on)
+    settings: () => (away ? { ...(document.doc.settings.timecode || {}), source: 'off' } : document.doc.settings.timecode),
   });
 
   /** A Network cue: one OSC message to its patch (or to a device, which may ask for each command to be sent again: rig-service.js). */
@@ -421,6 +429,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     // Map mode: the first control moved (or pad struck) is given to the desk control that is waiting for one
     if (mapLearner && mapped && (msg.kind === 'cc' || mapped.value > 0)) { const l = mapLearner; mapLearner = null; clearTimeout(l.timer); l.resolve(mapped.on); schedulePush(); return; }
     if (midiLearner) { const l = midiLearner; midiLearner = null; clearTimeout(l.timer); l.resolve({ text: midi.toText(msg, { brief: true }), from: port }); schedulePush(); return; }
+    if (away) { schedulePush(); return; }      // (a show from another computer: no MIDI trigger, mapping or show command until it is turned on)
     for (const t of midiTriggers) {
       if (!midi.matches(t.msg, msg) || !engine.byId.has(t.id)) continue;
       log(`[midi] ${midi.toText(msg)} fires ${t.id}`);
@@ -460,12 +469,13 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   function configureNetwork() {
     const doc = document.doc, n = doc.settings.network;
     midiTriggers = [];
-    show.walk(doc, (c) => { if (c.midiTrigger) { try { midiTriggers.push({ id: c.id, msg: midi.parseText(c.midiTrigger) }); } catch { /* said in the cue's problems */ } } });
-    triggers = oscTriggers(doc);
+    if (!away) show.walk(doc, (c) => { if (c.midiTrigger) { try { midiTriggers.push({ id: c.id, msg: midi.parseText(c.midiTrigger) }); } catch { /* said in the cue's problems */ } } });
+    triggers = away ? [] : oscTriggers(doc);
     const needs = MODULES.some((d) => d.needsInput && ((doc.modules || {})[d.id] || {}).enabled);
     const commands = Object.values(n.commands || {}).some((t) => oscCommands.parse(t));       // a message set to GO, Panic…
     // (a device is also a patch to the hub, found by its id; a device that says it is there by itself is listened for)
-    hub.configure({ patches: n.patches, devices: rigDevices.patchesOf(doc), inputPort: n.inputPort, listen: !!n.listen || needs || triggers.length > 0 || commands || learning || rig.wantsInput() });
+    // (a show from another computer: no port opened and no connection made, until it is turned on)
+    hub.configure({ patches: n.patches, devices: rigDevices.patchesOf(doc), inputPort: n.inputPort, connect: !away, listen: !away && (!!n.listen || needs || triggers.length > 0 || commands || learning || rig.wantsInput()) });
     rig.configure();
     transport.configure(doc);
     listenForLtc();
@@ -474,7 +484,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   let ltcInKey = '';
   function listenForLtc() {
     const t = document.doc.settings.timecode || {};
-    const key = t.source === 'ltc' ? `${t.input || ''}|${Number(t.channel) || 1}` : '';
+    const key = t.source === 'ltc' && !away ? `${t.input || ''}|${Number(t.channel) || 1}` : '';
     if (key === ltcInKey || !state.audioReady) return;
     ltcInKey = key;
     audioCmd({ op: 'ltc-in', on: !!key, input: t.input || '', channel: Number(t.channel) || 1 });
@@ -623,7 +633,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         if (p) cfg = { ...cfg, host: p.host, port: p.port, kind: p.device, fromPatch: p.name || def.KINDS[p.device].label };
       }
       // a test run starts only the modules that open no socket of their own (the hub records and sends nothing then)
-      const want = !!cfg.enabled && !(smoke && !net && !process.env.EC_SMOKE_MODULES && !['osc-control', 'show-feedback'].includes(def.id));
+      // (and a show from another computer starts none until it is turned on)
+      const want = !!cfg.enabled && !away && !(smoke && !net && !process.env.EC_SMOKE_MODULES && !['osc-control', 'show-feedback'].includes(def.id));
       const key = want ? JSON.stringify(cfg) : '';
       if ((runningCfg.get(def.id) || '') === key) continue;
       const old = running.get(def.id);
@@ -643,7 +654,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       const inst = running.get(def.id);
       let status = null;
       try { status = inst ? inst.status() : null; } catch (err) { status = { ok: false, text: err.message }; }
-      return { id: def.id, name: def.name, summary: def.summary, details: def.details || '', fields: def.fields, enabled: !!((document.doc.modules || {})[def.id] || {}).enabled, running: !!inst, status };
+      const enabled = !!((document.doc.modules || {})[def.id] || {}).enabled;
+      return { id: def.id, name: def.name, summary: def.summary, details: def.details || '', fields: def.fields, enabled, running: !!inst, status: !inst && enabled && away ? { ok: false, text: 'off: this show came from another computer' } : status, ...(away && enabled ? { away: true } : {}) };
     });
   }
 
@@ -890,7 +902,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     // video the audio window could not open, which is its format)
     const copyFail = (id) => { const c = engine.byId.get(id), abs = c && c.file && document.resolveFile(c.file); return abs ? copyFails.get(abs) : null; };
     const noFormat = (id) => { const c = engine.byId.get(id); const abs = c && c.picture && c.file && document.resolveFile(c.file); return !!abs && fs.existsSync(abs); };
-    const missing = e.problems.filter((p) => /^missing file/.test(p.why)).map((p) => ({ id: p.id, level: 'error', why: copyFail(p.id) ? `its file cannot be played: it is ${copyFail(p.id)}` : noFormat(p.id) ? 'its file cannot be played here: convert it (the manual says to what)' : 'its file is missing' }));
+    const onShare = (id) => { const c = engine.byId.get(id); return away && !!c && trust.isRemote(c.file); };
+    const missing = e.problems.filter((p) => /^missing file/.test(p.why)).map((p) => ({ id: p.id, level: 'error', why: onShare(p.id) ? 'its file is on another computer: not opened until you turn on this show’s network features' : copyFail(p.id) ? `its file cannot be played: it is ${copyFail(p.id)}` : noFormat(p.id) ? 'its file cannot be played here: convert it (the manual says to what)' : 'its file is missing' }));
     for (const [id, why] of lightFails) if (engine.byId.has(id)) missing.push({ id, level: 'warning', why: `its last GO did not reach the lighting desk: ${why}` });
     e.lastLoad = (e.playhead && lastLoad.get(e.playhead)) || 0;
     for (const p of lost()) if (p.id && engine.byId.has(p.id)) missing.push(p);
@@ -938,6 +951,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       timecode: { ...transport.status(), ltcInError: state.ltcIn || '' },
       // outputs held back for a rehearsal: [{ id, label, on }]
       overrides: OVERRIDES.map((o) => ({ ...o, on: !!overrides[o.id] })),
+      // a show from another computer, with its network features off (the title bar's line and its Turn on)
+      away,
       sent: hub.monitor().filter((x) => x.dir === 'out').slice(-12).map((x) => ({ at: x.at, message: x.text, to: x.who, ok: x.ok, why: x.why })),
       notice: state.notice && state.notice.until > Date.now() ? state.notice.text : '',
       noticeAt: state.notice && state.notice.until > Date.now() ? state.notice.at : 0,   // (the page shows whichever was said last: this or its own)
@@ -1365,6 +1380,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'save-version': {
         if (!document.showDir) return { needsFolder: true };
         const v = document.save({ note: c.note || '' });
+        if (!away) keepMine(document.showDir, document.doc.id);      // (last saved here: this computer's. A show from elsewhere is not made so by a save)
         showLog.add('show', `saved${c.note ? `: ${c.note}` : ''}`);
         return v ? { version: v } : { version: { ...(document.listVersions().at(-1) || {}), same: true } };
       }
@@ -1390,12 +1406,25 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'assistant-reset': if (assistant) assistant.reset(); agentSessions.delete('app'); break;
       case 'assistant-config': if (assistant) assistant.configure(c.config || {}); break;
 
+      // a show from another computer: its network features turned on, here and from now on for this show on this computer.
+      // Only from this computer's own window (nothing that came in over the network can ask, and nothing can while it is off).
+      case 'turn-on': {
+        if (c.from) return { error: 'only from this computer' };
+        if (!away) return { on: true };
+        away = false; document.localOnly = false;
+        keepMine(document.showDir, document.doc.id);
+        holdOut();
+        log('[show] network features turned on for this show');
+        showLog.add('show', 'Network features turned on for this show.');
+        applyDocument('turn-on');
+        probe(); decodedKey = ''; decodeAhead();      // (its sounds on another computer's share are opened now)
+        return { on: true };
+      }
       // an output held back for a rehearsal, or let go again: { what: 'osc' | 'midi' | 'timecode' | 'dmx', on } (on left out: the other way)
       case 'override': {
         if (!OVERRIDES.some((o) => o.id === c.what)) return { error: `no such output (${OVERRIDES.map((o) => o.id).join(', ')})` };
         overrides[c.what] = c.on === undefined ? !overrides[c.what] : !!c.on;
-        hub.hold(overrides.osc ? HELD('OSC out') : '');
-        lighting.hold(overrides.dmx);
+        holdOut();
         // (LTC that is running stops as timecode is held, and starts again, where it would have got to, as it is let go)
         if (c.what === 'timecode') for (const [key, on] of ltcRuns) audioCmd(overrides.timecode ? { op: 'ltc', key, on: false } : on);
         saveConfig({ overrides: { ...overrides } });
@@ -1587,18 +1616,45 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
 
   // ── opening shows ─────────────────────────────────────────────────────
-  function open(showDir, keep = false) {
+  // which shows are this computer's own (core/show/trust.js): kept in config.json as `shows`
+  let shows = null;
+  function record() {
+    if (shows) return shows;
+    const c = getConfig() || {};
+    if (c.shows && typeof c.shows === 'object') shows = { ...c.shows };
+    else { shows = trust.firstRecord(c); saveConfig({ shows }); }      // (the first time: the recent shows are this computer's)
+    return shows;
+  }
+  function keepMine(dir, id) { if (!dir) return; shows = trust.remember(record(), dir, id); saveConfig({ shows }); }
+  /** Whether a show folder is this computer's: made here just now, in this computer's own settings folder (the demo),
+   *  in the record, or (a test run, which makes its own shows) any show not opened `elsewhere`. */
+  function isMine(doc, showDir, elsewhere) {
+    if (doc.made) return true;
+    if (userDir) { const rel = path.relative(trust.keyOf(userDir), trust.keyOf(showDir)); if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return true; }
+    if (trust.isMine(record(), showDir, doc.doc.id)) return true;
+    return smoke && !elsewhere;
+  }
+  /** `elsewhere`: a test run's way of opening a show as one from another computer. */
+  function open(showDir, keep = false, { elsewhere = false } = {}) {
     const doc = ShowDocument.open(showDir);
+    away = !isMine(doc, showDir, elsewhere);
+    doc.localOnly = away;
+    if (doc.made) keepMine(showDir, doc.doc.id);
+    holdOut();
     bind(doc, keep);
+    if (away) { log(`[show] ${showDir} came from another computer: its network features are off until they are turned on`); showLog.add('show', 'This show came from another computer: its network features are off until you turn them on.'); }
     const recent = [showDir, ...((getConfig() || {}).recent || []).filter((p) => p !== showDir)].slice(0, 8);
     saveConfig({ lastShow: showDir, recent });
     log(`[show] opened ${showDir}${doc.warnings.length ? ` (${doc.warnings.length} warnings)` : ''}${doc.recovered ? ' with unsaved changes from last time' : ''}`);
     if (doc.recovered) notice('Unsaved changes from last time are back. Save keeps them; Revert discards them.', 9000);
     return doc;
   }
-  function openUntitled() { bind(new ShowDocument()); saveConfig({ lastShow: null }); }
+  /** A show made here (new, imported, from a template): this computer's. */
+  function madeHere() { away = false; holdOut(); }
+  function openUntitled() { madeHere(); bind(new ShowDocument()); saveConfig({ lastShow: null }); }
   /** A show read from another program's file (a QLab workspace): open, untitled, with the report of what came across. */
   function openImported(doc, report) {
+    madeHere();
     bind(new ShowDocument({ doc }));
     saveConfig({ lastShow: null });
     state.imported = report;
@@ -1607,7 +1663,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     schedulePush();
   }
   /** A new show started from a template (core/show/show-templates.js): open, untitled, nothing saved. */
-  function openTemplate(doc) { bind(new ShowDocument({ doc })); saveConfig({ lastShow: null }); log(`[show] new from a template: ${doc.lists.reduce((n, l) => n + l.cues.length, 0)} cues`); }
+  function openTemplate(doc) { madeHere(); bind(new ShowDocument({ doc })); saveConfig({ lastShow: null }); log(`[show] new from a template: ${doc.lists.reduce((n, l) => n + l.cues.length, 0)} cues`); }
   /** Save an untitled show (or a copy of this one) to a new folder and carry on there. */
   function saveAs(showDir) {
     fs.mkdirSync(path.join(showDir, 'media'), { recursive: true });
@@ -1615,11 +1671,13 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     if (was && fs.existsSync(path.join(was, 'media'))) fs.cpSync(path.join(was, 'media'), path.join(showDir, 'media'), { recursive: true });
     fs.writeFileSync(ShowDocument.filePath(showDir), show.stringify({ ...document.doc, title: document.showDir ? document.doc.title : path.basename(showDir).replace(/\.ecshow$/i, '') }));
     const before = { undo: document.undoStack, redo: document.redoStack };
-    const doc = open(showDir, true);
+    // (saved here, a show of this computer's is this computer's in its new folder too; one from elsewhere stays held back)
+    if (!away) keepMine(showDir, document.doc.id);
+    const doc = open(showDir, true, { elsewhere: away });
     doc.undoStack = before.undo; doc.redoStack = before.redo;      // the same show carrying on: Undo still goes back through what was done
     // sounds an untitled show named by where they were on this computer come into the folder
     const ops = [];
-    show.walk(doc.doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file && path.isAbsolute(c.file) && fs.existsSync(c.file)) ops.push({ op: 'cue.set', id: c.id, props: { file: adopt(c.file) } }); });
+    show.walk(doc.doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file && path.isAbsolute(c.file) && !(away && trust.isRemote(c.file)) && fs.existsSync(c.file)) ops.push({ op: 'cue.set', id: c.id, props: { file: adopt(c.file) } }); });
     if (ops.length) {
       doc.edit(ops, { label: 'collect media' }); doc.undoStack.pop(); doc.write();
       let bytes = 0; show.walk(doc.doc, (c) => { if ((c.type === 'audio' || c.type === 'video') && c.file) { try { bytes += fs.statSync(doc.resolveFile(c.file)).size; } catch { /* missing */ } } });
@@ -1750,6 +1808,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   let clockDay = '', clockFired = new Set();
   /** `now`: the time to check against (a test hands in a time of its own). */
   function checkClock(now = new Date()) {
+    if (away) return;                 // (a show from another computer: no clock trigger until it is turned on)
     const day = now.toDateString();
     if (day !== clockDay) { clockDay = day; clockFired = new Set(); }
     // (which are due, and that a time long past does not fire: core/show/triggers.js)
@@ -1790,7 +1849,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
 
   return { start, stop, cmd, snapshot, open, openUntitled, openImported, openTemplate, saveAs, adopt, agentCall, engine, lighting, addView: (wc) => { views.add(wc); schedulePush(); }, removeView: (wc) => views.delete(wc),
            get document() { return document; }, isDirty: () => document.dirty, isSounding: () => engine.running.size > 0, notice, midiIn, backupNow, playlogCsv, templateOf, settingsFile, checkClock, transport, played: () => played, moduleDefs: MODULES, stage, audioWindow: () => audioWin, audioEvent: onAudioEvent,
-           pretendHeard: (id, text) => hub.pretendHeard(id, text),
+           pretendHeard: (id, text) => hub.pretendHeard(id, text), pretendInput: (text, from, reply) => hub.pretendInput(text, from, reply),
            showLog, reportLog };      // (a test run sends and hears nothing: this stands in for a device's answer)
 }
 

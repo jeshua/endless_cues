@@ -44,7 +44,7 @@ A cue's `file` is relative to the show folder (`media/rain.wav`). Sounds dropped
     "timecode": { "source": "off", "rate": "30", "input": "", "channel": 1, "catchUp": true, "follow": true }
   },
   "modules": {
-    "osc-control":   { "enabled": false, "replyPort": 53001, "passcodes": [ { "code": "4821", "view": true, "edit": false, "control": true } ], "noPasscode": { "view": true, "edit": false, "control": false } },
+    "osc-control":   { "enabled": false, "replyPort": 53001, "passcodes": [ { "code": "4821", "view": true, "edit": false, "control": true } ], "noPasscode": { "view": true, "edit": false, "control": false } },   // a sender with no passcode never edits
     "lighting-desk": { "enabled": false, "kind": "etc-eos", "host": "", "port": 8000, "listenPort": 8001, "list": 1 },
     "web-remote":    { "enabled": false, "port": 8137, "control": true, "key": "" }
   },
@@ -140,6 +140,14 @@ Nothing is kept until the show is saved. An edit changes the working document: i
 - What the show does while it runs is not a change: a Mix cue moving the faders, a Reset, a GO. Only a person's edits are pending.
 - Quitting with unsaved changes asks: Save, Don't Save, or Cancel.
 - The journal (`show.unsaved.json`) means "not saved" never means "lost": a show that is reopened after a crash comes back with its unsaved changes, still unsaved, and says so.
+
+## A show from another computer
+
+A show is a folder that is meant to travel, so a show can arrive from anywhere: a download, a USB stick, a shared folder, a clone. A show that was not made, saved or turned on on this computer opens with its **network features off**: no module starts (OSC control, the web remote, the lighting desk, show feedback, the backup link), no port is opened, no TCP connection is made, nothing is sent (a Network or Device cue's GO is written in the monitor as held back, as with Tools ▸ Hold Back), DMX does not go out, no device is asked whether it is there and no props are looked for, and no cue is started by a clock, OSC, MIDI (or a MIDI show command, MSC or the Live view's mapping) or timecode. A sound named by another computer's path (`\\host\share\…`, `//host/share/…`) is not opened, and the cue says why: "its file is on another computer". Everything else plays as it always does: GO, Space and Esc, the sound, the stage.
+
+One quiet line in the title bar says so: *This show came from another computer. Its network features are off until you turn them on.* and **Turn on**, which gives it all back at once, without stopping anything that is playing, and is remembered for that show on this computer. Only this computer's window can turn it on (`turn-on`; a command that came in from anywhere else is refused).
+
+Nothing about this is in the show file, which stays the same whichever computer saved it. This computer keeps a record in its own `config.json` (`shows`: each show folder, by its real path, with the id of the show in it, the last 400): a show is this computer's when its folder is there with its id. A show is put in the record when it is made here (a new folder, New Show, an import or a template once saved, Start from a Folder), saved here, saved somewhere else with Save As, or turned on. A save does not turn on a show that came from elsewhere. The demo, which lives in this computer's settings folder, is its own. So a show moved or copied to another folder asks once more, and a show put in place of one of yours (another id) is not taken for yours. The first time the record is made, the recent shows (File ▸ Open Recent) are taken as this computer's, so an update holds back nothing that already worked here. A show written by the `ec` command line is not in the record and asks once. `core/show/trust.js`, tested by `test/trust.test.js`.
 
 ## Versions
 

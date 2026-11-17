@@ -50,6 +50,8 @@ class ShowDocument extends EventEmitter {
     this.saved = this.doc;    // the document as it is on disk (a new, untitled show: as it was made)
     this.assisted = false;    // an accepted proposal is among the unsaved changes (the version says so)
     this.recovered = false;   // opened with unsaved changes from last time
+    this.made = false;        // open() made this show (its folder had none): it was made on this computer
+    this.localOnly = false;   // a show from another computer, not turned on yet: a file on another computer's share is not opened (trust.js)
     this.pendingCache = null;
   }
 
@@ -74,6 +76,7 @@ class ShowDocument extends EventEmitter {
       let theirs = false; try { theirs = fs.readdirSync(showDir).some((n) => !n.startsWith('.')); } catch { /* no folder yet */ }
       fs.mkdirSync(theirs ? showDir : path.join(showDir, 'media'), { recursive: true });
       d.doc = d.saved = show.newShow(title || path.basename(showDir).replace(/\.ecshow$/i, ''));
+      d.made = true;
       d.write();
     }
     return d;
@@ -299,6 +302,8 @@ class ShowDocument extends EventEmitter {
   /** Where a cue's file is on disk: relative to the show folder unless absolute. */
   resolveFile(file) {
     if (!file) return null;
+    // (\\host\share and //host/share: not touched for a show from another computer until it is turned on)
+    if (this.localOnly && /^[\\/]{2}/.test(String(file))) return null;
     if (path.isAbsolute(file)) return file;
     return this.showDir ? path.join(this.showDir, file) : null;
   }

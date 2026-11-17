@@ -247,7 +247,9 @@ function cliProvider(name, { mcpServer, spawn = require('child_process').spawn, 
           if (j.is_error) throw new Error(String(j.result || 'Claude Code reported an error').slice(0, 400));
           return { text: String(j.result || '').trim() };
         }
-        // Codex: its one-shot mode, read-only sandbox, our MCP server given on the command line, the last message to a file
+        // Codex: its one-shot mode, read-only sandbox, our MCP server given on the command line, the last message to a file.
+        // (Its own shell and file reading stay: its CLI documents no switch that takes them away, so the read-only sandbox
+        // is what holds, and Settings ▸ Assistant says that Codex can read files on this computer.)
         const last = path.join(cwd, 'last.txt');
         const toml = (v) => JSON.stringify(v);
         const args = ['exec', '--skip-git-repo-check', '--sandbox', 'read-only', '-o', last,

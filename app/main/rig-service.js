@@ -38,9 +38,11 @@ function isPrivate(host) {
   return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
 }
 
-function createRig({ hub, state, engine, overrides, HELD, smoke = false, net = false, log = () => {}, notice = () => {}, changed = () => {}, document, facts = () => ({}), sendMidi = null }) {
+function createRig({ hub, state, engine, overrides, HELD, held: heldBy = null, away = () => '', smoke = false, net = false, log = () => {}, notice = () => {}, changed = () => {}, document, facts = () => ({}), sendMidi = null }) {
   const doc = () => document().doc;
-  const held = () => (overrides.osc ? HELD('OSC out') : '');
+  // (why nothing goes to the equipment: OSC out held back for a rehearsal, or the host's own reason. `away`: why the
+  // network is off altogether, for a show from another computer: then nothing is looked for either)
+  const held = heldBy || (() => (overrides.osc ? HELD('OSC out') : ''));
   let ticks = {};                   // the checklist's ticks: this sitting's, never the show's
   let found = null, scanning = false;
   let checkedAt = Date.now();
@@ -163,7 +165,7 @@ function createRig({ hub, state, engine, overrides, HELD, smoke = false, net = f
       midiOut.set(d.id, r.message);
     }
     stale = true;
-    if (entry.held) return { sent: entry, held: true, message: r.message, text: `Held back: nothing was sent (${rigDevices.isNetwork(d) ? 'OSC' : 'MIDI'} out is off for rehearsal)` };
+    if (entry.held) return { sent: entry, held: true, message: r.message, text: away() && rigDevices.isNetwork(d) ? 'Held back: nothing was sent (this show came from another computer: turn on its network features first)' : `Held back: nothing was sent (${rigDevices.isNetwork(d) ? 'OSC' : 'MIDI'} out is off for rehearsal)` };
     if (!entry.ok) return { error: `${cmdOf.label} was not sent: ${entry.why}`, sent: entry };
     return { sent: entry, held: false, message: r.message };
   }
@@ -192,6 +194,7 @@ function createRig({ hub, state, engine, overrides, HELD, smoke = false, net = f
         if (state.mode === 'show') return { error: 'Show mode: nothing is looked for on the network during a show (switch to Edit)' };
         if (engine.active().length) return { error: 'A cue is running: look for props when nothing is playing' };
         if (scanning) return { error: 'It is already looking' };
+        if (away()) return { error: 'This show came from another computer: turn on its network features first' };
         return lookForProps().then((list) => ({ found: list }));
       }
       case 'rig-tick': {
@@ -233,7 +236,7 @@ function createRig({ hub, state, engine, overrides, HELD, smoke = false, net = f
       });
     },
     /** Look for props (the one fixed hello). Nothing in Show mode, nothing while a cue runs. */
-    scan() { return state.mode === 'show' || engine.active().length || scanning ? Promise.resolve([]) : lookForProps(); },
+    scan() { return state.mode === 'show' || engine.active().length || scanning || away() ? Promise.resolve([]) : lookForProps(); },
     locked: () => state.mode === 'show',
   };
 

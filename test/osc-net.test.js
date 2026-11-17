@@ -72,12 +72,18 @@ function aShow() {
   return { ...s, list: s.doc.lists[0].id };
 }
 /** The module with senders: `from(port, tcp)` gives say(text) → { ret, reply, port } and everything it was sent in `got`. */
+/** (a show with no passcode of its own is given one that may do everything, and each sender connects with it first:
+ *  a sender with no passcode may not edit, and over UDP only a sender that has connected is answered) */
+const ALL = { code: '7777', view: true, edit: true, control: true };
+const ownCodes = (config) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
 function remote(host, config = {}) {
   const m = oscControl.create({ log() {}, changed() {}, host });
-  m.start(config);
+  const mine = ownCodes(config);
+  m.start(mine ? config : { ...config, passcodes: [ALL] });
   const from = (port, tcp = false) => {
     const got = [];
     const send = (address, args = [], o = {}) => got.push({ address, args: args.map((a) => (a && typeof a === 'object' ? a.value : a)), port: o.port });
+    if (!mine) m.onOsc({ address: '/connect', args: [ALL.code] }, { address: '10.0.0.9', port, tcp }, () => {});
     const say = (text) => {
       const msg = osc.decode(osc.encode(text)), n = got.length;
       const ret = m.onOsc(msg, { address: '10.0.0.9', port, tcp }, send);
@@ -268,8 +274,9 @@ test('OSC control: a long /cueLists is refused over UDP and answered over TCP; a
   m.onOsc({ address: '/cueLists', args: [] }, tcp, send);
   assert.equal(got.at(-1).data[0].cues.length, 300);
   t += 10 * 60 * 1000;                           // ten minutes of silence
+  const before = got.length;
   m.onOsc({ address: '/cue/1/name', args: [] }, udp, send);
-  assert.equal(got.at(-1).status, 'denied', 'a UDP sender is forgotten after 61 s');
+  assert.equal(got.length, before, 'a UDP sender is forgotten after 61 s, and is not answered until it connects again');
   m.onOsc({ address: '/cue/1/name', args: [] }, tcp, send);
   assert.equal(got.at(-1).status, 'ok', 'a connection is not');
   assert.match(m.status().text, /UDP and TCP 53000 · 1 connected/);
@@ -281,8 +288,8 @@ test('OSC control: a long /cueLists is refused over UDP and answered over TCP; a
 test('OSC control: passcodes grant view, edit and control apart; the no-passcode row says what a stranger may do', () => {
   const s = aShow(), host = fakeHost(s.doc);
   const r = remote(host, { passcodes: [{ code: '1111', view: true }, { code: '0222', view: true, control: true }, { code: '3333', view: true, edit: true, control: true }], noPasscode: { view: true } });
-  // nobody: may look
-  const stranger = r.from(1);
+  // nobody: may look (over TCP: over UDP a sender that has not connected is not answered)
+  const stranger = r.from(1, true);
   assert.equal(stranger.say('/cue/1/name').reply.data, 'House to half');
   assert.equal(stranger.say('/go').reply.status, 'denied');
   assert.equal(stranger.say('/cue/1/name Changed').reply.status, 'denied');
@@ -312,11 +319,12 @@ test('OSC control: passcodes grant view, edit and control apart; the no-passcode
   assert.deepEqual(r.from(5).say('/connect 9999').reply, { workspace_id: s.doc.id, address: '/connect', status: 'denied', data: 'badpass' });
   const closed = remote(fakeHost(s.doc), { passcodes: [{ code: '1111', view: true, edit: true, control: true }] });
   assert.equal(closed.say('/connect').reply.data, 'badpass');
-  assert.equal(closed.say('/cue/1/name').reply.status, 'denied');
+  assert.equal(closed.from(6, true).say('/cue/1/name').reply.status, 'denied');
   assert.equal(closed.say('/version').reply.data, '5.0.0', '/version answers whoever asks');
-  // the older single passcode still grants everything, and no passcode at all leaves it open
+  // the older single passcode still grants everything; no passcode at all lets anyone view and run the show, never edit it
   assert.equal(remote(fakeHost(s.doc), { passcode: 'abc' }).say('/connect abc').reply.data, 'ok:view|edit|control');
-  assert.deepEqual(oscControl.accessOf({}).none, { view: true, edit: true, control: true });
+  assert.deepEqual(oscControl.accessOf({}).none, { view: true, edit: false, control: true });
+  assert.deepEqual(oscControl.accessOf({ noPasscode: { view: true, edit: true, control: true } }).none, { view: true, edit: false, control: true }, 'a row that says edit is not taken at its word');
   assert.deepEqual(oscControl.accessOf({ passcode: 'x' }).none, { view: false, edit: false, control: false });
 });
 
@@ -542,4 +550,50 @@ test('Show feedback: no GO for what happened before it was switched on, and a cu
   sent.length = 0;
   host.cmd({ op: 'start', id: s.id('m') }); host.cmd({ op: 'jump', number: s.id('m') }); m.onState();
   assert.ok(sent.includes('/ec/playhead "" "no number"'), sent.join(' | '));
+});
+
+test('OSC control with no passcode: anyone may view and run the show, nobody may change it', () => {
+  const s = aShow(), host = fakeHost(s.doc);
+  const m = oscControl.create({ log() {}, changed() {}, host });
+  m.start({});
+  const got = [], send = (address, args) => got.push(JSON.parse(args[0].value));
+  const from = { address: '10.0.0.9', port: 7000, tcp: true };
+  const say = (address, args = []) => { m.onOsc({ address, args }, from, send); return got.at(-1); };
+  assert.equal(say('/connect').data, 'ok:view|control');
+  say('/alwaysReply', [1]);
+  assert.equal(say('/go').status, 'ok');
+  assert.equal(say('/cue/1/name').data, 'House to half');
+  for (const [address, args] of [['/cue/1/name', ['Changed']], ['/save', []], ['/new', ['memo']], ['/delete/1', []], ['/renumber', [5, 1]], ['/undo', []], [`/move/${s.id('a')}`, [1]]])
+    assert.equal(say(address, args).status, 'denied', address);
+  assert.equal(show.findByNumber(host.doc, '1').name, 'House to half');
+  assert.ok(!host.cmds.some((c) => ['edit', 'save', 'undo'].includes(c.op)), 'no edit reached the host');
+});
+
+test('OSC control is no UDP reflector: a sender that has not connected gets no answer, and one address gets 32 KB a second at most', () => {
+  const ops = []; for (let i = 0; i < 40; i++) ops.push({ op: 'cue.add', cue: { type: 'memo', number: String(i), name: `A cue with a fairly long name, number ${i}` } });
+  const host = fakeHost(build(ops).doc);
+  let t = 1e6;
+  const m = oscControl.create({ log() {}, changed() {}, host, now: () => t });
+  m.start({});
+  const sent = [], send = (address, args, o) => sent.push({ address, bytes: osc.encode(address, args).length, port: o && o.port });
+  const forged = { address: '192.0.2.7', port: 53535 };
+  m.onOsc({ address: '/cueLists', args: [] }, forged, send);
+  m.onOsc({ address: '/cue/1/name', args: [] }, forged, send);
+  assert.equal(sent.length, 0, 'nothing goes to an address that never connected');
+  m.onOsc({ address: '/go', args: [] }, forged, send);
+  assert.equal(host.cmds.filter((c) => c.op === 'go').length, 1, 'a plain GO from a box that never connects still works');
+  m.onOsc({ address: '/version', args: [] }, forged, send);
+  assert.equal(sent.length, 1, '/version is answered: it is short');
+  // a client that connects is answered as QLab answers one: on 53001
+  m.onOsc({ address: '/connect', args: [] }, forged, send);
+  sent.length = 0;
+  for (let i = 0; i < 20; i++) m.onOsc({ address: '/cueLists', args: [] }, forged, send);
+  const bytes = sent.reduce((n, x) => n + x.bytes, 0);
+  assert.ok(sent.length >= 1 && sent.every((x) => x.port === 53001), 'answered on 53001');
+  assert.ok(bytes <= 32768, `at most 32 KB in a second (${bytes})`);
+  assert.ok(sent.length < 20, 'the rest are not sent');
+  t += 1000;
+  const n = sent.length;
+  m.onOsc({ address: '/cueLists', args: [] }, forged, send);
+  assert.equal(sent.length, n + 1, 'a second later it is answered again');
 });

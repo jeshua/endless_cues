@@ -69,9 +69,14 @@ function aShow() {
 }
 
 /** The module with a sender: `say('/address args')` returns { ret, reply } where reply is the JSON that came back. */
+/** (a show with no passcode of its own is given one that may do everything, and each sender connects with it first:
+ *  a sender with no passcode may not edit, and over UDP only a sender that has connected is answered) */
+const ALL = { code: '7777', view: true, edit: true, control: true };
+const ownCodes = (config) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
 function remote(host, config = {}, opts = {}) {
   const m = oscControl.create({ log() {}, changed() {}, host, ...opts });
-  m.start(config);
+  const mine = ownCodes(config);
+  m.start(mine ? config : { ...config, passcodes: [ALL] });
   const from = (port) => {
     const got = [];
     const send = (address, args = []) => got.push({ address, args: args.map((a) => (a && typeof a === 'object' ? a.value : a)) });
@@ -83,6 +88,7 @@ function remote(host, config = {}, opts = {}) {
       return { ret, address: back && back.address, reply: back ? JSON.parse(back.args[0]) : null };
     };
     // (a plain command is answered only on request, as in QLab: these tests read every answer)
+    if (!mine) m.onOsc({ address: '/connect', args: [ALL.code] }, { address: '10.0.0.9', port }, () => {});
     if (opts.always !== false) m.onOsc({ address: '/alwaysReply', args: [1] }, { address: '10.0.0.9', port }, () => {});
     return { say, got, ask: (text, args) => say(text, args).reply.data };
   };
@@ -325,9 +331,11 @@ test('OSC control: an answer too big for one UDP message is an error, not a data
 test('OSC control: one passcode; a client is forgotten after 61 s of silence; wrong tries are made to wait', () => {
   let t = 1e6;
   const s = aShow(), host = fakeHost(s.doc), r = remote(host, { passcode: '4321' }, { now: () => t });
-  assert.equal(r.say('/cue/1/name').reply.status, 'denied');
-  assert.equal(r.say('/cueLists').reply.status, 'denied');
-  assert.equal(r.say('/thump').reply.status, 'denied');
+  // (over UDP a sender that has not connected is not answered at all: its address could be anyone's)
+  assert.equal(r.say('/cue/1/name').reply, null);
+  assert.equal(r.say('/cueLists').reply, null);
+  assert.equal(r.say('/thump').reply, null);
+  assert.equal(r.say('/cue/1/name').ret, true, 'refused, all the same');
   assert.equal(r.ask('/version'), '5.0.0', '/version and /workspaces answer whoever asks');
   assert.equal(r.ask('/workspaces').length, 1);
   assert.equal(r.say('/sm/thunder').reply, null, 'what is not ours is not answered, connected or not');
@@ -342,15 +350,15 @@ test('OSC control: one passcode; a client is forgotten after 61 s of silence; wr
   const inn = r.say('/connect 4321');
   assert.deepEqual([inn.ret, inn.reply.status, inn.reply.data], ['done', 'ok', 'ok:view|edit|control']);
   assert.equal(r.ask('/cue/1/name'), 'House to half');
-  assert.equal(r.from(5001).say('/cue/1/name').reply.status, 'denied', 'another sender is another client');
+  assert.equal(r.from(5001).say('/cue/1/name').reply, null, 'another sender is another client');
   // any message keeps it remembered; silence does not
   t += 60000; assert.equal(r.say('/cue/1/name').reply.status, 'ok');
   t += 60000; assert.equal(r.say('/thump').reply.data, 'thump');
-  t += 62000; assert.equal(r.say('/cue/1/name').reply.status, 'denied');
+  t += 62000; assert.equal(r.say('/cue/1/name').reply, null, 'forgotten: not answered');
   r.say('/connect 4321'); r.say('/forgetMeNot 1');
   t += 3600000; assert.equal(r.say('/cue/1/name').reply.status, 'ok', '/forgetMeNot');
   r.say('/disconnect');
-  assert.equal(r.say('/cue/1/name').reply.status, 'denied');
+  assert.equal(r.say('/cue/1/name').reply, null);
   assert.equal(host.cmds.length, 0);
 });
 
@@ -405,6 +413,7 @@ test('OSC control through the hub, over UDP: a read answered, an update pushed, 
   sock.on('message', (b) => got.push(osc.decode(b)));
   const say = async (text) => { await new Promise((r) => sock.send(osc.encode(text), port, '127.0.0.1', r)); await sleep(40); };
   await sleep(40);
+  await say('/connect');            // (over UDP only a sender that has connected is answered)
   await say('/cue/10/name');
   assert.equal(got.at(-1).address, '/reply/cue/10/name');
   assert.equal(JSON.parse(got.at(-1).args[0]).data, 'Storm');
@@ -415,7 +424,7 @@ test('OSC control through the hub, over UDP: a read answered, an update pushed, 
   await say('/playhead/2');
   m.onState(); await sleep(40);
   assert.deepEqual([got.at(-1).address, got.at(-1).args[0]], [`/update/workspace/${s.doc.id}/cueList/${s.list}/playbackPosition`, s.id('b')]);
-  assert.deepEqual(told, { '/cue/10/name': true, '/cue/77/name': false, '/workspaces': true, '/updates': true, '/playhead/2': true });
-  assert.equal(hub.monitor().filter((e) => e.dir === 'in').length, 5, 'everything heard is in the monitor');
+  assert.deepEqual(told, { '/connect': true, '/cue/10/name': true, '/cue/77/name': false, '/workspaces': true, '/updates': true, '/playhead/2': true });
+  assert.equal(hub.monitor().filter((e) => e.dir === 'in').length, 6, 'everything heard is in the monitor');
   m.stop(); hub.close(); sock.close();
 });

@@ -34,7 +34,13 @@
  * says "/udpReplyPort <n>"; the module's own setting can make that "the port it came from" instead.
  *
  * Who may do what: each passcode grants view (read), edit (change the show) and control (run it), in
- * any combination, and a row for "no passcode" says what a sender that never connects may do.
+ * any combination, and a row for "no passcode" says what a sender that never connects may do: view
+ * and control at most. Editing always takes a passcode with edit access.
+ *
+ * Answers over UDP go only to a sender that has sent /connect (and /version, /workspaces and /connect's
+ * own answer to anyone: they are small), and at most REPLY_BUDGET bytes a second to one address. A UDP
+ * sender's address can be forged, so without this a short question with a forged address would send
+ * someone else 9 KB. A plain command (/go) from a sender that never connected still works.
  *
  * Everything is done through host.cmd and read from host.snapshot: a property is written with a
  * cue.set edit, so Show mode refuses it. A message naming a cue that is not there is an error and
@@ -54,6 +60,8 @@ const QLAB_VERSION = '5.0.0';       // the dictionary this follows: a remote pic
 const KEEP_MS = 61000;              // QLab forgets a UDP client after 61 s of silence
 const MAX_REPLY = 9000;             // bytes: one UDP datagram (macOS sends no more than 9216 by default)
 const QLAB_REPLY_PORT = 53001;      // where QLab answers a UDP client, whatever port the client sent from
+const REPLY_BUDGET = 32768;         // bytes a second, at most, sent over UDP to any one address (answers, updates, events)
+const ANSWERS_ANYONE = new Set(['/connect', '/version', '/workspaces']);     // answered over UDP before a /connect: short answers
 const LEVELS = ['view', 'edit', 'control'];
 // QLab's names for the cues "/new" makes, where they are not this app's own type names
 const NEW_TYPES = { 'go to': 'goto', 'goto': 'goto' };
@@ -65,15 +73,16 @@ class Denied extends Error { constructor(level) { super(`this needs ${level} acc
 /**
  * Who may do what, from the module's settings:
  *   passcodes    [{ code, view, edit, control }]   (and the older single `passcode`, which grants everything)
- *   noPasscode   { view, edit, control }           what a sender that gave no passcode may do
- * With no passcode at all, everyone may do everything, as before there were levels; once there is one,
- * a sender without it may do nothing unless the no-passcode row says so (QLab's default too).
+ *   noPasscode   { view, control }                 what a sender that gave no passcode may do (never edit)
+ * With no passcode at all, everyone may view and run the show, and nobody may change it; once there is
+ * one, a sender without it may do nothing unless the no-passcode row says so (QLab's default too).
  */
 function accessOf(cfg = {}) {
   const row = (r) => ({ view: !!(r && r.view), edit: !!(r && r.edit), control: !!(r && r.control) });
   const codes = (Array.isArray(cfg.passcodes) ? cfg.passcodes : []).filter((p) => p && String(p.code ?? '').trim() !== '').map((p) => ({ code: String(p.code).trim(), ...row(p) }));
   if (cfg.passcode != null && String(cfg.passcode).trim() !== '') codes.push({ code: String(cfg.passcode).trim(), view: true, edit: true, control: true });
-  const none = cfg.noPasscode && typeof cfg.noPasscode === 'object' ? row(cfg.noPasscode) : row(codes.length ? {} : { view: true, edit: true, control: true });
+  // (a sender with no passcode never edits: changing the show takes a passcode with edit access)
+  const none = { ...(cfg.noPasscode && typeof cfg.noPasscode === 'object' ? row(cfg.noPasscode) : row(codes.length ? {} : { view: true, control: true })), edit: false };
   return { codes, none };
 }
 const any = (perms) => LEVELS.some((l) => perms[l]);
@@ -109,9 +118,9 @@ module.exports = {
   name: 'OSC control',
   summary: 'Run the show from Companion, a Stream Deck, a desk or another computer (QLab-compatible addresses).',
   needsInput: true,
-  details: 'QLab’s addresses, over UDP and TCP on the input port. The show: /go · /go/<number> · /panic · /panicInTime <secs> · /stop · /hardStop · /pause · /resume · /reset · /playhead/<number> (and next, previous, nextSequence, previousSequence) · /select/<number> · /showMode · /undo · /redo · /save · /new <type> · /move/<id> <index> · /delete/<number> · /renumber <start> <increment>. One cue, as /cue/<number>/… , /cue_id/<id>/… , /cue/selected/… (the cue standing by), /cue/playhead/… or /cue/active/… : start, preview, stop, panic, pause, resume, togglePause, loadAt; and its properties: name, number, notes, preWait, postWait, duration, continueMode, armed, flagged and colorName to read or write, isRunning, isPaused, type and the like to read. To ask: /cueLists · /runningCues · /selectedCues · /version · /workspaces · /updates 1. To follow the show: /listen (QLab’s /qlab/event/… messages). A cue is called by its number, so number the cues it should reach. Changing the show is an edit: Show mode refuses it. A command is answered only after /alwaysReply 1; a question always is.',
+  details: 'QLab’s addresses, over UDP and TCP on the input port. The show: /go · /go/<number> · /panic · /panicInTime <secs> · /stop · /hardStop · /pause · /resume · /reset · /playhead/<number> (and next, previous, nextSequence, previousSequence) · /select/<number> · /showMode · /undo · /redo · /save · /new <type> · /move/<id> <index> · /delete/<number> · /renumber <start> <increment>. One cue, as /cue/<number>/… , /cue_id/<id>/… , /cue/selected/… (the cue standing by), /cue/playhead/… or /cue/active/… : start, preview, stop, panic, pause, resume, togglePause, loadAt; and its properties: name, number, notes, preWait, postWait, duration, continueMode, armed, flagged and colorName to read or write, isRunning, isPaused, type and the like to read. To ask: /cueLists · /runningCues · /selectedCues · /version · /workspaces · /updates 1. To follow the show: /listen (QLab’s /qlab/event/… messages). A cue is called by its number, so number the cues it should reach. Changing the show is an edit: Show mode refuses it. Over UDP, answers go only to a sender that has sent /connect; a command is answered only after /alwaysReply 1, a question always is.',
   fields: [
-    { key: 'access', label: 'Who may do what', kind: 'osc-access', help: 'View: read the show. Edit: change it. Control: run it. A sender gives a passcode with /connect <passcode>.' },
+    { key: 'access', label: 'Who may do what', kind: 'osc-access', help: 'View: read the show. Control: run it. Edit: change it, which only a passcode can allow. A sender gives a passcode with /connect <passcode>.' },
     { key: 'replyPort', label: 'UDP answers go to port', kind: 'number', help: '53001 is where QLab answers, whatever port the question came from, and what remotes built for QLab listen on. 0: back to the port each message came from. A sender can ask for its own with /udpReplyPort. Over TCP the answer goes back on the connection.' },
   ],
   accessOf,
@@ -125,6 +134,16 @@ module.exports = {
     const can = (what) => !!(host.supports && host.supports(what));       // an op a newer host has (a cue loaded by id, one cue reset, the playhead taken off)
     const fails = new Map();            // address -> { n, until }: wrong passcodes, and when the next try is listened to
     let seen = null;                    // what the subscribers were last told about (null: nobody is subscribed)
+    const spent = new Map();            // address -> { at, bytes }: what has gone to it over UDP this second
+    let overSaid = 0;
+    /** Whether `bytes` more may go to this address over UDP this second (a forged sender's address gets little). */
+    function budget(address, bytes) {
+      const t = now(), b = spent.get(address);
+      if (!b || t - b.at >= 1000) { if (spent.size > 256) spent.clear(); spent.set(address, { at: t, bytes }); return bytes <= REPLY_BUDGET; }
+      if (b.bytes + bytes > REPLY_BUDGET) { if (t - overSaid > 5000) { overSaid = t; log(`answers to ${address} held back: more than ${REPLY_BUDGET} bytes a second`); } return false; }
+      b.bytes += bytes;
+      return true;
+    }
 
     /** One message → a host command (or a list of them, done in order until one is refused). null: not one of these. */
     function route(address, args = []) {
@@ -450,7 +469,7 @@ module.exports = {
       const who = keyOf(from);
       let c = clients.get(who);
       if (c && !alive(c)) { clients.delete(who); c = null; }
-      if (!c) { c = { until: 0, perms: null, updates: false, keep: false, send, always: false, replyPort: null, tcp: !!from.tcp, listen: new Set(), format: '' }; clients.set(who, c); }
+      if (!c) { c = { until: 0, perms: null, connected: false, address: from.address, updates: false, keep: false, send, always: false, replyPort: null, tcp: !!from.tcp, listen: new Set(), format: '' }; clients.set(who, c); }
       c.until = now() + KEEP_MS; c.send = send;
       return c;
     }
@@ -460,7 +479,11 @@ module.exports = {
     /** The port a UDP sender is answered on: its own choice, or the module's (53001 as QLab; 0: the port it sent from). */
     const replyPortOf = (c) => (c && c.replyPort != null ? c.replyPort : cfg.replyPort == null || cfg.replyPort === '' ? QLAB_REPLY_PORT : Number(cfg.replyPort) || 0);
     /** Something sent to a client that it did not ask for just now (an update, an event). */
-    const tell = (c, address, args) => { try { c.send(address, args, c.tcp ? {} : { port: replyPortOf(c) }); } catch { /* gone */ } };
+    const tell = (c, address, args) => {
+      // (over UDP only to a client that connected, and within its address's budget)
+      if (!c.tcp && (!c.connected || !budget(c.address, osc.encode(address, args).length))) return;
+      try { c.send(address, args, c.tcp ? {} : { port: replyPortOf(c) }); } catch { /* gone */ }
+    };
 
     /** A message from the input port. 'done': understood, and acted on or answered. true: ours, and refused. false: not ours. */
     function onOsc(msg, from, send) {
@@ -478,7 +501,13 @@ module.exports = {
         const body = (st, d) => [{ type: 's', value: JSON.stringify({ ...(id ? { workspace_id: id } : {}), address: msg.address, status: st, ...(d !== undefined ? { data: d } : {}) }) }];
         let out = body(status, data);
         // (a datagram the system will not send is an error on the input port's socket: say so instead. A connection carries any size.)
-        if (!from.tcp) { const size = osc.encode(`/reply${msg.address}`, out).length; if (size > MAX_REPLY) { status = 'error'; out = body(status, `the answer is ${size} bytes, more than one UDP message carries: ask over TCP (the same port)`); } }
+        if (!from.tcp) {
+          // (over UDP, only a sender that has connected is answered, bar the few short answers anyone gets: a forged address gets nothing)
+          if (!(c && c.connected) && !ANSWERS_ANYONE.has(a)) return status;
+          let size = osc.encode(`/reply${msg.address}`, out).length;
+          if (size > MAX_REPLY) { status = 'error'; out = body(status, `the answer is ${size} bytes, more than one UDP message carries: ask over TCP (the same port)`); size = osc.encode(`/reply${msg.address}`, out).length; }
+          if (!budget(from.address, size)) return status;
+        }
         send(`/reply${msg.address}`, out, from.tcp ? {} : { port: replyPortOf(c) });
         return status;
       };
@@ -494,7 +523,7 @@ module.exports = {
         // (with no passcode set at all, whatever is sent is welcome, as before)
         const granted = code || (given === '' || !access.codes.length ? access.none : null);
         const good = !!granted && any(granted);
-        if (good) { client(from, send).perms = code ? { view: code.view, edit: code.edit, control: code.control } : null; fails.delete(from.address); }
+        if (good) { const c = client(from, send); c.perms = code ? { view: code.view, edit: code.edit, control: code.control } : null; c.connected = true; fails.delete(from.address); }
         else { const n = (f ? f.n : 0) + 1; fails.set(from.address, { n, until: now() + Math.min(32, 2 ** (n - 1)) * 1000 }); }
         reply(good ? 'ok' : 'denied', good ? `ok:${LEVELS.filter((l) => granted[l]).join('|')}` : 'badpass');
         return good ? 'done' : true;

@@ -177,3 +177,11 @@ test('updates: the daily check is on (the owner\'s decision: one GET of the feed
   assert.equal(FEED, 'https://downloads.endlesscues.com/');
   // (that nothing downloads before Download, nor installs before quit or Restart now, is test/updates.test.js)
 });
+
+test('OSC control’s no-passcode row never edits, and a show this computer has no record of is not taken for its own', () => {
+  const { accessOf } = require('../app/main/modules/osc-control');
+  assert.deepEqual(accessOf({}).none, { view: true, edit: false, control: true });
+  assert.equal(accessOf({ noPasscode: { view: true, edit: true, control: true } }).none.edit, false);
+  const trust = require('../core/show/trust');
+  assert.equal(trust.isMine({}, '/somewhere/A.ecshow', 'show_x'), false);
+});

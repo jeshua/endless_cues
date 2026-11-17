@@ -561,7 +561,7 @@ async function run({ host, win, log, makeDemo }) {
     check('a patch takes a second destination, and can choose the interface it leaves by', await until(() => page(`!!document.querySelector('[data-destination="0"]') && document.querySelector('[data-iface]').options.length >= 1`), 3000) && (snap().doc.settings.network.patches[0].destinations || []).length === 1, snap().doc.settings.network.patches[0]);
     host.cmd({ op: 'edit', ops: [{ op: 'show.set', path: 'settings.network.patches', value: snap().doc.settings.network.patches.map((p, i) => (i ? p : { ...p, destinations: undefined })) }, { op: 'show.set', path: 'settings.network.commands.go', value: '' }, { op: 'show.set', path: 'modules.osc-control.enabled', value: true }], label: 'network' });
     await page(`(async () => { document.querySelector('.modal nav [data-section="integrations"]').click(); await new Promise((r) => setTimeout(r, 0)); document.querySelector('.modal .settings-subtabs [data-section="modules"]').click(); })()`);
-    check('OSC control shows who may do what: with no passcode yet, everyone may do everything', await until(() => page(`(() => { const r = document.querySelector('[data-access-row="none"]'); return !!r && [...r.querySelectorAll('input')].every((i) => i.checked); })()`), 3000));
+    check('OSC control shows who may do what: with no passcode yet, everyone may view and run the show, and edit cannot be ticked', await until(() => page(`(() => { const r = document.querySelector('[data-access-row="none"]'); if (!r) return false; const b = (l) => r.querySelector('[data-level="' + l + '"]'); return b('view').checked && b('control').checked && !b('edit').checked && b('edit').disabled; })()`), 3000));
     await page(`document.querySelector('[data-add-passcode]').click()`);
     check('Add a passcode makes a four-digit one, and closes the door to senders without it', await until(() => { const m = snap().doc.modules['osc-control']; return (m.passcodes || []).length === 1 && /^\d{4}$/.test(m.passcodes[0].code) && m.noPasscode && !m.noPasscode.control; }, 3000), snap().doc.modules['osc-control']);
     check('…and the page shows it so', await until(() => page(`!!document.querySelector('[data-access-row="0"]') && [...document.querySelector('[data-access-row="none"]').querySelectorAll('input')].every((i) => !i.checked)`), 3000));
@@ -819,6 +819,8 @@ async function run({ host, win, log, makeDemo }) {
     await require('./smoke-declutter').run({ host, win, check, until, page, sleep, shot, log });
     // the assistant pointing at the window: the helper's where-is and keys, a tab, a cue, a pane, Show mode refusing (smoke-guide.js)
     await require('./smoke-guide').run({ host, win, check, until, page, sleep, shot });
+    // a show from another computer, held back until Turn on; OSC control with no passcode, and no answers to a forged sender (smoke-hardening.js)
+    await require('./smoke-hardening').run({ host, win, check, until, page, sleep, shot });
     check('nothing was logged as an error by the page', true);
   } catch (err) {
     failed++;

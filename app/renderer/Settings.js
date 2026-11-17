@@ -326,16 +326,18 @@ function OscCommand({ k, label, s }) {
 function OscAccess({ cfg }) {
   const legacy = String(cfg.passcode || '').trim();
   const codes = [...(Array.isArray(cfg.passcodes) ? cfg.passcodes : []), ...(legacy ? [{ code: legacy, view: true, edit: true, control: true }] : [])];
-  // (as the module reads it: with no passcode at all everyone may do everything; once there is one, a sender without it may do nothing unless this row says so)
-  const none = cfg.noPasscode && typeof cfg.noPasscode === 'object' ? cfg.noPasscode : codes.length ? {} : { view: true, edit: true, control: true };
+  // (as the module reads it: with no passcode at all everyone may view and run the show; once there is one, a sender without it may do
+  // nothing unless this row says so. Editing always takes a passcode.)
+  const none = { ...(cfg.noPasscode && typeof cfg.noPasscode === 'object' ? cfg.noPasscode : codes.length ? {} : { view: true, control: true }), edit: false };
   // (one edit, so one undo step and one restart of the module; the older single passcode becomes a row like the others)
   const save = (nextCodes, nextNone) => edit([{ op: 'show.set', path: 'modules.osc-control.passcodes', value: nextCodes },
-    { op: 'show.set', path: 'modules.osc-control.noPasscode', value: { view: !!nextNone.view, edit: !!nextNone.edit, control: !!nextNone.control } },
+    { op: 'show.set', path: 'modules.osc-control.noPasscode', value: { view: !!nextNone.view, edit: false, control: !!nextNone.control } },
     ...(legacy ? [{ op: 'show.set', path: 'modules.osc-control.passcode', value: '' }] : [])], 'OSC access');
   const fresh = () => { let c; do { c = String(Math.floor(1000 + Math.random() * 9000)); } while (codes.some((x) => x.code === c)); return c; };
-  const boxes = (row, change) => ['view', 'edit', 'control'].map((l) => html`<label class="row-flex" style="gap:5px;margin:0" title=${{ view: 'Read the show', edit: 'Change the show', control: 'Run the show: GO, stop, the playhead' }[l]}><input type="checkbox" style="accent-color:var(--accent)" data-level=${l} checked=${!!row[l]} onChange=${(e) => change({ ...row, [l]: e.target.checked })} />${l}</label>`);
+  // (`open`: the no-passcode row, which can never edit)
+  const boxes = (row, change, open = false) => ['view', 'edit', 'control'].map((l) => { const off = open && l === 'edit'; return html`<label class="row-flex" style="gap:5px;margin:0" title=${off ? 'Changing the show takes a passcode' : { view: 'Read the show', edit: 'Change the show', control: 'Run the show: GO, stop, the playhead' }[l]}><input type="checkbox" style="accent-color:var(--accent)" data-level=${l} disabled=${off} checked=${!!row[l] && !off} onChange=${(e) => change({ ...row, [l]: e.target.checked })} />${l}</label>`; });
   return html`<div class="tablelike" data-osc-access>
-    <div class="tr" style="grid-template-columns:150px 1fr 30px" data-access-row="none"><span>No passcode</span><div class="row-flex" style="gap:14px">${boxes(none, (r) => save(codes, r))}</div><span></span></div>
+    <div class="tr" style="grid-template-columns:150px 1fr 30px" data-access-row="none"><span>No passcode</span><div class="row-flex" style="gap:14px">${boxes(none, (r) => save(codes, r), true)}</div><span></span></div>
     ${codes.map((c, i) => html`<div class="tr" style="grid-template-columns:150px 1fr 30px" key=${i} data-access-row=${i}>
       <${TextBox} mono value=${c.code} onCommit=${(v) => { if (v.trim()) save(codes.map((x, j) => (j === i ? { ...x, code: v.trim() } : x)), none); }} />
       <div class="row-flex" style="gap:14px">${boxes(c, (r) => save(codes.map((x, j) => (j === i ? r : x)), none))}</div>
@@ -453,7 +455,7 @@ function AssistantPane({ s, info, refreshInfo, say, review }) {
       ${keyRow('Key, if it needs one', 'apiKey', 'Sent as a bearer token.')}` : null}
     ${provider === 'ollama' ? html`<${Row} title="Address" help="Empty: this computer."><${TextBox} mono value=${a.baseURL} placeholder=${compat.baseURL} onCommit=${(v) => apply({ baseURL: v })} /><//>` : null}
     ${compat ? html`<${Row} title="Model" help="It must be able to call tools."><${TextBox} mono value=${a.model} placeholder=${MODEL_HINT[provider] || 'model id'} onCommit=${(v) => apply({ model: v })} /><//>` : null}
-    ${provider === 'claude-code' || provider === 'codex' ? html`<${Row} title=${provider === 'codex' ? 'Codex' : 'Claude Code'} help=${`${a.installed && a.installed[provider] ? 'Uses its own sign-in.' : 'Not found: install it and sign in first.'} It gets this app’s tools only: no files, no commands.`}><span class="dim">${a.installed && a.installed[provider] ? 'found' : 'not found'}</span><//>` : null}
+    ${provider === 'claude-code' || provider === 'codex' ? html`<${Row} title=${provider === 'codex' ? 'Codex' : 'Claude Code'} help=${`${a.installed && a.installed[provider] ? 'Uses its own sign-in.' : 'Not found: install it and sign in first.'} ${provider === 'codex' ? 'It can also read files on this computer and run commands that only read: Codex has no way to turn that off. It cannot change files.' : 'It gets this app’s tools only: no files, no commands.'}`}><span class="dim">${a.installed && a.installed[provider] ? 'found' : 'not found'}</span><//>` : null}
     ${provider === 'demo' ? html`<${Row} title="Built-in helper" help="No model, nothing sent. Ask it what it can do."><span class="dim">ready</span><//>` : null}
     ${provider !== 'off' && provider !== 'cloud' ? html`<${Row} title="Status" help=${status.available ? '' : status.missing || ''}><span class=${cx('dot', status.available ? 'go' : 'standby')}></span><span class="dim">${status.available ? `ready${status.model ? ` · ${status.model}` : ''}` : 'not ready'}</span><//>` : null}
     ${provider !== 'off' ? html`<${Row} title="Apply changes at once" help="Off: you review each change first. Either way: one undo step, not kept until you save, never in Show mode."><${Switch} on=${!!a.autoApply} onChange=${(on) => apply({ autoApply: on })} /><//>` : null}
