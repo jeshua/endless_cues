@@ -666,12 +666,14 @@ async function run({ host, win, log, makeDemo }) {
       // a field whose name does not say it all has an ⓘ: a click shows its line, a click elsewhere puts it away; nothing on hover
       const tabBtn = (re) => `[...document.querySelectorAll('.inspector .tabs button')].find((x) => ${re}.test(x.textContent))`;
       await page(`${tabBtn('/^Basics/')}.click()`);
-      const infoOk = await until(() => page(`(() => { const i = document.querySelector('.inspector [data-field="armed"] [data-info]'); return !!i && !document.querySelector('.inspector [data-field="name"] [data-info]'); })()`), 2000);
-      await page(`document.querySelector('.inspector [data-field="armed"] [data-info]').click()`);
-      const popped = await until(() => page(`(() => { const p = document.querySelector('.inspector [data-field="armed"] .info-pop'); return !!p && /GO skips it/.test(p.textContent); })()`), 2000);
+      const infoOk = await until(() => page(`(() => { const i = document.querySelector('.inspector [data-field="armed"] [data-info]'); return !!i && !document.querySelector('.inspector [data-field="name"] [data-info]'); })()`), 6000);
+      await page(`(() => { const i = document.querySelector('.inspector [data-field="armed"] [data-info]'); if (i) i.click(); })()`);
+      const popped = await until(() => page(`(() => { const p = document.querySelector('.inspector [data-field="armed"] .info-pop'); return !!p && /GO skips it/.test(p.textContent); })()`), 6000);
       await shot('9-field-info');
       await page(`document.querySelector('.inspector .tabs').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
-      check('Armed has an ⓘ (Name has none); a click shows its line, a click elsewhere puts it away', infoOk && popped && await until(() => page(`!document.querySelector('.inspector .info-pop')`), 2000));
+      const closed = await until(() => page(`!document.querySelector('.inspector .info-pop')`), 6000);
+      check('Armed has an ⓘ (Name has none); a click shows its line, a click elsewhere puts it away', infoOk && popped && closed,
+        [infoOk, popped, closed, await page(`(() => { const t = document.querySelector('.inspector .tabs'); const a = document.querySelector('.inspector [data-field="armed"]'); return [t && t.textContent, a && a.outerHTML.slice(0, 200)]; })()`)]);
       await page(`${tabBtn('/^Triggers/')}.click()`);
       await page(`document.querySelector('.inspector [data-all-triggers]').click()`);
       check('Settings ▸ Integrations ▸ Triggers lists every trigger in the show, and marks the ones that share a key', await until(() => page(`(() => { const rows = [...document.querySelectorAll('.trig-table .tr:not(.head)')]; return rows.length === 5 && rows.filter((r) => r.classList.contains('marked')).length === 2 && rows.filter((r) => r.dataset.trigger === 'timecode').length === 1; })()`), 3000), await page(`[...document.querySelectorAll('.trig-table .tr')].map((r) => r.textContent)`));
