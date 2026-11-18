@@ -60,6 +60,8 @@ test('wall-clock and timecode triggers, ducking, the second trigger and auto-loa
   assert.equal(cueOf(r, '9').timecodeTrigger, '01:00:10:00');
   const a = cueOf(r, '1');
   assert.deepEqual([a.duckOthers, a.duckTime, a.secondTrigger, a.secondOnRelease, a.autoLoad], [-10, 2, 'devamp', true, true]);
+  // QLab's second trigger "nothing" (its default) leaves a running cue playing when it is started again; a Memo has none
+  assert.deepEqual([cueOf(r, '2').secondTrigger, cueOf(r, '5').secondTrigger, cueOf(r, '8').secondTrigger], ['nothing', 'nothing', undefined]);
   assert.deepEqual([a.fadeOthers, a.fadeOthersScope], [3, 'peers'], 'QLab’s 1 is its peers');
   assert.equal(a.preservePitch, true, 'doPitchShift 0 is a rate that keeps its pitch');
   assert.match(said(r, '1').join(' '), /plays at rate 1\.5, keeping its pitch/);

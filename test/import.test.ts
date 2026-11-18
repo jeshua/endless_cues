@@ -129,7 +129,8 @@ test('a QLab 4 workspace is read: sounds found beside it, a relative fade, its n
   assert.equal(report.qlabVersion, '4.7');
   const bed = byNumber(doc, 'Q1'), sting = byNumber(doc, 'Q2'), dip = byNumber(doc, 'Q3'), osc = byNumber(doc, 'Q4');
   assert.equal(bed.file, path.join(__dirname, 'fixtures/audio/four-bed.wav'));          // beside the workspace, not where QLab last saw it
-  assert.deepEqual([bed.continue, bed.postWait, Math.round(bed.gainDb!)], ['auto-continue', 3, -6]);
+  // (a mono file on QLab's default crosspoints plays on output 1 alone: hard left here, the pan's 3 dB taken off its level)
+  assert.deepEqual([bed.continue, bed.postWait, Math.round(bed.gainDb!), bed.pan], ['auto-continue', 3, -9, -100]);
   assert.deepEqual([sting.from, sting.cutAt], [0.5, 1]);
   assert.deepEqual([dip.type, dip.target, dip.relative, dip.duration], ['fade', bed.id, true, 2]);
   assert.deepEqual([osc.type, osc.message, osc.patch], ['network', '/eos/cue/1/5/fire', doc.settings.network.patches[0].id]);

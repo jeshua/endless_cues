@@ -6,6 +6,12 @@
  * 's-curve' eases out of the start and into the end, so neither end of a long fade is heard as a corner; a custom
  * shape is a list of points [[x, y], …] from (0, 0) to (1, 1), joined by straight lines.
  *
+ * 'fader' and 'fader-linear' move along a mixing desk fader's travel instead of along the dB: an S-curve, and a
+ * straight line, on the fader. A fade down stays up longer and falls away at the end; a fade up rises quickly and
+ * settles. They are QLab's fade shapes (its S-curve, the default, and its linear curve, in its default "slider"
+ * domain), which an imported Fade cue keeps. How far along in dB depends on the two levels, so the engine turns
+ * one into points for the fade it is playing (faderPoints).
+ *
  * A Fade cue has a shape for a level going up and one for a level going down; an Audio cue has one for its fade
  * in and one for its fade out. The engine says which applies (core/engine/cue-engine.ts); the host turns it into
  * numbers with progressOf() for the audio window, which only ever plays a list of points.
@@ -18,12 +24,19 @@
 import * as Lanes from './lanes';
 import type { LanePoint } from '../show/types';
 
-/** A fade's shape as a cue keeps it ('linear' is kept as nothing): s-curve, or custom points [[x, y], …]. */
-export type FadeShape = 's-curve' | [number, number][];
+/** A fade's shape as a cue keeps it ('linear' is kept as nothing): s-curve, on a fader, or custom points [[x, y], …]. */
+export type FadeShape = 's-curve' | 'fader' | 'fader-linear' | [number, number][];
 /** A show's level limits, in dB. */
 export interface Limits { min: number; max: number }
 
-const SHAPES: readonly string[] = ['linear', 's-curve'];
+const SHAPES: readonly string[] = ['linear', 's-curve', 'fader', 'fader-linear'];
+/**
+ * A fader's travel, as a gain to this power. Measured against QLab 5.6.3 played through a digital loopback
+ * (docs/internal/sound-compare.md): with it, QLab's S-curve and linear fades between 0 and −20 dB are matched to
+ * within 0.1 dB at every moment, and a fade from −10 dB to silence to within 0.25 dB. A fade to silence goes to −60 dB
+ * along the fader (where QLab's travel ends too), then stops.
+ */
+const FADER_POWER = 0.36;
 const SILENT_DB = -60;
 const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -49,18 +62,38 @@ function cleanPoints(value: unknown): [number, number][] | null {
 /** A shape as a cue keeps it: 'linear' (kept as nothing), 's-curve', or custom points. { ok, value } | { ok: false, why }. */
 function cleanShape(value: unknown): { ok: true; value: FadeShape | undefined } | { ok: false; why: string } {
   if (value === 'linear') return { ok: true, value: undefined };
-  if (SHAPES.includes(value as string)) return { ok: true, value: value as 's-curve' };
+  if (SHAPES.includes(value as string)) return { ok: true, value: value as 's-curve' | 'fader' | 'fader-linear' };
   if (value === 'custom') return { ok: true, value: [[0, 0], [0.5, 0.5], [1, 1]] };      // a custom shape begins as the straight line, with one point to drag
   const pts = cleanPoints(value);
-  if (!pts) return { ok: false, why: 'a fade shape is linear, s-curve, or a list of points [[x, y], …] from 0 to 1' };
+  if (!pts) return { ok: false, why: 'a fade shape is linear, s-curve, fader, fader-linear, or a list of points [[x, y], …] from 0 to 1' };
   return { ok: true, value: pts };
 }
 
 const kindOf = (shape: unknown) => (Array.isArray(shape) ? 'custom' : SHAPES.includes(shape as string) ? shape as string : 'linear');
 
-/** How far along a fade of this shape is (0–1) when `x` (0–1) of its time has gone. */
+/** A shape on a fader, for a fade from `fromDb` to `toDb`: how far along it is in dB at `n` evenly spaced moments, as
+ *  custom points. Any other shape is given back as it is. */
+function faderPoints(shape: FadeShape | string | null | undefined, fromDb: number, toDb: number, n = 33): FadeShape | string | null | undefined {
+  if (shape !== 'fader' && shape !== 'fader-linear') return shape;
+  const a = Math.max(SILENT_DB, fromDb), b = Math.max(SILENT_DB, toDb);
+  if (Math.abs(b - a) < 1e-6) return undefined;
+  const travel = (db: number) => Math.pow(10, (db / 20) * FADER_POWER);
+  const ta = travel(a), tb = travel(b);
+  const out: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const x = i / (n - 1), p = shape === 'fader' ? (1 - Math.cos(Math.PI * x)) / 2 : x;
+    const db = (20 * Math.log10(ta + (tb - ta) * p)) / FADER_POWER;
+    out.push([x, Math.max(0, Math.min(1, (db - a) / (b - a)))]);
+  }
+  out[0] = [0, 0]; out[n - 1] = [1, 1];
+  return out;
+}
+
+/** How far along a fade of this shape is (0–1) when `x` (0–1) of its time has gone. (A shape on a fader, as for a
+ *  fade from 0 dB to silence: what it is for another fade, faderPoints says.) */
 function shapeAt(shape: FadeShape | string | null | undefined, x: number) {
   x = Math.max(0, Math.min(1, x));
+  if (shape === 'fader' || shape === 'fader-linear') shape = faderPoints(shape, 0, SILENT_DB, 129);
   if (Array.isArray(shape)) {
     for (let i = 1; i < shape.length; i++) {
       const [x0, y0] = shape[i - 1], [x1, y1] = shape[i];
@@ -108,4 +141,4 @@ function limitDb(db: number, limits?: Limits | null) {
   return db > max ? max : db;
 }
 
-export { SHAPES, SILENT_DB, cleanPoints, cleanShape, kindOf, shapeAt, progressOf, cleanEnvelope, envelopeAt, cleanLimits, limitDb };
+export { SHAPES, SILENT_DB, FADER_POWER, cleanPoints, cleanShape, kindOf, faderPoints, shapeAt, progressOf, cleanEnvelope, envelopeAt, cleanLimits, limitDb };

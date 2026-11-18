@@ -6,9 +6,9 @@ use crate::arith::{along, to_db, to_lin};
 /// The most numbers a fade's shape keeps (the host sends 65; more are read down to this many).
 pub const SHAPE_MAX: usize = 129;
 
-/// A gain that glides to where it is sent as `setTargetAtTime` does: an exponential approach, a straight line in dB
-/// as heard, with a time constant of a third of the time asked for (it lands within 0.5 dB by then). The audio
-/// window's `ramp` (buses, the master, `others`).
+/// A gain that glides to where it is sent as `setTargetAtTime` does: an exponential approach in gain, with a time
+/// constant of a third of the time asked for (by then it has gone 95% of the way in gain: a 10 dB move is 0.9 dB short).
+/// The audio window's `ramp` (buses, the master). A cue ducking the others is a `Level` instead: it lands on its time.
 #[derive(Clone, Copy, Debug)]
 pub struct Glide {
     pub value: f64,

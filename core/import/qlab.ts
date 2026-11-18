@@ -22,8 +22,8 @@
  * What comes across: lists, and carts with each cue on its button; groups; Audio (file, level, start, end, loop, rate and
  * whether it keeps its pitch, and its level matrix as the cue's own outputs when it is not QLab's default: see
  * `ownOutputs`; its integrated fade envelope only if it is written the way envelopeOf() guesses, which no real workspace
- * has yet confirmed); Fade (the main level, absolute or relative, stop target, and a picture's opacity, position,
- * scale and rotation); Start, Stop, Pause, Load, Reset, Target, GoTo, Arm, Disarm, Devamp, Wait, Memo; Video (its file,
+ * has yet confirmed); Fade (the main level, absolute or relative, its curves, stop target, and a picture's opacity,
+ * position, scale and rotation); Start, Stop, Pause, Load, Reset, Target, GoTo, Arm, Disarm, Devamp, Wait, Memo; Video (its file,
  * level, start, end, loop and place on the stage), Text (its words, font, size, colour and alignment) and Camera, as
  * cues for the stage; Network (OSC, with a 1D fade); MIDI (with a faded value; an MSC message this has no words for
  * as its bytes); MIDI File; Timecode; Light (its commands as text and its fade time; the light patch is not read);
@@ -79,8 +79,9 @@ const UNSUPPORTED: Record<string, string> = {
   TimecodeCue: 'Timecode', ScriptCue: 'Script',
 };
 // a cue's second trigger in QLab (its dictionary: nothing 0, panic 1, stop 2, hard stop 3, hard stop and restart 4,
-// devamp 5, playlist plays next 6, playlist plays previous 7) → ours
-const SECOND_TRIGGER: Record<number, 'panic' | 'stop' | 'restart' | 'devamp'> = { 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
+// devamp 5, playlist plays next 6, playlist plays previous 7) → ours. QLab's "nothing", its default, leaves a running
+// cue playing on when it is started again (measured: test/sound-compare); a cue here restarts unless told otherwise.
+const SECOND_TRIGGER: Record<number, 'nothing' | 'panic' | 'stop' | 'restart' | 'devamp'> = { 0: 'nothing', 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
 // fade and stop others: peers 1, list 2, all 3
 const FADE_OTHERS: Record<number, 'peers' | 'list' | 'all'> = { 1: 'peers', 2: 'list', 3: 'all' };
 
@@ -143,6 +144,29 @@ function panOfMatrix(matrix: Rows) {
   else if (matrix.length === 2 && only(matrix[0], ['1']) && only(matrix[1], ['2'])) { l = lin(matrix[0]['1']); r = lin(matrix[1]['2']); }
   else return null;
   return Lanes.panOfGains(l, r);
+}
+
+// QLab's fade curves (FadeShape `type`, as QLab 5.6 saves them): its S-curve (the default) and its linear curve, each
+// along its "slider" domain, which is a fader's travel (core/audio/curves.ts, measured: test/sound-compare)
+const FADE_SHAPE: Record<number, 'fader' | 'fader-linear'> = { 0: 'fader-linear', 1: 'fader' };
+/**
+ * A Fade cue's curves for a level going up and down (QLab 5 keeps them under the fade's `shapes`, QLab 4 on the fade
+ * itself). Its parametric and custom curves, and a domain other than the slider's, come across as its S-curve, with
+ * a note.
+ */
+function fadeShapes(q: Archived, cue: Made, note: Note) {
+  const f: Archived = (q.fade && (q.fade.shapes || q.fade)) || {};
+  const odd: string[] = [];
+  for (const [k, field] of [['upShape', 'shapeUp'], ['downShape', 'shapeDown']] as const) {
+    const sh = f[k];
+    if (!sh || typeof sh !== 'object') continue;
+    const t = Number(sh.type);
+    cue[field] = FADE_SHAPE[t] || 'fader';
+    if (!FADE_SHAPE[t]) odd.push(`${k === 'upShape' ? 'rising' : 'falling'} curve`);
+  }
+  const domain = f.domain && typeof f.domain === 'object' ? Number(f.domain.mode) : 1;
+  if (odd.length) note(q, `had a parametric or custom ${odd.join(' and ')}: it came across as QLab’s S-curve on a fader (its Curve tab)`);
+  if ((cue.shapeUp || cue.shapeDown) && domain !== 1) note(q, 'had its curve in another of QLab’s audio domains than the slider’s: it came across along a fader');
 }
 
 /** One point of a curve, however the archive wrote it: {x, y}, [x, y], or Cocoa's "{0.25, 0.8}". */
@@ -430,7 +454,8 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       if (d) { cue.duckOthers = Math.max(-60, Math.min(12, d)); if (Number(q.duckTime) >= 0 && Math.abs(Number(q.duckTime) - 1) > 0.0001) cue.duckTime = secs(q.duckTime); }
     }
     const second = Number(q.secondTriggerAction) || 0;
-    if (SECOND_TRIGGER[second]) {
+    // (a Memo does nothing either way: it is left as it is)
+    if (SECOND_TRIGGER[second] && !(second === 0 && cue.type === 'memo')) {
       cue.secondTrigger = SECOND_TRIGGER[second];
       if (second === 3 || second === 4) note(q, `its second trigger was a hard stop${second === 4 ? ' and restart: here it restarts' : ': here it stops'}`);
     } else if (second) note(q, `its second trigger played the playlist’s ${second === 6 ? 'next' : 'previous'} cue: not carried over`);
@@ -532,10 +557,16 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       }
       if ((q.effects || []).length) note(q, `had ${q.effects.length} audio effect${q.effects.length === 1 ? '' : 's'}: not carried over`);
       ownOutputs(q, cue, note);
-      // a mono file left on QLab's default crosspoints goes to cue output 1 alone; on a bus here it plays in the middle
+      // a mono file left on QLab's default crosspoints plays on cue output 1 alone (measured: test/sound-compare); on a
+      // bus here it would play in the middle, so it is panned hard left, with the pan's own lift taken off its level
       if (!cue.outputs && cue.pan === undefined && cue.file && routing.wavChannels(cue.file) === 1) {
         const x = (r: number, c: number) => { const e = Object.values<Archived>((q.levels && q.levels.entries) || {}).find((k) => k && k.row === r && k.column === c); return e ? Number(e.initialLevel) : 0; };
-        if (x(1, 1) > 0 && !(x(1, 2) > 0)) monoLeft.push(label(q));
+        if (x(1, 1) > 0 && !(x(1, 2) > 0)) {
+          const left = Lanes.panOfGains(1, 0)!;
+          cue.pan = left.pan;
+          if (Number(cue.gainDb) > SILENT_DB) cue.gainDb = Math.max(SILENT_DB, Math.round(((Number(cue.gainDb) || 0) + left.db) * 10) / 10);
+          monoLeft.push(label(q));
+        }
       }
       if (Number(cue.plays) > 1 && cue.loops) { delete cue.plays; note(q, 'had a play count and slices: the slices’ counts are kept, the play count of the whole is not'); }
       // a click sent to outputs of its own with the main level down would arrive silent, and nobody told. (Only when
@@ -546,6 +577,7 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       const main: Archived | undefined = Object.values<Archived>((q.fade && q.fade.entries) || {}).find((e: Archived) => e && e.row === 0 && e.column === 0 && e.live !== false);
       const others = Object.values<Archived>((q.fade && q.fade.entries) || {}).filter((e: Archived) => e && !(e.row === 0 && e.column === 0) && e.live !== false).length;
       cue.relative = q.mode === 1 || (q.fade && q.fade.fadeType === 'relative');
+      fadeShapes(q, cue, note);
       const pictured = !!(q.doOpacity || q.doTranslation || q.doScale || q.doRotation);
       if (main) cue.db = toDb(main.endValue);
       else { cue.db = cue.relative ? 0 : mainLevel(targetCue(q) && targetCue(q)!.levels); if (!pictured && !q.doRate) note(q, 'does not fade its target’s main level: what it faded is not carried over'); }
@@ -709,7 +741,7 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
   }
   if (!doc.lists.length) doc.lists.push({ id: show.newId('list'), name: 'Main', cues: [] });
 
-  if (monoLeft.length) issues.push({ id: null, cue: 'Mono sounds', why: `${monoLeft.length} mono sound${monoLeft.length === 1 ? '' : 's'} (${monoLeft.slice(0, 3).join('; ')}${monoLeft.length > 3 ? '…' : ''}) went to QLab’s output 1 alone, as QLab sends a mono file unless told otherwise; here ${monoLeft.length === 1 ? 'it plays' : 'they play'} in the middle of the bus. Pan ${monoLeft.length === 1 ? 'it' : 'them'} hard left (Pan −100) if that is what was meant` });
+  if (monoLeft.length) issues.push({ id: null, cue: 'Mono sounds', why: `${monoLeft.length} mono sound${monoLeft.length === 1 ? '' : 's'} (${monoLeft.slice(0, 3).join('; ')}${monoLeft.length > 3 ? '…' : ''}) played on QLab’s output 1 alone, as QLab sends a mono file unless told otherwise: ${monoLeft.length === 1 ? 'it is' : 'they are'} panned hard left here (Pan −100, and 3 dB off the level, which the pan adds). Pan ${monoLeft.length === 1 ? 'it' : 'them'} to the middle if both sides were meant` });
   if (lightNames.size) issues.push({ id: null, cue: 'Light patch', why: `QLab’s light patch is not read. The Light cues name: ${[...lightNames].slice(0, 24).join(', ')}${lightNames.size > 24 ? '…' : ''}. Add instruments and groups with those names under Settings ▸ Integrations ▸ Light` });
 
   // a target that was not a cue we kept (or was never set) leaves the cue broken, as it should be; say which

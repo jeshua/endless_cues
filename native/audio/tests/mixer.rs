@@ -262,6 +262,23 @@ fn rate_moves_through_the_file_faster_or_slower() {
 }
 
 #[test]
+fn a_cue_ducking_the_others_lands_on_its_time_straight_in_db_and_comes_back() {
+    let mut rig = Rig::new(2);
+    rig.insert("/d.wav", dc(96000, 2, 0.5));
+    rig.cmd(json!({ "op": "play", "key": "d", "file": "/d.wav" }));
+    rig.cmd(json!({ "op": "others", "key": "d", "db": -10, "secs": 0.5 }));
+    let down = rig.left(36000);
+    // (QLab's duck is at its depth when its time is up: so is this one, and halfway there in dB halfway through)
+    let db = |x: f32| 20.0 * (x as f64 / 0.5).log10();
+    assert!((db(down[11999]) + 5.0).abs() < 0.01, "halfway: {}", db(down[11999]));
+    assert!((db(down[23999]) + 10.0).abs() < 1e-4, "at its time: {}", db(down[23999]));
+    assert!(down[24000..].iter().all(|x| (db(*x) + 10.0).abs() < 1e-4), "and held there");
+    rig.cmd(json!({ "op": "others", "key": "d", "db": 0, "secs": 0.5 }));
+    let back = rig.left(24000);
+    assert!(db(back[23999]).abs() < 1e-4, "back at its own level on time: {}", db(back[23999]));
+}
+
+#[test]
 fn a_move_lands_on_its_place_and_crossfades() {
     let mut rig = Rig::new(2);
     rig.insert("/r.wav", ramp(48000, 1));

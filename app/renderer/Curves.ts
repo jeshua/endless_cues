@@ -1,15 +1,19 @@
-// A fade's shape, chosen and drawn: linear, an S-curve, or a curve of your own (click to add a point, drag it,
-// double-click it to take it away). The arithmetic is core/audio/curves.ts; this draws the same curves.
+// A fade's shape, chosen and drawn: linear, an S-curve, one of the two on a fader, or a curve of your own (click to
+// add a point, drag it, double-click it to take it away). The arithmetic is core/audio/curves.ts; this draws the same
+// curves (one on a fader as for a fade between 0 dB and silence: its points for that are core's).
 import { html, useState, useRef, cx } from './lib.js';
+import { faderPoints } from '../../core/audio/curves.js';
 import type { Shape } from '../../core/show/types';
 
 const W = 132, H = 54, PAD = 5;
 /** A custom shape's points, [[x, y], …] from [0, 0] to [1, 1]. */
 type Points = number[][];
 
-const kindOf = (v: unknown) => (Array.isArray(v) ? 'custom' : v === 's-curve' ? 's-curve' : 'linear');
-/** How far along a fade of this shape is at x (0–1): as shapeAt in core/audio/curves.ts. */
-export function shapeAt(shape: Shape | Points | string | null | undefined, x: number) {
+const kindOf = (v: unknown) => (Array.isArray(v) ? 'custom' : v === 's-curve' || v === 'fader' || v === 'fader-linear' ? v : 'linear');
+/** How far along a fade of this shape is at x (0–1): as shapeAt in core/audio/curves.ts. `falling`: a shape on a
+ *  fader drawn for a fade down (it is not the same curve both ways). */
+export function shapeAt(shape: Shape | Points | string | null | undefined, x: number, falling = false) {
+  if (shape === 'fader' || shape === 'fader-linear') shape = faderPoints(shape, falling ? 0 : -60, falling ? -60 : 0, 129) as Points;
   if (Array.isArray(shape)) {
     for (let i = 1; i < shape.length; i++) { const [x0, y0] = shape[i - 1], [x1, y1] = shape[i]; if (x <= x1) return x1 > x0 ? y0 + (y1 - y0) * ((x - x0) / (x1 - x0)) : y1; }
     return 1;
@@ -33,7 +37,7 @@ export function ShapeField({ value, onChange, falling, mixed }: ShapeFieldProps)
     const yy = ((e.clientY - r.top) / r.height * H - PAD) / (H - 2 * PAD);
     return [Math.round(x * 1000) / 1000, Math.round(Math.max(0, Math.min(1, falling ? yy : 1 - yy)) * 1000) / 1000];
   };
-  const line = Array.from({ length: 41 }, (_, i) => `${i ? 'L' : 'M'}${px(i / 40).toFixed(1)} ${py(shapeAt(shape, i / 40)).toFixed(1)}`).join(' ');
+  const line = Array.from({ length: 41 }, (_, i) => `${i ? 'L' : 'M'}${px(i / 40).toFixed(1)} ${py(shapeAt(shape, i / 40, falling)).toFixed(1)}`).join(' ');
   const down = (e: PointerEvent, i: number | null) => {
     if (kind !== 'custom') return;
     e.preventDefault(); e.stopPropagation();
@@ -52,7 +56,8 @@ export function ShapeField({ value, onChange, falling, mixed }: ShapeFieldProps)
   return html`<div class="shapefield">
     <select value=${mixed ? '' : kind} onChange=${(e: Event) => onChange((e.target as HTMLSelectElement).value)}>
       ${mixed ? html`<option value="">(mixed)</option>` : null}
-      <option value="linear">Linear</option><option value="s-curve">S-curve</option><option value="custom">Custom</option></select>
+      <option value="linear">Linear</option><option value="s-curve">S-curve</option><option value="fader">S-curve on a fader</option>
+      <option value="fader-linear">Linear on a fader</option><option value="custom">Custom</option></select>
     <svg ref=${svg} class=${cx('shape', kind === 'custom' && 'custom')} viewBox=${`0 0 ${W} ${H}`} width=${W} height=${H}
          onPointerDown=${(e: PointerEvent) => down(e, null)} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up}>
       <title>${kind === 'custom' ? 'Click: add a point. Drag: move. Double-click: remove.' : falling ? 'The level, falling' : 'The level, rising'}</title>

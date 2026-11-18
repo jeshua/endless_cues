@@ -112,7 +112,7 @@ function midiWords(p: Any) {
 
 const FPS: Any = { fps_24: '24', fps_25: '25', fps_30_drop: '29.97df', fps_30_non_drop: '30' };
 const MODE: Any = { timeline: 'timeline', start_first_and_enter: 'enter', start_first: 'first', start_random: 'random', playlist: 'playlist', cue_list: 'timeline' };
-const SECOND: Any = { 0: undefined, 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
+const SECOND: Any = { 0: 'nothing', 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
 const SCOPE: Any = { 1: 'peers', 2: 'list', 3: 'all' };
 const pad2 = (n: unknown) => String(Number(n) || 0).padStart(2, '0');
 
@@ -147,7 +147,7 @@ function fields(q: Any, c: Any, ourPath: (uid: string) => string | null, idPath:
   if (p.wallClockTrigger === 'enabled') cmp('clock trigger', `${pad2(p.wallClockHours)}:${pad2(p.wallClockMinutes)}${p.wallClockSeconds ? `:${pad2(p.wallClockSeconds)}` : ''}`, String(c.clockTrigger || '(none)').split(' ')[0]);
   if (p.timecodeTrigger === 'enabled') cmp('timecode trigger', `${pad2(p.timecodeHours)}:${pad2(p.timecodeMinutes)}:${pad2(p.timecodeSeconds)}:${pad2(p.timecodeFrames)}`, String(c.timecodeTrigger || '(none)').replace(/;/g, ':'));
   if (p.duckOthers === 'enabled') { cmp('duck others', Math.round(Number(p.duckLevel) * 10) / 10, c.duckOthers || 0, near(p.duckLevel, c.duckOthers, 0.11)); cmp('duck time', p.duckTime, c.duckTime ?? 1); }
-  if (Number(p.secondTriggerAction) > 0) cmp('second trigger', p.secondTriggerAction, c.secondTrigger || 'restart', SECOND[p.secondTriggerAction] === c.secondTrigger);
+  if (Number(p.secondTriggerAction) >= 0 && SECOND[p.secondTriggerAction]) cmp('second trigger', p.secondTriggerAction, c.secondTrigger || 'restart', SECOND[p.secondTriggerAction] === c.secondTrigger);
   if (p.secondTriggerOnRelease === 'enabled') cmp('second trigger on release', true, !!c.secondOnRelease);
   if (p.autoload) cmp('auto-load', true, !!c.autoLoad);
   if (Number(p.fadeAndStopOthers) > 0) { cmp('fade and stop others', p.fadeAndStopOthersTime, c.fadeOthers || 0); cmp('fade and stop others: which', SCOPE[p.fadeAndStopOthers], c.fadeOthersScope || 'all'); }
@@ -172,11 +172,8 @@ function fields(q: Any, c: Any, ourPath: (uid: string) => string | null, idPath:
     cmp('level', db(lv['0,0']), c.gainDb || 0, c.pan !== undefined || c.outputs ? true : near(db(lv['0,0']), c.gainDb || 0, 0.06));
     const chans = Number(p.audioInputChannels) || 2;
     const a = qlabRouting(lv, chans), b = ourRouting(c, chans);
-    // (a mono file: QLab sends it to output 1 by default; a bus here plays it in the middle, on 1 and 2)
-    const monoDefault = chans === 1 && JSON.stringify(Object.keys(a[1] || {})) === '["1"]' && !c.outputs && !c.pan;
     // (QLab reads a matrix only for a file it has found: with none, it has no crosspoints to compare)
-    if (!q.fileTarget) { /* not compared */ } else if (!monoDefault) cmp('routing', JSON.stringify(a), JSON.stringify(b), JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && Object.keys(a).every((ch) => JSON.stringify(Object.keys(a[+ch]).sort()) === JSON.stringify(Object.keys(b[+ch]).sort()) && Object.keys(a[+ch]).every((o) => near(a[+ch][+o], b[+ch][+o], 0.6))));
-    else cmp('routing (mono on output 1 alone in QLab; in the middle here)', 'output 1', 'outputs 1 and 2', false);
+    if (q.fileTarget) cmp('routing', JSON.stringify(a), JSON.stringify(b), JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort()) && Object.keys(a).every((ch) => JSON.stringify(Object.keys(a[+ch]).sort()) === JSON.stringify(Object.keys(b[+ch]).sort()) && Object.keys(a[+ch]).every((o) => near(a[+ch][+o], b[+ch][+o], 0.6))));
   }
   if (['Video', 'Text', 'Camera'].includes(t)) {
     cmp('opacity', Math.round((p.opacity ?? 1) * 1000) / 10, c.opacity ?? 100, near((p.opacity ?? 1) * 100, c.opacity ?? 100, 0.6));
@@ -284,8 +281,6 @@ for (const qc of q.cues) {
   if (!c) { rows.push({ path: place, qlabType: t, ourType: '(none)', label, status: 'lost', diffs: [], fields: 0, said: [] }); continue; }
   const said = [...((c.id && saidOf.get(c.id)) || []), ...(c.file && report.missing.includes(c.file) ? ['(its file is in the report’s list of missing files)'] : [])];
   const d = fields(qc, c, (uid) => qPlaceOfUid.get(uid) || null, (id) => placeOf.get(id) || null);
-  // (the report says once, for the whole show, that mono sounds play in the middle here)
-  if (d.some((x) => /^routing \(mono/.test(x.field)) && report.issues.some((i) => i.cue === 'Mono sounds')) said.push('(the report’s line on mono sounds)');
   const status: Row['status'] = BY_DESIGN.has(t) && c.type === 'memo' ? 'by design' : c.type !== want ? 'type' : d.length ? 'differs' : 'same';
   rows.push({ path: place, qlabType: t, ourType: c.type, label, status, diffs: d, fields: d.n || 0, said });
 }

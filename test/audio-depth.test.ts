@@ -99,6 +99,36 @@ test('a shaped fade that is paused goes on along what is left of its shape', () 
   assert.equal(last[1], 0); near(last[2], 3); assert.equal(last[4], 's-curve'); near(last[5]!, 0.25);
 });
 
+// QLab's S-curve fade from 0 to −20 dB, as it came out of QLab 5.6.3 (test/sound-compare: the level in dB along the
+// fade at each tenth of its time, as read off the recording, to 0.1 dB)
+const QLAB_DOWN_20 = [0, -0.33, -1.37, -3.04, -5.23, -8.06, -11.08, -14.37, -17.2, -19.23, -20];
+test('a shape on a fader: QLab’s S-curve and linear curve, which move along a fader’s travel, not along the dB', () => {
+  assert.deepEqual(kept(curves.cleanShape('fader')), 'fader');
+  assert.deepEqual(kept(curves.cleanShape('fader-linear')), 'fader-linear');
+  const pts = curves.faderPoints('fader', 0, -20, 11) as [number, number][];
+  pts.forEach(([x, y], k) => { near(x, k / 10); assert.ok(Math.abs(-20 * y - QLAB_DOWN_20[k]) < 0.15, `${k / 10}: ${-20 * y} dB, QLab ${QLAB_DOWN_20[k]}`); });
+  // (on the fader a fade down stays up longer than a straight line in dB, and a fade up gets there sooner)
+  const down = curves.faderPoints('fader-linear', 0, -60, 3) as [number, number][], up = curves.faderPoints('fader-linear', -60, 0, 3) as [number, number][];
+  assert.ok(down[1][1] < 0.5 && up[1][1] > 0.5);
+  near(down[1][1], 1 - up[1][1], 1e-9);
+  // (another shape, or a fade that goes nowhere, is left as it is)
+  assert.equal(curves.faderPoints('s-curve', 0, -20), 's-curve');
+  assert.equal(curves.faderPoints('fader', -6, -6), undefined);
+});
+
+test('a Fade cue’s shape on a fader is played as points for its own two levels', () => {
+  const s = fadeShow({ db: -30, shapeDown: 'fader', shapeUp: 'fader' });
+  const r = rigAll(s.doc);
+  r.engine.go(); r.engine.go();
+  const f = r.fades.at(-1)!;
+  assert.deepEqual(f.slice(0, 3), [s.id('a'), -30, 4]);
+  assert.deepEqual(f[4], curves.faderPoints('fader', -10, -30));
+  // (paused and taken up again, it goes on along the same points)
+  r.advance(1); r.engine.pause(); r.advance(2); r.engine.resume();
+  assert.deepEqual(r.fades.at(-1)![4], f[4]);
+  near(r.fades.at(-1)![5]!, 0.25);
+});
+
 // ── the envelope ────────────────────────────────────────────────────────────
 test('an envelope is points in time order, read between them in straight lines', () => {
   const env = curves.cleanEnvelope([[4, -20], [0, 0], { at: 2, db: -6 }, [4, -30], [9, 40]]);

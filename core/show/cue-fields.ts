@@ -91,9 +91,9 @@ export interface CueFields {
   fadeIn?: number;
   /** Fade out: Fades to silence over its last seconds. (audio, video, text, camera) */
   fadeOut?: number;
-  /** Fade in shape: Linear (in dB), S-curve, or drawn. (audio) */
+  /** Fade in shape: Linear (in dB), S-curve, either of them along a fader (as QLab fades), or drawn. (audio) */
   fadeInShape?: Shape;
-  /** Fade out shape: Linear (in dB), S-curve, or drawn. (audio) */
+  /** Fade out shape: Linear (in dB), S-curve, either of them along a fader (as QLab fades), or drawn. (audio) */
   fadeOutShape?: Shape;
   /** Rate: 1 as recorded, 0.5 half speed. Pitch follows unless Keep pitch. (audio, fade, midifile) */
   rate?: number;
@@ -165,9 +165,9 @@ export interface CueFields {
   relative?: boolean;
   /** Stop target when done: Left alone: on for a fade to silence. (fade) */
   stopTarget?: boolean;
-  /** Shape, rising: Linear (in dB), S-curve, or drawn. (fade) */
+  /** Shape, rising: Linear (in dB), S-curve, either of them along a fader (as QLab fades), or drawn. (fade) */
   shapeUp?: Shape;
-  /** Shape, falling: Linear (in dB), S-curve, or drawn. (fade) */
+  /** Shape, falling: Linear (in dB), S-curve, either of them along a fader (as QLab fades), or drawn. (fade) */
   shapeDown?: Shape;
   /** Rate only: With Rate to: the level stays. (fade) */
   keepLevel?: boolean;

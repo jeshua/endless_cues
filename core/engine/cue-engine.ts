@@ -57,8 +57,9 @@
  *           play may also carry `pan` (−100 … 100), `automation` (its other lines: core/audio/lanes.ts),
  *           `rate` (and `preservePitch`) and `envelope` ([[seconds, dB], …]: the sound's level drawn
  *           over its length, which the backend follows by where the sound is); fade(key, db, secs, range, shape, from):
- *           `shape` is the fade's curve (core/audio/curves.ts; none: a straight line in dB) and `from` how far into that
- *           curve it starts (a paused fade taken up again); rate(key, rate, secs) moves how fast the sound plays.
+ *           `shape` is the fade's curve (core/audio/curves.ts; none: a straight line in dB; one on a fader comes as
+ *           its points) and `from` how far into that curve it starts (a paused fade taken up again); rate(key, rate,
+ *           secs) moves how fast the sound plays.
  *           move: when sound `key` reaches sync.at s into its file (about sync.lead s from now) it
  *           crossfades, inside itself, to `to` over sync.xf s ('cut' | 'fade' | 'dj'), looping `region`
  *           and the host calls engine.audioEnded(key) / engine.setDuration(file, secs)
@@ -82,7 +83,7 @@ import { geometryOf, movesOf } from '../video/stage';
 import * as networkCue from '../net/network-cue';
 import * as midiText from '../net/midi';
 import * as scriptOf from '../show/script';
-import { limitDb } from '../audio/curves';
+import { limitDb, faderPoints } from '../audio/curves';
 import { sequencing, type Sequencing } from './sequencing';
 import { soundKinds, type SoundKinds } from './sound-kinds';
 import type { CueFields, Region, Shape, Envelope, Automation, Sweep } from '../show/types';
@@ -2146,6 +2147,8 @@ class CueEngine extends EventEmitter<EngineEvents> {
     const r = this.running.get(id);
     if (!r) return;
     db = this.lim(db);
+    // (a shape on a fader is made into points for this fade's two levels, from where the sound is now)
+    if (shape === 'fader' || shape === 'fader-linear') shape = faderPoints(shape, r.fade ? r.fade.to : r.db, db) as Shape | undefined;
     const prev = this.fades.get(fadeId);
     if (prev) this.clock.clearTimeout(prev.timer);
     const startedAt = this.clock.now();

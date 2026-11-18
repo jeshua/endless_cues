@@ -1039,7 +1039,7 @@ function others({ key, db, secs }: Cmd<'others'>) {
     pre.disconnect(v.band);
     pre.connect(v.under).connect(v.band);
   }
-  ramp(v.under.gain, Number(db) || 0, secs);
+  glide(v.under.gain, Number(db) || 0, secs);
 }
 
 function drop(key: string) {
@@ -1235,9 +1235,21 @@ function ramp(param: AudioParam, db: number, secs: number | undefined) {
   if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(now);
   else { const v = param.value; param.cancelScheduledValues(now); param.setValueAtTime(v, now); }
   if (!(secs! > 0)) { param.setValueAtTime(toLin(db), now); return; }
-  // setTargetAtTime: an exponential approach, which is a straight line in dB as heard;
-  // a time constant of a third of `secs` lands within 0.5 dB by then
+  // setTargetAtTime: an exponential approach in gain, with a time constant of a third of `secs`: by then it has gone
+  // 95% of the way in gain (a 10 dB move is 0.9 dB short of it, and lands over about as long again)
   param.setTargetAtTime(toLin(db), now, secs! / 3);
+}
+/** A gain moved straight in dB from where it is to `db`, landing at `secs` (a duck: its cue says how long it takes,
+ *  which an exponential approach would not keep: it is 0.9 dB short of a 10 dB dip by then). */
+function glide(param: AudioParam, db: number, secs: number | undefined) {
+  const now = ctx.currentTime;
+  const from = toDb(param.value);
+  param.cancelScheduledValues(now);
+  if (!(secs! > 0)) { param.setValueAtTime(toLin(db), now); return; }
+  const n = Math.max(2, Math.ceil(secs! * 50));
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) curve[i] = toLin(from + (db - from) * (i / (n - 1)));
+  param.setValueCurveAtTime(curve, now, secs!);
 }
 /** A ramp on a parameter that is already in dB (a filter's gain), from where it is now. */
 function rampDb(param: AudioParam, db: number, secs: number | undefined) {
