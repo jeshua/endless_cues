@@ -113,7 +113,7 @@ test('what a designer asks for can be said in operations, and reads back in the 
   ok(edit([{ op: 'cue.add', cue: { type: 'midi', number: '30', midi: 'pc 12' } }, { op: 'cue.add', cue: { type: 'mic', number: '40', bus: 'vocals' } }]));
   ok(edit([{ op: 'cue.set', id: '#7', props: { hotkey: 'F5', midiTrigger: 'note 60', oscTrigger: '/sm/places', color: 'red' } }]));
   // routing is a bus setting, and a bus is named by its id
-  ok(edit([{ op: 'show.set', path: 'settings.audio.buses.music.out', value: 3 }, { op: 'show.set', path: 'settings.midi.output', value: 'IAC Driver' }, { op: 'show.set', path: 'modules.osc-control.passcode', value: 'hunter2' }]));
+  ok(edit([{ op: 'show.set', path: 'settings.audio.buses.music.out', value: 3 }, { op: 'show.set', path: 'settings.midi.output', value: 'IAC Driver' }, { op: 'show.set', path: 'modules.osc-control.passcodes', value: [{ code: 'hunter2', view: true, edit: true, control: true }] }]));
   assert.equal(ctx.draft!.settings.audio.buses[0].out, 3);
   assert.match(ok(run('check_show', {})), /Nothing wrong/);
   const text = ok(run('read_show', {}));
@@ -124,7 +124,7 @@ test('what a designer asks for can be said in operations, and reads back in the 
   assert.match(text, /#40 Mic: Mic · bus=vocals/);
   assert.match(text, /Buses: music \(Music, 0 dB, outputs 3–4[^)]*\)/);
   assert.match(text, /midi\.output="IAC Driver"/);
-  assert.match(text, /Modules: osc-control off \(passcode=\(set\)\); show-feedback off/, 'a module\'s options as a new show has them are left out');
+  assert.match(text, /Modules: osc-control off \(passcodes=\(set\)\); show-feedback off/, 'a module\'s options as a new show has them are left out');
   assert.ok(!text.includes('hunter2'), 'a passcode is not sent to a model');
   assert.match(ok(run('find_cues', { text: 'f5' })), /1 cue:\n.*#7 Memo: Places/);
   assert.match(ok(run('find_cues', { type: 'audio', text: 'music' })), /3 cues:[\s\S]*bus=music/);
