@@ -39,6 +39,17 @@ pub struct Source {
     pub track: u32,
     pub sr: u32,
     pub frames: Option<u64>,
+    /// an encoder's own silence to leave out: frames at the start (AAC's priming), and how many there are after
+    /// them (the rest is its padding). Symphonia reads these from an MP3's LAME header itself; an M4A says them in
+    /// its iTunSMPB tag, which symphonia leaves to its reader (`smpb`).
+    pub trim: Option<(u64, u64)>,
+}
+
+/// An iTunSMPB tag (" 00000000 00000840 0000037C 000000000000AC44 …", hexadecimal): the frames of priming at the
+/// start, and the frames of sound after them.
+pub fn smpb(text: &str) -> Option<(u64, u64)> {
+    let f: Vec<u64> = text.split_whitespace().take(4).map(|x| u64::from_str_radix(x, 16)).collect::<Result<_, _>>().ok()?;
+    (f.len() == 4 && f[3] > 0).then(|| (f[1], f[3]))
 }
 
 pub fn open(path: &Path) -> Result<Source, String> {
@@ -51,12 +62,29 @@ pub fn open(path: &Path) -> Result<Source, String> {
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions { enable_gapless: true, ..Default::default() }, &MetadataOptions::default())
         .map_err(|e| format!("not a sound this can read: {e}"))?;
-    let format = probed.format;
+    let mut probed_meta = probed.metadata;
+    let mut format = probed.format;
     let track = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or("no sound in the file")?;
     let params = track.codec_params.clone();
+    let track_id = track.id;
     let decoder =
         symphonia::default::get_codecs().make(&params, &DecoderOptions::default()).map_err(|e| format!("no decoder for it: {e}"))?;
-    Ok(Source { track: track.id, sr: params.sample_rate.unwrap_or(0), frames: params.n_frames, format, decoder })
+    // (an M4A's priming and padding, where symphonia has not trimmed them itself)
+    let mut trim = None;
+    if params.delay.is_none() {
+        let find = |tags: &[symphonia::core::meta::Tag]| {
+            tags.iter().find(|t| t.key.ends_with("iTunSMPB")).and_then(|t| smpb(&t.value.to_string()))
+        };
+        trim = format.metadata().current().and_then(|m| find(m.tags()));
+        if trim.is_none() {
+            trim = probed_meta.get().and_then(|m| m.current().and_then(|r| find(r.tags())));
+        }
+    }
+    let frames = match trim {
+        Some((_, n)) => Some(n),
+        None => params.n_frames,
+    };
+    Ok(Source { track: track_id, sr: params.sample_rate.unwrap_or(0), frames, format, decoder, trim })
 }
 
 /// What one packet decoded to.
@@ -85,9 +113,24 @@ impl Source {
                     if self.sr == 0 {
                         self.sr = spec.rate;
                     }
+                    let ch = spec.channels.count().max(1);
                     let mut sb = SampleBuffer::<f32>::new(buf.capacity() as u64, spec);
                     sb.copy_interleaved_ref(buf);
-                    return Ok(Step::Samples(sb.samples().to_vec(), spec.channels.count().max(1), packet.ts()));
+                    let s = sb.samples();
+                    let Some((delay, len)) = self.trim else { return Ok(Step::Samples(s.to_vec(), ch, packet.ts())) };
+                    // the packet's frames on the trimmed timeline: the priming before 0 and the padding after the
+                    // sound left out
+                    let ts = packet.ts() as i64 - delay as i64;
+                    let n = (s.len() / ch) as i64;
+                    let a = (-ts).clamp(0, n);
+                    let b = (len as i64 - ts).clamp(a, n);
+                    if b <= a {
+                        if ts >= len as i64 {
+                            return Ok(Step::End);
+                        }
+                        continue;
+                    }
+                    return Ok(Step::Samples(s[a as usize * ch..b as usize * ch].to_vec(), ch, (ts + a) as u64));
                 }
                 Err(SymError::DecodeError(_)) => continue,
                 Err(e) => return Err(e.to_string()),
@@ -96,12 +139,14 @@ impl Source {
     }
     /// To `secs` into the file; returns the frame it landed on (the first sample decoded after may be before it).
     pub fn seek(&mut self, secs: f64) -> Result<u64, String> {
+        let delay = self.trim.map_or(0, |t| t.0);
+        let lead = if self.sr > 0 { delay as f64 / self.sr as f64 } else { 0.0 };
         let to = self
             .format
-            .seek(SeekMode::Accurate, SeekTo::Time { time: Time::from(secs.max(0.0)), track_id: Some(self.track) })
+            .seek(SeekMode::Accurate, SeekTo::Time { time: Time::from(secs.max(0.0) + lead), track_id: Some(self.track) })
             .map_err(|e| e.to_string())?;
         self.decoder.reset();
-        Ok(to.required_ts)
+        Ok(to.required_ts.saturating_sub(delay))
     }
 }
 
@@ -121,17 +166,35 @@ pub fn probe(path: &Path) -> Result<f64, String> {
     Ok(frames as f64 / src.sr as f64)
 }
 
+/// The most samples a decoded sound may hold (a gigabyte: 46 minutes of stereo at 48 kHz). A longer file is not
+/// decoded (the host is told why) and streams, as any sound not decoded does.
+pub const MAX_DECODED: usize = 1 << 28;
+
+fn too_long(secs: f64) -> String {
+    format!("too long to hold in memory ({:.0} minutes): it streams", secs / 60.0)
+}
+
 /// The whole file, decoded and resampled to `sr`.
 pub fn decode(path: &Path, sr: u32) -> Result<Pcm, String> {
     let mut src = open(path)?;
     let mut data = Vec::new();
     let mut channels = 0;
-    if let Some(n) = src.frames {
-        data.reserve((n as usize).saturating_mul(2).min(1 << 30));
+    let ch0 = src.decoder.codec_params().channels.map(|c| c.count()).unwrap_or(2).max(1);
+    if let (Some(n), true) = (src.frames, src.sr > 0) {
+        // (its length from its header, at the device's rate: refused before anything is read)
+        let at_sr = n as f64 * sr as f64 / src.sr as f64;
+        if at_sr * ch0 as f64 > MAX_DECODED as f64 {
+            return Err(too_long(n as f64 / src.sr as f64));
+        }
+        data.reserve((n as usize).saturating_mul(ch0).min(MAX_DECODED));
     }
     while let Step::Samples(s, ch, _) = src.packet()? {
         channels = ch;
         data.extend_from_slice(&s);
+        let rate = src.sr.max(1) as f64;
+        if data.len() as f64 * (sr as f64 / rate).max(1.0) > MAX_DECODED as f64 {
+            return Err(too_long(data.len() as f64 / ch.max(1) as f64 / rate));
+        }
     }
     if channels == 0 || src.sr == 0 {
         return Err("no sound in the file".into());
@@ -211,6 +274,13 @@ pub fn path_of(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_m4a_says_its_priming_and_length() {
+        let t = " 00000000 00000840 0000037C 000000000000AC44 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000";
+        assert_eq!(smpb(t), Some((2112, 44100)));
+        assert_eq!(smpb("nonsense"), None);
+    }
 
     #[test]
     fn a_file_url_is_a_path() {

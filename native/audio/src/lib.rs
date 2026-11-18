@@ -12,12 +12,17 @@
 //!   stream    a sound streamed from disk through a ring buffer
 //!   device    the audio device (cpal), and a test run's clock
 //!   measure   `ec-audio measure`: how long from a GO to the sound
+//!   capture   `--capture`: what the mixer hands the device, written to a file (a test's)
+//!   mac       macOS: the device's own latency, which cpal does not report
 //!   shared    the atomics the audio thread says things through
 
 pub mod arith;
+pub mod capture;
 pub mod control;
 pub mod device;
 pub mod limiter;
+#[cfg(target_os = "macos")]
+pub mod mac;
 pub mod measure;
 pub mod mixer;
 pub mod params;

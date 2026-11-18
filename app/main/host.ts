@@ -244,7 +244,7 @@ export type AudioEvent =
   | { type: 'recording'; rate: number }
   | { type: 'operror'; op: string; key?: string; detail?: string }
   | { type: 'ctx'; state?: string; error?: unknown }
-  | { type: 'level'; monitor?: number | null; db?: number; channels: Meter[] | null; buses: Record<string, number>; outs?: number[]; ducking?: boolean; ducked?: string[]; limiting?: boolean; voices: number; cues?: Record<string, number> }
+  | { type: 'level'; monitor?: number | null; db?: number; channels: Meter[] | null; buses: Record<string, number>; outs?: number[]; ducking?: boolean; ducked?: string[]; limiting?: boolean; voices: number; cues?: Record<string, number>; xruns?: number; starved?: number; load?: number }
   | { type: 'pcm'; file: string; samples: Float32Array; rate: number; error?: undefined }
   | { type: 'pcm'; file: string; samples: null; rate?: number; error: string }
   | { type: 'peaks'; file: string; bins?: number; peaks?: number[] | null; rms?: number[] }
@@ -511,13 +511,13 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // Either way the window stays: MIDI, a waveform's peaks and a sound's samples are its alone.
   const router = createAudioRouter({
     toWindow: (cmd) => { if (audioWin && !audioWin.isDestroyed()) audioWin.webContents.send('audio-cmd', cmd); },
-    makeNative: (handlers) => createNativeAudio({ binary: nativeBinary, spawn: spawnNative, silent: smoke, exists: (f) => fs.existsSync(f), log, ...handlers }),
+    makeNative: (handlers) => createNativeAudio({ binary: nativeBinary, spawn: spawnNative, silent: smoke, outs: smoke ? 8 : 0, exists: (f) => fs.existsSync(f), log, ...handlers }),
     resolve: (file) => playPath(file) || null,
     onEvent: (ev) => { try { onAudioEvent(ev); } catch (err) { log(`[audio] event ${ev && ev.type}: ${(err as Error).stack || err}`); } },
     // (as when the audio window dies: what it was playing is gone, and the next GO works once the new one is ready)
     onDown: (was, why) => {
       if (engine.running.size) log(`[audio] ${why}: the sounds playing are gone`);
-      if (was === 'native') relist = true;        // (the window lists its devices as it opens, and not again unless asked)
+      if (was === 'native') { relist = true; xrunsSaid = 0; }        // (the window lists its devices as it opens, and not again unless asked; a new engine counts from 0)
       state.audioReady = false; state.devices = []; state.level = null;
       engine.running.clear(); stage.clear(); decodeSent.clear(); irSent.clear();
       schedulePush();
@@ -526,7 +526,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     log,
   });
   /** The engine this computer has chosen (a test run plays on Web Audio until it asks for the other). */
-  const engineChosen = (): AudioEngine => (smoke ? 'webaudio' : engineOf(getConfig()));
+  // (EC_SMOKE_NATIVE=1: the whole test run on the native engine, `--silent`, to see which of its checks hold there)
+  const engineChosen = (): AudioEngine => (smoke ? (process.env.EC_SMOKE_NATIVE === '1' ? 'native' : 'webaudio') : engineOf(getConfig()));
   /** The output chosen for the engine making the sound (each engine names devices its own way, so each has its own). */
   function chosenOutput() {
     const c = getConfig() || {};
@@ -537,6 +538,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     else saveConfig({ audioDevice: id, audioDeviceLabel: label });
   }
   const nativeLacks = new Set<string>();     // the commands the native engine has said it cannot carry out yet (each said once)
+  let xrunsSaid = 0;             // the native engine's buffers missed, as far as the show log has been told
   let relist = false;            // the window to be asked for its devices again (the native engine made the sound meanwhile)
   const audioCmd = (cmd: AudioCommand | LtcCmd) => router.cmd(cmd as AudioCommand);
   // The file the sound is read from: the show's own, but for AIFF and CAF (which Chromium cannot read), a WAV copy
@@ -838,6 +840,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       if (!abs || !f) continue;
       if (decodeSent.has(f)) continue;            // (already there: a long track's bytes are not read and sent again each time the list of wanted ones changes)
       decodeSent.add(f);
+      // (the native engine reads the file itself, by its path: its bytes are not read here only to be left out)
+      if (router.status().using === 'native') { audioCmd({ op: 'decode', url: fileUrl(f), file: f, bytes: new Uint8Array(0) }); continue; }
       fs.promises.readFile(abs)
         // (no longer wanted by the time it has been read: not sent, or it would be decoded after the `keep` that let it go, and held)
         .then((bytes) => { if (decodeSent.has(f)) audioCmd({ op: 'decode', url: fileUrl(f), file: f, bytes }); })
@@ -1068,7 +1072,10 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         }
         else if (ev.state === 'running' && state.deviceOk === false && !state.deviceDetail.includes('could not')) { state.deviceOk = true; state.deviceDetail = ''; schedulePush(); }
         break;
-      case 'level': state.monitorPeak = ev.monitor == null ? null : ev.monitor; state.level = ev.channels; state.busPeaks = ev.buses; state.outPeaks = ev.outs || []; state.ducking = !!ev.ducking; state.ducked = ev.ducked || []; state.limiting = !!ev.limiting && ev.voices > 0; state.voices = ev.voices; state.cuePeaks = ev.cues || {}; break;
+      case 'level': state.monitorPeak = ev.monitor == null ? null : ev.monitor; state.level = ev.channels; state.busPeaks = ev.buses; state.outPeaks = ev.outs || []; state.ducking = !!ev.ducking; state.ducked = ev.ducked || []; state.limiting = !!ev.limiting && ev.voices > 0; state.voices = ev.voices; state.cuePeaks = ev.cues || {};
+        // (the native engine says when the device played a buffer it had not filled: a click or a gap, put in the show log)
+        if (typeof ev.xruns === 'number' && ev.xruns > xrunsSaid) { if (xrunsSaid >= 0) showLog.add('warning', `The native audio engine missed ${ev.xruns - xrunsSaid} audio buffer${ev.xruns - xrunsSaid === 1 ? '' : 's'} (a click or a gap in the sound).`); xrunsSaid = ev.xruns; }
+        break;
       case 'pcm': {
         let found = null;
         if (ev.samples) { try { found = tempoMap(ev.samples, ev.rate); } catch (err) { log(`[tempo] ${ev.file}: ${(err as Error).message}`); } } else log(`[tempo] could not read ${ev.file}: ${ev.error || ''}`);

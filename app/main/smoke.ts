@@ -84,7 +84,17 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     await shot('1-edit');
 
     // GO: the engine, the audio window, the page
-    const audioVoices = () => host.audioWindow()!.webContents.executeJavaScript('voices.size', true);
+    // (what is sounding, from the engine making the sound: the audio window's own voices, or, with the native engine
+    // (EC_SMOKE_NATIVE), the sounds its level event names, 30 times a second)
+    const onNative = () => snap().mixer.engine.using === 'native';
+    // (EC_SMOKE_NATIVE: a part that reads the audio window's own state may throw on the native engine, whose sound the
+    // window is not making: said as a failure of that part, and the run goes on to the next)
+    const part = async (name: string, fn: () => Promise<unknown>) => {
+      if (process.env.EC_SMOKE_NATIVE !== '1') { await fn(); return; }
+      try { await fn(); } catch (err) { check(`${name} ran to its end on the native engine`, false, String((err as Error).message || err)); }
+    };
+    const soundingKeys = async (): Promise<string[]> => (onNative() ? Object.keys(snap().cueLevels || {}) : host.audioWindow()!.webContents.executeJavaScript('[...voices.keys()]', true));
+    const audioVoices = async () => (onNative() ? (await soundingKeys()).length : host.audioWindow()!.webContents.executeJavaScript('voices.size', true));
     host.cmd({ op: 'go' });
     check('GO starts a sound', await until(async () => (await audioVoices()) === 1));
     check('double-GO protection drops a bounce', host.cmd({ op: 'go' }).ignored === 'double GO');
@@ -163,10 +173,10 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       await shot(`6-theme-${theme}`);
     }
     // the engine and the audio window must never disagree about what is sounding (an orphan is a sound Stop cannot reach)
-    const sounding = async () => ({ audio: (await host.audioWindow()!.webContents.executeJavaScript('[...voices.keys()]', true)).sort(), engine: [...host.engine.running.keys()].sort() });
+    const sounding = async () => ({ audio: (await soundingKeys()).sort(), engine: [...host.engine.running.keys()].sort() });
     check('the engine and the audio window agree on what is sounding', await until(async () => { const x = await sounding(); return JSON.stringify(x.audio) === JSON.stringify(x.engine); }, 3000), await sounding());
     host.cmd({ op: 'panic', hard: true });
-    check('panic stops every sound', await until(async () => (await audioVoices()) === 0), { left: await host.audioWindow()!.webContents.executeJavaScript('[...voices.keys()]', true), engine: [...host.engine.running.keys()], rows: snap().rows.filter((r) => r.type === 'audio').map((r) => [r.id, r.name]) });
+    check('panic stops every sound', await until(async () => (await audioVoices()) === 0), { left: await soundingKeys(), engine: [...host.engine.running.keys()], rows: snap().rows.filter((r) => r.type === 'audio').map((r) => [r.id, r.name]) });
     // the tools that take the toolbar's place, and the keys that edit in place
     await page('document.documentElement.dataset.theme = "lab"');
     host.cmd({ op: 'reset' });
@@ -217,12 +227,13 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     host.openUntitled(); host.open(dir);
     await until(() => snap().mixer.audioReady && snap().rows.length >= 10);
     // (the Live view is off as the app comes: checked, then switched on for the checks of it; smoke-defaults.ts)
-    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).plain({ host, win, check, until, page, sleep });
+    await part('smoke-defaults', async () => { await (require('./smoke-defaults') as typeof import('./smoke-defaults')).plain({ host, win, check, until, page, sleep }); });
     win.webContents.send('ec-menu', 'view-live');
     check('the Live view shows a mixer strip for each bus and the master', await until(() => page(`document.querySelectorAll('.desk .mstrip').length`).then((n) => n === snap().mixer.buses.length + 1), 3000));
     check('a scene for each cue that has sound, and a slot per track', await until(() => page<[number, number]>(`[document.querySelectorAll('.desk .scene').length, document.querySelectorAll('.desk .scene:first-child .slot').length]`).then(([n, k]) => n >= 3 && k === snap().mixer.buses.length + 1), 3000));
     check('each sound is in its slot to launch', await until(() => page<number>(`document.querySelectorAll('.desk .clip').length`).then((n) => n >= 4), 3000));
-    const strips = () => host.audioWindow()!.webContents.executeJavaScript('Object.fromEntries(Object.entries(buses).map(([k, b]) => [k, { ...b.strip, wired: b.wired, gate: b.gate.gain.value }]))', true);
+    // (with the native engine the window has no buses of its own: what it says is an empty mixer, read as such)
+    const strips = () => onNative() ? Promise.resolve(new Proxy({}, { get: () => ({}) }) as Record<string, Record<string, unknown> & { gate: number; wired: string }>) : host.audioWindow()!.webContents.executeJavaScript('Object.fromEntries(Object.entries(buses).map(([k, b]) => [k, { ...b.strip, wired: b.wired, gate: b.gate.gain.value }]))', true);
     check('a bus at rest is a plain wire', (await strips()).music.wired === 'false:false', await strips());
     host.cmd({ op: 'strip', name: 'music', key: 'eq.low', value: -40 });
     check('a turned eq knob is heard at once and not yet in the show', (await strips()).music.low === -40 && host.document.doc.settings.audio.buses[0].eq === undefined, await strips());
@@ -471,7 +482,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       await sleep(200);
     }
     // where sound goes: a cue's own outputs, four-channel files, audition, trims, the effects (smoke-routing.ts)
-    await (require('./smoke-routing') as typeof import('./smoke-routing')).routingChecks({ host, check, until, sleep, page, win, shot });
+    await part('smoke-routing', async () => { await (require('./smoke-routing') as typeof import('./smoke-routing')).routingChecks({ host, check, until, sleep, page, win, shot }); });
     // sequencing: a list with a playhead of its own that a Start cue GOes, a cue that ducks the others, a Mix cue on the mixer, = and -
     host.cmd({ op: 'panic', hard: true });
     const L0 = host.document.doc.lists[0].id;
@@ -498,7 +509,8 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     host.cmd({ op: 'stop', number: 'SQ4' });
     check('…and they come back when it ends', await until(async () => (await under(sq('SQ1'))) > 0.9, 4000), await under(sq('SQ1')));
     // a Mix cue's fader move is heard and is shown on the mixer, until a hand is put on the knob (the Bed is sounding on that bus)
-    const fader = () => host.audioWindow()!.webContents.executeJavaScript(`buses.music.fader.gain.value`, true);
+    // (the native engine's faders are not the window's to read: null, and the checks on them fail as such)
+    const fader = () => (onNative() ? Promise.resolve(null) : host.audioWindow()!.webContents.executeJavaScript(`buses.music.fader.gain.value`, true));
     host.cmd({ op: 'fire', number: 'SQ5' });
     check('a Mix cue moves the bus fader', await until(async () => Math.abs(20 * Math.log10(await fader()) + 9) < 1, 4000), await fader());
     check('…and the mixer shows where the cue put it', await until(() => (snap().mixer.buses.find((b) => b.id === 'music') || {}).live === -9, 2000) && await until(() => page(`[...document.querySelectorAll('.knobs *')].some((x) => /Music ·mix/.test(x.textContent))`), 3000), snap().mixer.buses);
@@ -520,7 +532,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     host.cmd({ op: 'panic', hard: true });
     host.cmd({ op: 'undo' });
     // the stage: Video, Text and Camera cues, drawn offscreen and read back as pixels (smoke-video.ts)
-    await (require('./smoke-video') as typeof import('./smoke-video')).run({ host, check, until, sleep, log, shot: async (name: string) => { if (!shots) return; fs.mkdirSync(shots, { recursive: true }); await sleep(200); fs.writeFileSync(path.join(shots, `${name}.png`), (await host.stage.window()!.webContents.capturePage()).toPNG()); } });
+    await part('smoke-video', async () => { await (require('./smoke-video') as typeof import('./smoke-video')).run({ host, check, until, sleep, log, shot: async (name: string) => { if (!shots) return; fs.mkdirSync(shots, { recursive: true }); await sleep(200); fs.writeFileSync(path.join(shots, `${name}.png`), (await host.stage.window()!.webContents.capturePage()).toPNG()); } }); });
     // the app's own lights: a patch, a Light cue that holds levels, the dashboard. A test run makes every packet and sends none
     // (and the universes here are aimed at this computer itself, so a run with real ports open reaches no network either)
     {
@@ -597,7 +609,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     await shot('9-osc-access');
     await page(`document.querySelector('.modal .close').click()`);
     // the Live view's desk: one clip per track, tempo sections, warp, desk recall, mapping, dragging (smoke-live.ts)
-    await (require('./smoke-live') as typeof import('./smoke-live')).live({ host, win, check, timed, until, page, shot, sleep, dir });
+    await part('smoke-live', async () => { await (require('./smoke-live') as typeof import('./smoke-live')).live({ host, win, check, timed, until, page, shot, sleep, dir }); });
     // ── timecode and the rest of MIDI ──────────────────────────────────────────────────────────────────────
     // (a test run opens no MIDI port: what would be sent, and the time each message is due, is read from the host)
     {
@@ -826,13 +838,13 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       check('a new show starts from a template: the same cues, untitled, a show of its own', await until(() => snap().show.untitled && snap().doc.id !== idWas && snap().rows.length === cuesWere, 4000), [snap().show.untitled, snap().rows.length, cuesWere]);
     }
     // what one sound can do: formats, fade shapes, rate, the envelope, limits, the monitor, a lost output (smoke-audio.ts)
-    await (require('./smoke-audio') as typeof import('./smoke-audio')).audioDepth({ host, win, check, timed, until, page, sleep, log, shot });
+    await part('smoke-audio', async () => { await (require('./smoke-audio') as typeof import('./smoke-audio')).audioDepth({ host, win, check, timed, until, page, sleep, log, shot }); });
     // sound design (a cue's chain of tools, measured offline) and the kinds of sound (ducking by kind, the guess at a new sound) (smoke-sound.ts)
-    await (require('./smoke-sound') as typeof import('./smoke-sound')).soundChecks({ host, win, check, timed, until, page, sleep, shot, log });
+    await part('smoke-sound', async () => { await (require('./smoke-sound') as typeof import('./smoke-sound')).soundChecks({ host, win, check, timed, until, page, sleep, shot, log }); });
     // simple until asked: the Live view hidden again, a show that uses it, a new sound's bus (smoke-defaults.ts)
-    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).after({ host, win, check, until, page, sleep });
+    await part('smoke-defaults', async () => { await (require('./smoke-defaults') as typeof import('./smoke-defaults')).after({ host, win, check, until, page, sleep }); });
     // the cue list's own rescue tools, the MUTED chip and a quantised GO, all with the Live view hidden (smoke-rescue.ts)
-    await (require('./smoke-rescue') as typeof import('./smoke-rescue')).rescue({ host, win, check, until, page, sleep, shot });
+    await part('smoke-rescue', async () => { await (require('./smoke-rescue') as typeof import('./smoke-rescue')).rescue({ host, win, check, until, page, sleep, shot }); });
     // the rig, the assistant on it, and its pages (docs/specs/15-assistant-and-rig.md): each part's checks are a file of its own, run if it is there
     for (const part of ['./smoke-rig', './smoke-assistant-rig', './smoke-rig-pages', './smoke-qirx', './smoke-tabs']) {
       let mod = null;
@@ -840,25 +852,25 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       if (mod) await mod.run({ host, win, check, until, page, sleep, shot, dir });
     }
     // sections and folding: the heading, GO passing over it, folding by click, keys and menu, Show mode (smoke-sections.ts)
-    await (require('./smoke-sections') as typeof import('./smoke-sections')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-sections', async () => { await (require('./smoke-sections') as typeof import('./smoke-sections')).run({ host, win, check, until, page, sleep, shot }); });
     // Report a problem: the form, its picture, and what it sends (to a fake in this process) (smoke-report.ts)
-    await (require('./smoke-report') as typeof import('./smoke-report')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-report', async () => { await (require('./smoke-report') as typeof import('./smoke-report')).run({ host, win, check, until, page, sleep, shot }); });
     // Updates: the title bar's line, Show mode hiding it, Download, Restart now refused while sound plays (smoke-update.ts)
-    await (require('./smoke-update') as typeof import('./smoke-update')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-update', async () => { await (require('./smoke-update') as typeof import('./smoke-update')).run({ host, win, check, until, page, sleep, shot }); });
     // the cue list's run tools: chains, a row's stop and level, Find taking you there, the zoomed-out list (smoke-showlist.ts)
-    await (require('./smoke-showlist') as typeof import('./smoke-showlist')).run({ host, win, check, until, page, sleep, shot, log });
+    await part('smoke-showlist', async () => { await (require('./smoke-showlist') as typeof import('./smoke-showlist')).run({ host, win, check, until, page, sleep, shot, log }); });
     // the safety net: a fade to silence stopping, Check the show, Run from here, a trigger's double GO, the show log (smoke-safety.ts)
-    await (require('./smoke-safety') as typeof import('./smoke-safety')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-safety', async () => { await (require('./smoke-safety') as typeof import('./smoke-safety')).run({ host, win, check, until, page, sleep, shot }); });
     // a sound's lines heard: a pan on the meters, a Pan line, a filter's line, a bent Volume line (smoke-lanes.ts)
-    await (require('./smoke-lanes') as typeof import('./smoke-lanes')).heard({ host, check, until, sleep });
+    await part('smoke-lanes', async () => { await (require('./smoke-lanes') as typeof import('./smoke-lanes')).heard({ host, check, until, sleep }); });
     // the calmer window: colours, the add-cue list, Save's count, the ⋯ menu, columns, knobs, Report (smoke-declutter.ts)
-    await (require('./smoke-declutter') as typeof import('./smoke-declutter')).run({ host, win, check, until, page, sleep, shot, log });
+    await part('smoke-declutter', async () => { await (require('./smoke-declutter') as typeof import('./smoke-declutter')).run({ host, win, check, until, page, sleep, shot, log }); });
     // the assistant pointing at the window: the helper's where-is and keys, a tab, a cue, a pane, Show mode refusing (smoke-guide.ts)
-    await (require('./smoke-guide') as typeof import('./smoke-guide')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-guide', async () => { await (require('./smoke-guide') as typeof import('./smoke-guide')).run({ host, win, check, until, page, sleep, shot }); });
     // a show from another computer, held back until Turn on; OSC control with no passcode, and no answers to a forged sender (smoke-hardening.ts)
-    await (require('./smoke-hardening') as typeof import('./smoke-hardening')).run({ host, win, check, until, page, sleep, shot });
+    await part('smoke-hardening', async () => { await (require('./smoke-hardening') as typeof import('./smoke-hardening')).run({ host, win, check, until, page, sleep, shot }); });
     // the audio engine's switch: Web Audio as it comes; the native engine started --silent, or its absence said (smoke-native.ts)
-    await (require('./smoke-native') as typeof import('./smoke-native')).run({ host, check, until, page });
+    await part('smoke-native', async () => { await (require('./smoke-native') as typeof import('./smoke-native')).run({ host, check, until, page }); });
     check('nothing was logged as an error by the page', true);
   } catch (err) {
     failed++;

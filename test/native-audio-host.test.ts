@@ -341,3 +341,51 @@ test('the real ec-audio through the router: a sound probed, decoded and played b
     await got((e) => e.type === 'ended' && e.key === 'c1', 'ended');
   } finally { router.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('the real ec-audio killed mid-play (kill -9): started again and said so; three times in a minute, given up for Web Audio', { skip: fs.existsSync(BIN) ? false : `no ${path.relative(path.join(__dirname, '..'), BIN)}: build it with npm run native` }, async () => {
+  const os = require('os') as typeof import('os');
+  const { writeWav } = require('../examples/make-demo') as typeof import('../examples/make-demo');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-native-'));
+  const file = path.join(dir, 'long.wav');
+  writeWav(file, Float32Array.from({ length: 44100 * 5 }, (_, i) => 0.05 * Math.sin(i / 10)));
+  const heard: AudioEvent[] = [], logs: string[] = [], downs: string[] = [], fell: string[] = [];
+  const pids: number[] = [];
+  const spawnSeen: Spawn = (cmd, args, opts) => { const c = spawn(cmd, args, opts); pids.push(c.pid!); return c as unknown as NativeChild; };
+  const router = createAudioRouter({
+    toWindow: () => {},
+    makeNative: (h) => createNativeAudio({ binary: BIN, spawn: spawnSeen, silent: true, exists: (f) => fs.existsSync(f), log: (l) => logs.push(l), restartMs: 50, ...h }),
+    onEvent: (e) => heard.push(e), onDown: (_e, why) => downs.push(why), onFellBack: (w) => fell.push(w),
+  });
+  const got = (ok: (e: AudioEvent) => boolean, what: string, from = 0) => new Promise<AudioEvent>((resolve, reject) => {
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      const e = heard.slice(from).find(ok);
+      if (e) { clearInterval(tick); resolve(e); } else if (Date.now() - t0 > 10_000) { clearInterval(tick); reject(new Error(`no ${what}\n${logs.join('\n')}`)); }
+    }, 20);
+  });
+  const until = (ok: () => boolean, what: string) => new Promise<void>((resolve, reject) => {
+    const t0 = Date.now();
+    const tick = setInterval(() => { if (ok()) { clearInterval(tick); resolve(); } else if (Date.now() - t0 > 10_000) { clearInterval(tick); reject(new Error(`${what}\n${logs.join('\n')}`)); } }, 20);
+  });
+  try {
+    router.choose('native');
+    await got((e) => e.type === 'ready', 'ready');
+    downs.length = 0;                                    // (the switch from Web Audio is one too)
+    for (let k = 1; k <= 3; k++) {
+      const from = heard.length;
+      router.cmd({ op: 'play', key: `p${k}`, url: pathToFileURL(file).href });
+      await got((e) => e.type === 'level' && (e as Extract<AudioEvent, { type: 'level' }>).voices === 1, `playing ${k}`, from);
+      process.kill(pids[pids.length - 1], 'SIGKILL');
+      await until(() => downs.length >= k, `the host was told it went (${k})`);
+      assert.match(downs[k - 1], /signal SIGKILL/);
+      if (k < 3) {
+        const at = heard.length;
+        await got((e) => e.type === 'ready', `ready again (${k})`, at);
+        assert.equal(router.status().using, 'native');
+      }
+    }
+    await until(() => fell.length === 1, 'given up');
+    assert.match(fell[0], /3 times in a minute/);
+    assert.deepEqual([router.status().using, !!router.status().failed], ['webaudio', true]);
+  } finally { router.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});

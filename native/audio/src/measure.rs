@@ -58,7 +58,7 @@ pub fn click(sr: f64, db: f64) -> Pcm {
 }
 
 /// An input listened to for clicks: each one's moment (ns since `shared::epoch()`), as the device stamped it.
-fn listen(name: &str, threshold: f32) -> Result<(cpal::Stream, rtrb::Consumer<u64>), String> {
+fn listen(name: &str, threshold: f32, mut record: Option<crate::capture::Capture>) -> Result<(cpal::Stream, rtrb::Consumer<u64>), String> {
     let host = cpal::default_host();
     let dev = host
         .input_devices()
@@ -71,23 +71,28 @@ fn listen(name: &str, threshold: f32) -> Result<(cpal::Stream, rtrb::Consumer<u6
     }
     let ch = cfg.channels() as usize;
     let sr = cfg.sample_rate().0 as f64;
+    // (macOS: the time from a sound reaching the input to its buffer's stamp, which cpal leaves out)
+    #[cfg(target_os = "macos")]
+    let in_lat_ns = crate::mac::extra_in(name).map(|x| (crate::mac::heard_frames(&x) as f64 / sr * 1e9) as u64).unwrap_or(0);
+    #[cfg(not(target_os = "macos"))]
+    let in_lat_ns = 0u64;
     let (mut tx, rx) = RingBuffer::<u64>::new(1024);
-    let mut last = 0u64;
+    let mut finder = Finder::new(threshold);
+    let mut frames = 0u64;
     let stream = dev
         .build_input_stream(
             &cfg.config(),
             move |data: &[f32], info: &cpal::InputCallbackInfo| {
                 let ts = info.timestamp();
-                let back = ts.callback.duration_since(&ts.capture).unwrap_or_default().as_nanos() as u64;
-                let t0 = now_ns().saturating_sub(back);
-                for (i, f) in data.chunks_exact(ch).enumerate() {
-                    if f.iter().any(|x| x.abs() > threshold) {
-                        let t = t0 + (i as f64 / sr * 1e9) as u64;
-                        if t > last + 100_000_000 {
-                            last = t;
-                            let _ = tx.push(t);
-                        }
-                    }
+                // the moment the buffer's first frame was taken in, on this program's clock: from the input's own
+                // host time where it can be read (independent of the output's estimate), else cpal's guess
+                let t0 = first_frame_ns(&ts).saturating_sub(in_lat_ns);
+                finder.feed(data, ch, t0, sr, |t| {
+                    let _ = tx.push(t);
+                });
+                if let Some(r) = &mut record {
+                    r.put(data, ch, sr, frames, t0, in_lat_ns);
+                    frames += (data.len() / ch) as u64;
                 }
             },
             |e| eprintln!("[native] the loopback input: {e}"),
@@ -96,6 +101,44 @@ fn listen(name: &str, threshold: f32) -> Result<(cpal::Stream, rtrb::Consumer<u6
         .map_err(|e| e.to_string())?;
     stream.play().map_err(|e| e.to_string())?;
     Ok((stream, rx))
+}
+
+/// Finds clicks in an input: the first sample over the threshold, once a click. One 2 ms click is many samples
+/// over it; the GOs are 60 ms or more apart, so anything 20 ms after the last is the next. (It was 100 ms, which
+/// lost each click that came sooner than that after the one before: 9 of 50 in a first run.)
+pub struct Finder {
+    threshold: f32,
+    last: Option<u64>,
+}
+impl Finder {
+    pub const APART_NS: u64 = 20_000_000;
+    pub fn new(threshold: f32) -> Self {
+        Finder { threshold, last: None }
+    }
+    /// One buffer, `ch` wide, its first frame at `t0` ns: `found` is told each click's moment.
+    pub fn feed(&mut self, data: &[f32], ch: usize, t0: u64, sr: f64, mut found: impl FnMut(u64)) {
+        for (i, f) in data.chunks_exact(ch.max(1)).enumerate() {
+            if f.iter().any(|x| x.abs() > self.threshold) {
+                let t = t0 + (i as f64 / sr * 1e9) as u64;
+                if self.last.is_none_or(|l| t > l + Self::APART_NS) {
+                    self.last = Some(t);
+                    found(t);
+                }
+            }
+        }
+    }
+}
+
+/// When an input buffer's first frame arrived, on this program's clock (ns since `shared::epoch()`).
+fn first_frame_ns(ts: &cpal::InputStreamTimestamp) -> u64 {
+    #[cfg(target_os = "macos")]
+    if let Some(h) = crate::mac::instant_ns(&ts.callback) {
+        // (CoreAudio stamps an input buffer with the host time of its first frame)
+        let ago = crate::mac::host_now_ns() as i64 - h as i64;
+        return (now_ns() as i64 - ago).max(0) as u64;
+    }
+    let back = ts.callback.duration_since(&ts.capture).unwrap_or_default().as_nanos() as u64;
+    now_ns().saturating_sub(back)
 }
 
 pub fn run(args: &[String]) -> i32 {
@@ -115,7 +158,7 @@ pub fn run(args: &[String]) -> i32 {
     }
     control.insert("<click>", click(control.sr, db));
     let mut loopback = match arg(args, "--loopback") {
-        Some(name) => match listen(name, (10f64.powf(db / 20.0) * 0.2) as f32) {
+        Some(name) => match listen(name, (10f64.powf(db / 20.0) * 0.2) as f32, None) {
             Ok(l) => Some(l),
             Err(e) => {
                 eprintln!("[native] {e}");
@@ -132,6 +175,7 @@ pub fn run(args: &[String]) -> i32 {
     let mut wait = Vec::new();
     let mut device = Vec::new();
     let mut round = Vec::new();
+    let mut agree = Vec::new();
     let mut seed = 0x9e37_79b9u32;
     for i in 0..clicks {
         // a pause of 60–160 ms, so the GOs fall anywhere in the device's buffer
@@ -168,6 +212,7 @@ pub fn run(args: &[String]) -> i32 {
                 if let Ok(t) = rx.pop() {
                     if t > t0 {
                         round.push((t - t0) as f64 / 1e6);
+                        agree.push((t as f64 - started as f64) / 1e6);
                         break;
                     }
                 }
@@ -184,7 +229,96 @@ pub fn run(args: &[String]) -> i32 {
         "device_latency_ms": stats(&device),
         "loopback_ms": if loopback.is_some() { stats(&round) } else { Value::Null },
         "loopback_found": round.len(),
+        // (where each click was found in the input, less where the program said it would leave: the device's own
+        // round trip, or the error in the program's estimate)
+        "loopback_minus_estimate_ms": if loopback.is_some() { stats(&agree) } else { Value::Null },
+        "xruns": meters.xruns.load(Relaxed),
+        "device_buffer_frames": meters.buffer_frames.load(Relaxed),
     });
     println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
     0
+}
+
+/// `ec-audio listen --input NAME [--db DB] [--record FILE.wav]`: an input listened to for clicks (each said as
+/// `{"click": <wall-clock ms>}` on a line of its own, the moment its first sample reached the input), and recorded
+/// if asked (as `--capture` records an output: FILE.wav, FILE.blocks.csv). Until its standard input closes. For
+/// measuring another program's sound through a loopback (the audio window's, in test/native-qa/webaudio.ts).
+pub fn listen_run(args: &[String]) -> i32 {
+    let Some(name) = arg(args, "--input") else {
+        eprintln!("[native] listen: --input NAME");
+        return 2;
+    };
+    let db: f64 = arg(args, "--db").and_then(|s| s.parse().ok()).unwrap_or(-40.0f64);
+    let mut handle = None;
+    let record = match arg(args, "--record") {
+        Some(p) => match crate::capture::start(std::path::Path::new(p)) {
+            Ok((c, h)) => {
+                handle = Some(h);
+                Some(c)
+            }
+            Err(e) => {
+                eprintln!("[native] listen: {e}");
+                return 2;
+            }
+        },
+        None => None,
+    };
+    let (_stream, mut rx) = match listen(name, (10f64.powf(db / 20.0) * 0.2) as f32, record) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("[native] {e}");
+            return 2;
+        }
+    };
+    println!("{}", json!({ "listening": name }));
+    let (done_tx, done) = crossbeam_channel::bounded::<()>(1);
+    std::thread::spawn(move || {
+        let mut s = String::new();
+        while std::io::stdin().read_line(&mut s).map(|n| n > 0).unwrap_or(false) {
+            s.clear();
+        }
+        let _ = done_tx.send(());
+    });
+    loop {
+        while let Ok(t) = rx.pop() {
+            println!("{}", json!({ "click": crate::control::wall_of(t) }));
+        }
+        if done.recv_timeout(Duration::from_millis(5)).is_ok() {
+            break;
+        }
+    }
+    drop(_stream);
+    if let Some(h) = &mut handle {
+        h.finish();
+    }
+    0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clicks_close_together_are_each_found_once() {
+        let sr = 48000.0;
+        let c = click(sr, -20.0);
+        let mut input = vec![0f32; 48000 * 2];
+        // clicks 61 ms apart (the least pause between GOs is 60 ms)
+        let starts = [1000usize, 1000 + 2928, 1000 + 2 * 2928, 30000];
+        for s in starts {
+            input[s * 2..s * 2 + c.data.len()].copy_from_slice(&c.data);
+        }
+        let mut f = Finder::new((10f64.powf(-20.0 / 20.0) * 0.2) as f32);
+        let mut got = Vec::new();
+        // (in buffers of 256, as a device gives them)
+        for (k, buf) in input.chunks(512).enumerate() {
+            let t0 = (k as f64 * 256.0 / sr * 1e9) as u64;
+            f.feed(buf, 2, t0, sr, |t| got.push(t));
+        }
+        let want: Vec<u64> = starts.iter().map(|s| (*s as f64 / sr * 1e9) as u64).collect();
+        assert_eq!(got.len(), 4, "{got:?}");
+        for (g, w) in got.iter().zip(want) {
+            assert!(g.abs_diff(w) < 30_000, "{g} vs {w}");
+        }
+    }
 }
