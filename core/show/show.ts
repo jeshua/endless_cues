@@ -200,6 +200,17 @@ function normalise(input: any): { doc: ShowDoc; warnings: string[] } {
     lists: [],
   };
   if (!Array.isArray(doc.settings.audio.buses) || !doc.settings.audio.buses.length) doc.settings.audio.buses = DEFAULT_BUSES.map((b) => ({ ...b }));
+  // OSC control's one passcode, as a show saved by 0.3.0-alpha.5 or earlier may still have it: a passcode that may do
+  // everything, as it was. (Left out, the show would be open to any sender on the network.)
+  {
+    const osc = doc.modules['osc-control'] as Record<string, any> | undefined;
+    if (osc && osc.passcode !== undefined) {
+      const code = String(osc.passcode ?? '').trim();
+      const codes = Array.isArray(osc.passcodes) ? osc.passcodes : [];
+      if (code && !codes.some((p: any) => p && String(p.code ?? '').trim() === code)) osc.passcodes = [...codes, { code, view: true, edit: true, control: true }];
+      delete osc.passcode;
+    }
+  }
   // the rig: each device as this version wants it (what it does not know is kept; what cannot be understood is said and left out)
   {
     const rig = doc.settings.rig = doc.settings.rig && typeof doc.settings.rig === 'object' && !Array.isArray(doc.settings.rig) ? doc.settings.rig : { devices: [], checks: [], script: '' };

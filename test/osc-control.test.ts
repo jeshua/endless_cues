@@ -442,3 +442,17 @@ test('OSC control through the hub, over UDP: a read answered, an update pushed, 
   assert.equal(hub.monitor().filter((e) => e.dir === 'in').length, 6, 'everything heard is in the monitor');
   m.stop(); hub.close(); sock.close();
 });
+
+test('OSC control: an older show’s one passcode is read as a passcode that may do everything', () => {
+  const old = show.newShow('Old');
+  (old.modules['osc-control'] as Record<string, unknown>).passcode = '0421';
+  const { doc } = show.normalise(JSON.parse(JSON.stringify(old)));
+  const osc = doc.modules['osc-control'] as Record<string, unknown>;
+  assert.deepEqual(osc.passcodes, [{ code: '0421', view: true, edit: true, control: true }]);
+  assert.equal(osc.passcode, undefined);
+  // an empty one is nothing, and one already among the passcodes is not added twice
+  const none = show.newShow('None'); (none.modules['osc-control'] as Record<string, unknown>).passcode = '';
+  assert.equal((show.normalise(JSON.parse(JSON.stringify(none))).doc.modules['osc-control'] as Record<string, unknown>).passcodes, undefined);
+  const both = show.newShow('Both'); Object.assign(both.modules['osc-control'], { passcode: '7', passcodes: [{ code: '7', view: true, edit: false, control: true }] });
+  assert.equal(((show.normalise(JSON.parse(JSON.stringify(both))).doc.modules['osc-control'] as Record<string, unknown>).passcodes as unknown[]).length, 1);
+});
