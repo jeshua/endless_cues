@@ -42,9 +42,9 @@ What still differs, most first:
 
 | Count | What | Why, and what the report says |
 |---|---|---|
-| 456 | A mono file on QLab's default crosspoints | QLab sends a mono file to cue output 1 alone; a bus here plays it in the middle. Not changed (see the sound phase). The report now says so once, with the count. |
+| 456 | A mono file on QLab's default crosspoints | QLab sends a mono file to cue output 1 alone. Now panned hard left on import, as measured in [`sound-compare.md`](sound-compare.md); the report says so once, with the count. |
 | 99 | A Network cue for a device whose message QLab itself cannot show | QLab names the cue "status:error"; ours sends the message its device template makes. Not known which is right without the device. |
-| 49 | A QLab 4 Audio cue with a trim | QLab 4 kept a trim beside each level. QLab 5.6.3 reports the level without it; the import multiplies the two (−10 dB where QLab says −5). |
+| 49 | A QLab 4 Audio cue with a trim | QLab 4 kept a trim beside each level. QLab 5.6.3 reports the level without it, but plays the level times the trim, as the import does ([`sound-compare.md`](sound-compare.md)). |
 | 43 | A sound file that has moved | QLab follows a moved file through its bookmark; the import uses the path saved and lists the file as missing. |
 | 14 | A group in "cue list" mode inside a list | QLab shows it as a cue list within the list; here a group that fires all its children, with a note. |
 | 13 | A Fade aimed at an output patch or audio map, or with no main level | Noted; only a cue's main level is faded here. |

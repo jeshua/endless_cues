@@ -133,6 +133,8 @@ test('a workspace QLab saved: levels, text, timecode, triggers, MSC, colours and
   const notes = (n: string) => r.report.issues.filter((i) => i.id === c(n).id).map((i) => i.why).join(' / ');
   assert.equal(r.report.qlabVersion, '5.6.3');
   assert.equal(c('1').gainDb, -60);
+  // QLab's second trigger "nothing" (its default) leaves a running cue playing when it is started again; a Memo has none
+  assert.deepEqual([c('1').secondTrigger, c('3').secondTrigger, c('5').secondTrigger, c('10').secondTrigger], ['nothing', 'nothing', undefined, 'devamp']);
   assert.doesNotMatch(notes('1'), /outputs of its own/);
   assert.deepEqual(c('2').outputs, [{ 3: 0 }, { 4: 0 }]);
   assert.match(notes('2'), /played only on outputs of its own/);

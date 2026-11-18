@@ -283,7 +283,7 @@ impl Mixer {
             }
             Msg::Others { id, db, secs } => {
                 if let Some(v) = self.voices.iter_mut().find(|v| v.id == id) {
-                    v.under.to_db(db, secs, sr);
+                    v.under.fade(db, secs, &[], sr);
                 }
             }
             Msg::Lanes(id, lanes) => match self.voices.iter_mut().find(|v| v.id == id) {

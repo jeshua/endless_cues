@@ -8,7 +8,7 @@
 //! finished with goes back to the control thread as `Trash`).
 
 use crate::arith::{envelope_at, pan_gains, to_lin, value_at, Point};
-use crate::params::{Glide, Level, Line, SHAPE_MAX};
+use crate::params::{Level, Line, SHAPE_MAX};
 use crate::pcm::Pcm;
 use crate::shared::VoiceShared;
 use crate::stream::{Reader, STREAM_CH};
@@ -316,7 +316,8 @@ pub struct Voice {
     arriving: Option<Arriving>,
     pub pending: Option<Pending>,
     pub level: Level,
-    pub under: Glide,
+    /// a cue ducking the others: a move straight in dB that lands on its time
+    pub under: Level,
     rate0: f64,
     rate1: f64,
     rate_n: f64,
@@ -359,7 +360,7 @@ impl Voice {
             arriving: None,
             pending: None,
             level: Level::new(gain_db),
-            under: Glide::new(1.0),
+            under: Level::new(0.0),
             rate0: rate,
             rate1: rate,
             rate_n: 0.0,
