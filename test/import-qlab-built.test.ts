@@ -123,25 +123,3 @@ test('the made-up workspace imports with nothing broken', () => {
   const broken = show.problems(r.doc).filter((p) => p.level === 'error' && !/file|no target/.test(p.why));
   assert.deepEqual(broken, []);
 });
-
-// A workspace QLab 5.6.3 saved itself, built by AppleScript from nothing (reference: test/qlab-compare), its cues
-// without files so it holds no path of the computer it was made on. The same checks, on QLab's own bytes.
-test('a workspace QLab saved: levels, text, timecode, triggers, MSC, colours and the rest', () => {
-  const FEW = path.join(__dirname, 'fixtures', 'qlab-built', 'few.qlab5');
-  const r = importQlab(fs.readFileSync(FEW), { file: FEW });
-  const c = (n: string) => show.findByNumber(r.doc, n) as Cue & Record<string, any>;
-  const notes = (n: string) => r.report.issues.filter((i) => i.id === c(n).id).map((i) => i.why).join(' / ');
-  assert.equal(r.report.qlabVersion, '5.6.3');
-  assert.equal(c('1').gainDb, -60);
-  assert.doesNotMatch(notes('1'), /outputs of its own/);
-  assert.deepEqual(c('2').outputs, [{ 3: 0 }, { 4: 0 }]);
-  assert.match(notes('2'), /played only on outputs of its own/);
-  assert.deepEqual([c('3').text, c('3').font, c('3').size], ['Hello stage', 'Helvetica Neue', 72]);
-  assert.deepEqual([c('4').timecode, c('4').fps, c('4').output, c('4').channel], ['01:02:03:04', '25', 'ltc', 2]);
-  assert.equal(c('5').clockTrigger, '13:45');
-  assert.equal(c('6').timecodeTrigger, '01:00:10:00');
-  assert.equal(c('7').midi, 'F0 7F 00 02 01 06 03 00 5A 00 F7');
-  assert.match(notes('8'), /an empty SysEx message/);
-  assert.deepEqual([c('9').color, c('9').color2], ['red', 'sky']);
-  assert.deepEqual([c('10').secondTrigger, c('10').duckOthers, c('10').fadeOthers, c('10').fadeOthersScope], ['devamp', -10, 2, 'list']);
-});

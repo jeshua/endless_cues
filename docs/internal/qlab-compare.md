@@ -59,7 +59,7 @@ A Fade's video geometry, a Text cue's words and style, Timecode cues, triggers, 
 
 ## Bugs fixed (each with a test in `test/import-qlab-built.test.ts`)
 
-The tests read `test/fixtures/qlab-built/fields.qlab5`, a made-up workspace in which every value is written under the key and in the form QLab 5.6.3 saved it in the built workspaces (`test/fixtures/make-qlab-built-fixture.py`), and `few.qlab5`, saved by QLab itself (no file targets, so no path of the computer it was made on).
+The tests read `test/fixtures/qlab-built/fields.qlab5`, a made-up workspace written by this project's own script (`test/fixtures/make-qlab-built-fixture.py`), in which every value is under the key and in the form QLab 5.6.3 saved it in the built workspaces. No file QLab wrote is in the repository: the workspaces it saved for the comparison stay on the computer that ran it.
 
 1. **"Played only on outputs of its own, with its main level down"** fired for any cue with its main level down, because every QLab cue's output levels sit at unity. It now fires only when the crosspoints send the cue somewhere other than QLab's default (`cue.outputs` is set). Checked on QLab-saved cues of both kinds.
 2. **A MIDI cue with no readable message** was described as "MIDI timecode, or an empty SysEx" whatever it held. It now says what was found: an empty SysEx (which QLab does not send either), a voice message of an unknown kind, an MSC command MSC does not have, or no MIDI fields at all.
