@@ -1,0 +1,99 @@
+// Every cue of a QLab workspace as QLab itself sees it, as JSON, read through its AppleScript dictionary (JavaScript
+// for Automation). Opens the file, reads, closes it without saving. Never fires a cue.
+//   osascript -l JavaScript qlab-dump.jxa <workspace> [columns]
+// The properties are read for all cues at once and everything else by each cue's id: reaching a cue by its place
+// is slow in a big workspace (each step walks the list), and a cart's properties do not come as one record.
+
+function run(argv) {
+  // `--answer`: only answer QLab's questions, for as long as it runs (compare.ts runs one beside the dump: a Script cue
+  // naming a missing application asks while its properties are read, and the dump waits for the answer)
+  if (argv[0] === '--answer') { for (;;) { try { answerOnce(); } catch (e) { /* gone, or not a question this answers */ } delay(0.5); } }
+  const file = argv[0], cols = Number(argv[1] || 8);
+  const q = Application('com.figure53.QLab.5');
+  const before = q.workspaces.name();
+  // (opened through the shell: QLab's own open command can wait for an answer to a question it asks first)
+  const me = Application.currentApplication(); me.includeStandardAdditions = true;
+  me.doShellScript(`open -g -a /Applications/QLab.app '${file.replace(/'/g, "'\\''")}'`);
+  // QLab may ask before it opens: a QLab 4 workspace whether to open it (it would be QLab 5's once saved; it is never
+  // saved here): Open. A Script cue naming an application this computer has not: "Where is …?": Cancel.
+  const se = Application('System Events');
+  const dialog = () => { try { return se.processes.byName('QLab').windows.whose({ subrole: 'AXDialog' })(); } catch (e) { return []; } };
+  const answer = () => {
+    const d = dialog();
+    if (!d.length) return false;
+    let names = [];
+    for (let k = 0; k < 8 && !names.includes('Open') && !names.includes('Cancel'); k++) { try { names = d[0].buttons.name(); } catch (e) { names = []; } if (!names.includes('Open') && !names.includes('Cancel')) delay(0.25); }
+    if (names.includes('Open')) d[0].buttons.byName('Open').click();
+    else if (names.includes('Cancel')) d[0].buttons.byName('Cancel').click();
+    else return false;
+    delay(0.5);
+    return true;
+  };
+  // (until the workspace is open and nothing has been asked for two seconds; a minute at most)
+  let ws = null;
+  try {
+    for (let i = 0, quiet = 0; i < 240 && !(ws && quiet >= 8); i++) {
+      // (the answerer beside this may take the same question first: a question gone from under it is no answer)
+      let asked = false; try { asked = answer(); } catch (e) { asked = false; }
+      if (asked) quiet = 0; else quiet++;
+      if (!ws) { const names = q.workspaces.name(); const fresh = names.find((n) => !before.includes(n)); if (fresh) ws = q.workspaces.byName(fresh); else if (i > 20) { const base = file.split('/').pop(); if (names.includes(base)) ws = q.workspaces.byName(base); } }
+      delay(0.25);
+    }
+  } catch (e) { return JSON.stringify({ error: e.message }); }
+  if (!ws) return JSON.stringify({ error: 'QLab did not open it', names: q.workspaces.name() });
+  const name = ws.name();
+  const byId = (id) => ws.cues.byId(id);
+
+  // every cue's properties in one go (but a cart's, read by name)
+  const props = new Map();
+  const one = (id) => { try { const p = byId(id).properties(); props.set(id, p); return true; } catch (e) { return false; } };
+  // (if one cue's properties fail, the bulk read fails: then each is read alone, and a failure by name)
+  try { for (const p of ws.cues.whose({ _not: [{ qType: 'Cart' }] }).properties()) props.set(p.id, p); } catch (e) { for (const id of ws.cues.uniqueid()) one(id); }
+  for (const id of ws.cues.uniqueid().filter((x) => !props.has(x))) {
+    const c = byId(id), p = { id, propertiesFailed: true };
+    for (const k of ['qType', 'qNumber', 'qName', 'notes', 'qColor', 'useQColor2', 'qColor2', 'flagged', 'armed', 'preWait', 'postWait', 'duration', 'continueMode', 'mode',
+      'audioFadeMode', 'stopTargetWhenDone', 'doOpacity', 'opacity', 'doTranslation', 'translationX', 'translationY', 'doScale', 'scaleX', 'doRotation', 'rotation',
+      'hotkeyTrigger', 'midiTrigger', 'wallClockTrigger', 'timecodeTrigger', 'duckOthers', 'secondTriggerAction', 'fadeAndStopOthers', 'fadeAndStopOthersTime', 'autoload']) { try { p[k] = c[k](); } catch (e) { /* not this cue's */ } }
+    if (p.qNumber !== undefined) p.name = p.qNumber;
+    props.set(id, p);
+  }
+
+  const LEVELLED = ['Audio', 'Mic', 'Video', 'Fade', 'Camera'];
+  const out = [];
+  function walk(id, path) {
+    const p = props.get(id) || { id };
+    const c = byId(id), rec = { path, props: p };
+    delete p.cueTarget; delete p.fileTarget; delete p.parent; delete p.parentList; delete p.playhead; delete p.playbackPosition;
+    if (!['Cue List', 'Cart', 'Group', 'Memo', 'Wait', 'Script', 'Audio', 'Video', 'Text', 'Camera', 'Mic', 'Light', 'MIDI', 'Network', 'Timecode', 'MIDI File'].includes(p.qType)) {
+      try { const t = c.cueTarget(); rec.cueTarget = t ? t.uniqueid() : null; } catch (e) { rec.cueTarget = null; }
+    }
+    if (['Audio', 'Video', 'MIDI File'].includes(p.qType)) { try { const f = c.fileTarget(); rec.fileTarget = f ? f.toString() : null; } catch (e) { rec.fileTarget = null; } }
+    if (p.sliceMarkers) rec.sliceMarkers = p.sliceMarkers;
+    if (LEVELLED.includes(p.qType)) {
+      const rows = p.qType === 'Fade' ? 4 : Math.min(8, Number(p.audioInputChannels) || 2);
+      rec.levels = {};
+      for (let r = 0; r <= rows; r++) for (let k = 0; k <= cols; k++) { try { const v = q.getlevel(c, { row: r, column: k }); if (v !== null && v !== undefined) rec.levels[`${r},${k}`] = v; } catch (e) { /* off the matrix */ } }
+    }
+    out.push(rec);
+    if (['Cue List', 'Cart', 'Group'].includes(p.qType) || p.class === 'cueList' || p.class === 'groupCue') {
+      let kids = [];
+      // (a shuffled playlist answers a bulk read in its shuffled order: each child is asked in turn, in the file's order)
+      try { kids = p.qType === 'Group' ? c.cues().map((k) => k.uniqueid()) : c.cues.uniqueid(); } catch (e) { /* none */ }
+      kids.forEach((k, i) => walk(k, path.concat(i)));
+    }
+  }
+  ws.cueLists.uniqueid().forEach((id, i) => walk(id, [i]));
+  q.close(ws, { saving: 'no' });
+  return JSON.stringify({ workspace: name, cues: out });
+}
+
+/** Answer one question QLab is asking, if it is one this answers: Open (a QLab 4 workspace), Cancel ("Where is …?"). */
+function answerOnce() {
+  const d = Application('System Events').processes.byName('QLab').windows.whose({ subrole: 'AXDialog' })();
+  if (!d.length) return false;
+  const names = d[0].buttons.name();
+  if (names.includes('Open')) d[0].buttons.byName('Open').click();
+  else if (names.includes('Cancel')) d[0].buttons.byName('Cancel').click();
+  else return false;
+  return true;
+}

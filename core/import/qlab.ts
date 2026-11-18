@@ -19,16 +19,20 @@
  * this has not seen. Anything it cannot carry over it says so, and the cue is kept (as a Memo with
  * its number, name, notes, waits and continue) so sequences and targets still line up.
  *
- * What comes across: lists, and carts with each cue on its button; groups; Audio (file, level, start, end, loop, rate, and its level matrix as the cue's own
- * outputs when it is not QLab's default: see `ownOutputs`; its integrated fade envelope
- * only if it is written the way envelopeOf() guesses, which no real workspace has yet confirmed); Fade (the main level,
- * absolute or relative, stop target); Start, Stop, Pause, Load, GoTo, Arm, Disarm, Devamp, Wait,
- * Memo; Video (its file, level, start, end and loop, read as an Audio cue's are), Text and Camera, as cues for
- * the stage; Network (OSC, with a 1D fade); MIDI (with a faded value); MIDI File; Timecode (by guess: see
- * `timecodeOf`); Light (its commands as text and its fade time, where the text
- * can be found: never checked on a real workspace with Light cues; the light patch is not read); numbers, names, notes, colours, flags, armed, pre- and
- * post-waits, continue modes; "fade and stop others" on a group; double-GO protection, the panic
- * time and the network patches.
+ * What comes across: lists, and carts with each cue on its button; groups; Audio (file, level, start, end, loop, rate and
+ * whether it keeps its pitch, and its level matrix as the cue's own outputs when it is not QLab's default: see
+ * `ownOutputs`; its integrated fade envelope only if it is written the way envelopeOf() guesses, which no real workspace
+ * has yet confirmed); Fade (the main level, absolute or relative, stop target, and a picture's opacity, position,
+ * scale and rotation); Start, Stop, Pause, Load, Reset, Target, GoTo, Arm, Disarm, Devamp, Wait, Memo; Video (its file,
+ * level, start, end, loop and place on the stage), Text (its words, font, size, colour and alignment) and Camera, as
+ * cues for the stage; Network (OSC, with a 1D fade); MIDI (with a faded value; an MSC message this has no words for
+ * as its bytes); MIDI File; Timecode; Light (its commands as text and its fade time; the light patch is not read);
+ * numbers, names, notes, colours (and the colour once played), flags, armed, pre- and post-waits, continue modes;
+ * hotkeys, MIDI, wall-clock and timecode triggers; the second trigger, ducking others, auto-load, and "fade and stop
+ * others" with its reach; double-GO protection, the panic time and the network patches. A Script cue is AppleScript,
+ * which nothing here runs: it is kept as a Memo with its script in its notes.
+ *
+ * Checked field by field against what QLab 5.6.3 itself reports for workspaces it saved (test/qlab-compare).
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -58,20 +62,27 @@ const toDb = (gain: unknown) => { const g = Number(gain); if (!(g > 0)) return S
 
 // QLab's group modes (its OSC dictionary's /mode)
 const GROUP_MODE: Record<number, string> = { 0: 'cue list', 1: 'Start First and Enter', 2: 'Start First', 3: 'Timeline', 4: 'Start Random', 5: 'cart', 6: 'Playlist' };
-// its 20 colour names → our nine
+// its colour names → ours (core/show/cue-types.ts COLORS): the same name where there is one, else the nearest. The
+// names QLab 5.6 accepts and saves were read back from it; the rest are older names, kept in case a file has them.
 const COLOR: Record<string, string> = {
   red: 'red', orange: 'orange', yellow: 'yellow', green: 'green', blue: 'blue', purple: 'purple',
-  berry: 'pink', magenta: 'pink', fuchsia: 'pink', pink: 'pink', rose: 'pink', coral: 'red', peach: 'orange', ochre: 'orange', gold: 'yellow',
-  lime: 'green', forest: 'green', olive: 'green', teal: 'teal', cyan: 'teal', ocean: 'teal', aqua: 'teal', indigo: 'blue', cerulean: 'blue', sky: 'blue',
-  lilac: 'purple', violet: 'purple', grey: 'grey', gray: 'grey', taupe: 'grey', brown: 'orange',
+  berry: 'pink', magenta: 'magenta', fuchsia: 'pink', pink: 'pink', rose: 'pink', mauve: 'pink', crimson: 'red', coral: 'coral', peach: 'orange', ochre: 'amber', gold: 'amber',
+  lime: 'lime', chartreuse: 'lime', forest: 'forest', olive: 'green', teal: 'teal', cyan: 'teal', ocean: 'teal', aqua: 'teal', indigo: 'indigo', midnight: 'indigo', cerulean: 'blue',
+  sky: 'sky', 'sky blue': 'sky', skyblue: 'sky', lilac: 'lavender', lavender: 'lavender', plum: 'purple', violet: 'purple', grey: 'grey', gray: 'grey', taupe: 'grey', brown: 'brown',
+  'hot pink': 'pink', vermilion: 'red', rufous: 'brown', maize: 'yellow', celadon: 'mint', sage: 'mint', viridian: 'teal', avocado: 'green',      // (and QLab 4's)
 };
 // the cue classes that have a cue of ours of the same kind
 const SIMPLE: Record<string, Cue['type']> = { StartCue: 'start', StopCue: 'stop', PauseCue: 'pause', GotoCue: 'goto', GoToCue: 'goto', ArmCue: 'arm', DisarmCue: 'disarm', DevampCue: 'devamp', MemoCue: 'memo' };
 // the ones that have none yet
 const UNSUPPORTED: Record<string, string> = {
   MicCue: 'Mic', LightCue: 'Light', MIDICue: 'MIDI', MIDIFileCue: 'MIDI File',
-  TimecodeCue: 'Timecode', ScriptCue: 'Script', TargetCue: 'Target', ResetCue: 'Reset',
+  TimecodeCue: 'Timecode', ScriptCue: 'Script',
 };
+// a cue's second trigger in QLab (its dictionary: nothing 0, panic 1, stop 2, hard stop 3, hard stop and restart 4,
+// devamp 5, playlist plays next 6, playlist plays previous 7) → ours
+const SECOND_TRIGGER: Record<number, 'panic' | 'stop' | 'restart' | 'devamp'> = { 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
+// fade and stop others: peers 1, list 2, all 3
+const FADE_OTHERS: Record<number, 'peers' | 'list' | 'all'> = { 1: 'peers', 2: 'list', 3: 'all' };
 
 const text = (v: any): string => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' && typeof v.NSString === 'string' ? v.NSString : String(v));
 const secs = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0; };
@@ -107,9 +118,11 @@ function ownOutputs(q: Archived, cue: Made, note: Note) {
   if (panned) {
     // a sound panned between outputs 1 and 2 by its crosspoints is a pan here, and stays on its bus
     cue.pan = panned.pan;
-    if (panned.db) cue.gainDb = Math.round(((Number(cue.gainDb) || 0) + panned.db) * 10) / 10;
+    // (a cue whose main level is down is silent in QLab whatever its other levels: it stays so)
+    if (panned.db && Number(cue.gainDb) > SILENT_DB) cue.gainDb = Math.max(SILENT_DB, Math.round(((Number(cue.gainDb) || 0) + panned.db) * 10) / 10);
     if (!cue.pan) delete cue.pan;
-    note(q, `was panned by its crosspoints: it came across as Pan ${panned.pan}${panned.db ? ` and ${panned.db > 0 ? '+' : ''}${panned.db} dB on its level` : ''}`);
+    const quiet = Number(cue.gainDb) <= SILENT_DB;
+    note(q, `was panned by its crosspoints: it came across as Pan ${panned.pan}${quiet ? ' (its main level is down: it stays silent)' : panned.db ? ` and ${panned.db > 0 ? '+' : ''}${panned.db} dB on its level` : ''}`);
   } else if (own) {
     cue.outputs = own.matrix;
     note(q, `had its own output routing: it came across as ${routing.describe(own.matrix)}, each channel at its own level (QLab’s cue outputs are taken as this device’s outputs of the same numbers: check it in the inspector, Own outputs)`);
@@ -173,13 +186,44 @@ function midiText(q: Archived): string {
   if (q.messageType === 2) {
     const command = (Object.keys(midi.MSC_COMMANDS) as (keyof typeof midi.MSC_COMMANDS)[]).find((k) => midi.MSC_COMMANDS[k] === Number(q.command));
     const format = (Object.keys(midi.MSC_FORMATS) as (keyof typeof midi.MSC_FORMATS)[]).find((k) => midi.MSC_FORMATS[k] === Number(q.commandFormat));
-    if (!command || !format) return '';
-    if (command === 'fire') return `msc fire ${Number(q.macro) || 0}${Number(q.deviceID) !== 127 ? ` dev ${Number(q.deviceID) || 0}` : ''}${format !== 'lighting' ? ` ${format}` : ''}`;
-    const num = /^[\d.]+$/.test(text(q.qNumber)) ? ` ${text(q.qNumber)}` : '', list = num && /^[\d.]+$/.test(text(q.qList)) ? ` list ${text(q.qList)}` : '';
-    return `msc ${command}${num}${list}${Number(q.deviceID) !== 127 ? ` dev ${Number(q.deviceID) || 0}` : ''}${format !== 'lighting' ? ` ${format}` : ''}`;
+    const dev = Number(q.deviceID) !== 127 ? ` dev ${Number(q.deviceID) || 0}` : '', fmt = format && format !== 'lighting' ? ` ${format}` : '';
+    const numeric = (v: unknown) => /^[\d.]+$/.test(text(v));
+    // a command, format or cue path the words here have none for: the message as its bytes, which a MIDI cue sends as they are
+    if (!command || !format || text(q.qPath) || (text(q.qNumber) && !numeric(q.qNumber)) || (text(q.qList) && !numeric(q.qList))) return mscBytes(q);
+    if (command === 'fire') return `msc fire ${Number(q.macro) || 0}${dev}${fmt}`;
+    const num = numeric(q.qNumber) ? ` ${text(q.qNumber)}` : '', list = num && numeric(q.qList) ? ` list ${text(q.qList)}` : '';
+    const p2 = (n: unknown) => String(Math.max(0, Math.round(Number(n) || 0))).padStart(2, '0');
+    const time = command === 'timed-go' ? ` time ${[q.hours, q.minutes, q.seconds, q.frames].map(p2).join(':')}` : '';
+    return `msc ${command}${num}${list}${time}${dev}${fmt}`;
   }
   if (q.messageType === 3) { const raw = text(q.rawString).replace(/[^0-9a-fA-F]/g, '').toUpperCase(); return raw.length >= 2 && raw.length % 2 === 0 ? `F0 ${(raw.match(/../g) || []).join(' ')} F7`.replace(/^F0 F0/, 'F0').replace(/F7 F7$/, 'F7') : ''; }
   return '';
+}
+
+/**
+ * A QLab MSC message as its bytes in hex ("F0 7F 03 02 01 06 …"): the commands and formats a MIDI cue here has no words
+ * for (SET, a cue path, a format of QLab's own numbering). The command's data is laid out as the MSC specification
+ * has it: a cue number, list and path in ASCII separated by 00; SET's control number and value as 14 bits, low first;
+ * FIRE's macro; a timed go's time before its cue. '' when the command is not one MSC has.
+ */
+function mscBytes(q: Archived): string {
+  const cmd = Number(q.command), fmt = Number(q.commandFormat), dev = Number.isFinite(Number(q.deviceID)) ? Number(q.deviceID) & 0x7f : 0x7f;
+  if (!(cmd >= 1 && cmd <= 0x7f) || !(fmt >= 1 && fmt <= 0x7f)) return '';
+  const ascii = (v: unknown) => [...text(v)].map((ch) => ch.charCodeAt(0) & 0x7f);
+  const cue = () => { const parts = [q.qNumber, q.qList, q.qPath].map(text); while (parts.length && !parts[parts.length - 1]) parts.pop(); return parts.flatMap((p, i) => [...(i ? [0] : []), ...ascii(p)]); };
+  const b14 = (n: unknown) => { const v = Math.max(0, Math.min(16383, Math.round(Number(n) || 0))); return [v & 0x7f, v >> 7]; };
+  const time = () => [Number(q.hours) & 31, Number(q.minutes) & 63, Number(q.seconds) & 63, Number(q.frames) & 31, Number(q.subframes) & 127];
+  const data = cmd === 6 ? [...b14(q.controlNumber), ...b14(q.controlValue)] : cmd === 7 ? [Number(q.macro) & 0x7f] : cmd === 4 ? [...time(), ...cue()] : [1, 2, 3, 5, 0x0b].includes(cmd) ? cue() : [];
+  return [0xf0, 0x7f, dev, 0x02, fmt, cmd, ...data, 0xf7].map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+}
+
+/** Why a QLab MIDI cue has no message here: what its fields held, in a few words. */
+function midiWhy(q: Archived): string {
+  if (q.messageType === 3) return text(q.rawString).trim() ? `a SysEx message this could not read as bytes (“${text(q.rawString).trim().slice(0, 40)}”)` : 'an empty SysEx message (QLab sends nothing for it either)';
+  if (q.messageType === 1) return q.status === undefined ? 'a voice message with no kind of message saved' : `a voice message of a kind this does not know (status ${q.status})`;
+  if (q.messageType === 2) return `an MSC message with command ${q.command ?? 'none'} in format ${q.commandFormat ?? 'none'}, which MSC does not have`;
+  if (q.messageType === undefined || q.messageType === null) return 'no message at all (the cue has no MIDI fields saved)';
+  return `a message of a type this does not know (type ${q.messageType})`;
 }
 
 /**
@@ -201,23 +245,97 @@ function lightText(q: Archived): string {
 }
 
 /**
- * A QLab Timecode cue as one of ours. The field names (`startTimecode`, `outputType`, `LTCChannel`, `duration`) are
- * ones a QLab 5 file has; what each holds was not seen, so every reading here is a guess and the import says so:
- * a start written as text or as hours, minutes, seconds and frames is taken; output type 1 (or anything naming
- * LTC) is taken for LTC, anything else for MTC; a frame rate is taken from whichever field holds 24, 25, 29.97 or 30.
+ * A Text cue's styled text (an NSAttributedString) as our Text cue's font, size, colour and alignment: { fields, said,
+ * mixed }, or null when it has no style this reads. The style of its first run is taken; `mixed` when it has others.
+ * The font is the family (the name QLab last saw, its style words taken off: a stage here has no bold or italic).
+ */
+function styleOf(styled: Archived, seenFonts: unknown) {
+  const runs = styled.NSAttributes;
+  const a: Archived | null = Array.isArray(runs) ? runs[0] : runs && typeof runs === 'object' ? runs : null;
+  if (!a) return null;
+  const fields: Record<string, unknown> = {}, said: string[] = [];
+  const font = a.NSFont && typeof a.NSFont === 'object' ? a.NSFont : null;
+  const seen = Array.isArray(seenFonts) ? text(seenFonts[0]) : '';
+  // (a PostScript name, "HelveticaNeue-Bold", is the family with its spaces taken out: they are put back)
+  const family = (seen || text(font && font.NSName).split('-')[0].replace(/([a-z])([A-Z])/g, '$1 $2')).replace(/\s+(Regular|Bold|Italic|Oblique|Light|Medium|Semibold|SemiBold|Heavy|Black|Thin|UltraLight|Condensed)\b.*$/i, '').trim();
+  if (family) { fields.font = family; said.push(family); }
+  if (font && Number(font.NSSize) > 0) { fields.size = Math.round(Number(font.NSSize)); said.push(`${fields.size} pt`); }
+  // a colour is kept as text: "r g b a" for RGB, "w a" for a grey, each 0–1
+  const color = a.NSColor && typeof a.NSColor === 'object' ? a.NSColor : null;
+  const nums = (b: unknown) => (Buffer.isBuffer(b) ? b.toString('latin1').replace(/\0/g, '').trim().split(/\s+/).map(Number) : []);
+  const rgb = color ? (color.NSRGB ? nums(color.NSRGB) : color.NSWhite ? nums(color.NSWhite).slice(0, 1).flatMap((w) => [w, w, w]) : []) : [];
+  if (rgb.length >= 3 && rgb.slice(0, 3).every((x) => x >= 0 && x <= 1)) {
+    const hex = '#' + rgb.slice(0, 3).map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+    if (hex !== '#ffffff') fields.textColor = hex;
+    said.push(hex === '#ffffff' ? 'white' : hex);
+  }
+  // NSTextAlignment: left 0, right 1, centre 2 (justified and natural are taken as left)
+  const align = a.NSParagraphStyle && typeof a.NSParagraphStyle === 'object' ? Number(a.NSParagraphStyle.NSAlignment ?? 4) : null;
+  if (align === 1) fields.align = 'right'; else if (align === 0 || align === 3 || align === 4) fields.align = 'left';
+  if (!said.length) return null;
+  return { fields, said: said.join(', '), mixed: Array.isArray(runs) && runs.length > 1 };
+}
+
+/** QLab's ticks: an F53Timecode keeps its time as frames over its frames counted a second (30 for 29.97 drop frame)
+ *  in 48 million ticks a second: 01:00:00:00 is 3600 × 48 million at any rate, 10:00:00;00 at 29.97 drop 35964 ×. */
+const TICKS = 48e6;
+/** An F53Timecode's frame rate as one of ours, or null for one this has not (23.976, 24.975, 29.97 counted without drops). */
+function rateOfF53(t: Archived | null | undefined): timecode.Rate | null {
+  const r = t && t.F53TimecodeFramerate;
+  if (!r || typeof r !== 'object') return null;
+  const fps = Number(r.F53FramerateFramesPerSecond), drop = !!r.F53FramerateDropFrame, slow = !!r.F53FramerateVideoSpeed;
+  if (fps === 30 && drop) return '29.97df';
+  if (slow) return null;
+  return fps === 24 ? '24' : fps === 25 ? '25' : fps === 30 && !drop ? '30' : null;
+}
+/** An F53Timecode as text at its own rate ("01:02:03:04", a ; before the frames when it drops), or null. */
+function timecodeText(t: Archived | null | undefined): string | null {
+  const rate = rateOfF53(t), ticks = Number(t && t.F53TimecodeCommonTicks);
+  if (!rate || !Number.isFinite(ticks) || ticks < 0) return null;
+  return timecode.format(timecode.fromFrames(Math.round((ticks / TICKS) * timecode.rateOf(rate).fps), rate), rate);
+}
+/** A wall-clock trigger as ours ("19:30", "19:30:15 mon tue"), or null when it is not one (no day ticked, or a mode
+ *  other than the time of day, 0, the only one seen). */
+function clockOf(q: Archived): string | null {
+  if (Number(q.wallClockMode) || 0) return null;
+  const h = Number(q.wallHours) || 0, m = Number(q.wallMinutes) || 0, s = Number(q.wallSeconds) || 0;
+  if (h > 23 || m > 59 || s > 59) return null;
+  const days = ['wallSunday', 'wallMonday', 'wallTuesday', 'wallWednesday', 'wallThursday', 'wallFriday', 'wallSaturday'].map((k) => q[k] !== false);
+  if (!days.some(Boolean)) return null;
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  return `${p2(h)}:${p2(m)}${s ? `:${p2(s)}` : ''}${days.every(Boolean) ? '' : ' ' + ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].filter((_, i) => days[i]).join(' ')}`;
+}
+/** Fade and stop others' reach: QLab 5 keeps it as a number; a yes or no (QLab 4) is taken as all of them. */
+function fadeScope(q: Archived, cue: Made) {
+  const scope = typeof q.fadeAndStopOthers === 'number' ? FADE_OTHERS[q.fadeAndStopOthers] : null;
+  if (scope && scope !== 'all') cue.fadeOthersScope = scope;
+}
+
+/**
+ * A QLab Timecode cue as one of ours. QLab 5.6 saves `startTimecode` as an F53Timecode (its rate and its ticks: see
+ * timecodeText), `outputType` 1 for LTC and 0 for MTC, `LTCChannel` counted from 0 and `duration` in seconds, as
+ * read back from workspaces it saved. A start written another way (text, or hours, minutes, seconds and frames, or a
+ * rate in a field of its own) is read too, as a guess, and what could not be read is said.
  */
 function timecodeOf(q: Archived) {
   const out: { timecode: string; fps: '24' | '25' | '29.97df' | '30'; output: 'mtc' | 'ltc'; channel?: number; duration?: number } = { timecode: '01:00:00:00', fps: '30', output: 'mtc' }, unsure: string[] = [];
   const st = q.startTimecode, p2 = (n: unknown) => String(Math.max(0, Math.round(Number(n) || 0))).padStart(2, '0');
+  const f53 = st && typeof st === 'object' && 'F53TimecodeCommonTicks' in st;
+  if (f53) {
+    const rate = rateOfF53(st), start = timecodeText(st);
+    if (rate) out.fps = rate; else unsure.push('its frame rate');
+    if (start) out.timecode = start; else unsure.push('its start time');
+  }
   const parts = Array.isArray(st) && st.length >= 4 ? st.slice(0, 4)
     : st && typeof st === 'object' && !('NSString' in st) ? [st.hours ?? st.hour ?? st.h, st.minutes ?? st.minute ?? st.m, st.seconds ?? st.second ?? st.s, st.frames ?? st.frame ?? st.f] : null;
   const asText = parts && parts.every((x: unknown) => Number.isFinite(Number(x))) ? parts.map(p2).join(':') : typeof st === 'string' || (st && st.NSString) ? text(st).trim().replace(/;/g, ':') : '';
-  if (timecode.parse(asText)) out.timecode = timecode.format(timecode.parse(asText), '30'); else unsure.push('its start time');
-  const rate = [q.framerate, q.frameRate, q.fps, q.smpteFormat, q.timecodeFormat, q.format, st && st.framerate, st && st.format].map(Number).find((n) => [24, 25, 29.97, 30].some((r) => Math.abs(n - r) < 0.011));
-  if (rate) out.fps = Math.abs(rate - 29.97) < 0.011 ? '29.97df' : String(Math.round(rate)) as '24' | '25' | '30'; else unsure.push('its frame rate');
-  if (Number(q.outputType) === 1 || /ltc/i.test(text(q.outputType))) { out.output = 'ltc'; out.channel = Math.max(1, Math.round(Number(q.LTCChannel) || 1)); }
+  if (f53) { /* read above */ } else if (timecode.parse(asText)) out.timecode = timecode.format(timecode.parse(asText), '30'); else unsure.push('its start time');
+  const rate = f53 ? null : [q.framerate, q.frameRate, q.fps, q.smpteFormat, q.timecodeFormat, q.format, st && st.framerate, st && st.format].map(Number).find((n) => [24, 25, 29.97, 30].some((r) => Math.abs(n - r) < 0.011));
+  if (rate) out.fps = Math.abs(rate - 29.97) < 0.011 ? '29.97df' : String(Math.round(rate)) as '24' | '25' | '30'; else if (!f53) unsure.push('its frame rate');
+  // (LTCChannel counts from 0: QLab shows 1 more)
+  if (Number(q.outputType) === 1 || /ltc/i.test(text(q.outputType))) { out.output = 'ltc'; out.channel = Math.max(1, Math.round(Number(q.LTCChannel) || 0) + 1); }
   if (secs(q.duration)) out.duration = secs(q.duration);
-  if (timecode.whyNot(timecode.parse(out.timecode), out.fps)) { out.timecode = '01:00:00:00'; unsure.push('its start time'); }
+  if (timecode.whyNot(timecode.parse(out.timecode), out.fps)) { out.timecode = timecode.format(timecode.parse('01:00:00:00')!, out.fps); unsure.push('its start time'); }
   return { cue: out, unsure: [...new Set(unsure)] };
 }
 
@@ -235,11 +353,14 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
   const ids = new Map<unknown, string>();   // QLab uniqueID → our id
   const made = new Map<unknown, Made>();     // QLab uniqueID → our cue
   const kinds: Record<string, number> = {};
+  const monoLeft: string[] = [];               // mono sounds QLab sent to output 1 alone (its default for one)
   const lightNames = new Set<string>();       // the instruments and groups the Light cues name: the patch they need here
   const label = (q: Archived) => `${text(q.number) ? text(q.number) + ' ' : ''}${text(q.name) || (q.$type || 'cue').replace(/Cue$/, '')}`.trim();
   const note: Note = (q, why) => issues.push({ id: ids.get(q.uniqueID) || null, cue: label(q), why });
   const each = (q: Archived, fn: (q: Archived) => void) => { fn(q); for (const k of q.cues || []) each(k, fn); };
   for (const l of top.cues || []) for (const q of l.cues || []) each(q, (c) => ids.set(c.uniqueID, show.newId()));
+  const byNumber = new Map<string, string>();     // a cue's number → our id (the first with it, as QLab finds one by number)
+  for (const l of top.cues || []) for (const q of l.cues || []) each(q, (c) => { const n = text(c.number); if (n && !byNumber.has(n)) byNumber.set(n, ids.get(c.uniqueID)!); });
 
   // ── settings ────────────────────────────────────────────────────────────
   const settings: Archived = root.settings || {};
@@ -275,6 +396,8 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
     if (text(q.notes)) cue.notes = text(q.notes);
     const col = COLOR[String(q.colorName || '').toLowerCase()];
     if (col) cue.color = col; else if (q.colorName && q.colorName !== 'none') note(q, `its colour (${q.colorName}) has no match here`);
+    const col2 = q.useSecondColor && COLOR[String(q.secondColorName || '').toLowerCase()];
+    if (col2) cue.color2 = col2;
     if (q.flagged) cue.flagged = true;
     if (q.armed === false) cue.armed = false;
     if (secs(q.preWait)) cue.preWait = secs(q.preWait);
@@ -286,15 +409,35 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       ? show.normaliseHotkey(`${q.hotKey.QLActionKeyShift ? 'shift+' : ''}${q.hotKey.QLActionKeyOption ? 'alt+' : ''}${String.fromCharCode(Number(q.hotKey.QLActionKeyKeyCharacter))}`) : null;
     if (hk) cue.hotkey = hk;
     const mt = q.useMIDITrigger && q.midiTrigger && !q.midiTrigger.byte1Operator ? { 144: 'note', 192: 'pc', 176: 'cc' }[Number(q.midiTrigger.status) & 0xf0] : null;
-    if (mt) cue.midiTrigger = `${mt} ${Number(q.midiTrigger.byte1) || 0}${Number(q.midiTrigger.channel) > 0 ? ` ch ${Number(q.midiTrigger.channel)}` : ''}`;
+    // QLab's condition on the second byte (a note's velocity, a controller's value): = 0, any 1, < 2, > 3 (read back
+    // from what QLab saved for each). "=" is kept as the trigger's value; "any" is a trigger with none. (A note's "= 0"
+    // is taken as none: a note on at velocity 0 is a note off, so it can only be a velocity never set.)
+    const op2 = Number(q.midiTrigger && q.midiTrigger.byte2Operator) || 0, b2 = Number(q.midiTrigger && q.midiTrigger.byte2) || 0;
+    if (mt) cue.midiTrigger = `${mt} ${Number(q.midiTrigger.byte1) || 0}${mt !== 'pc' && op2 === 0 && !(mt === 'note' && b2 === 0) ? ` ${b2}` : ''}${Number(q.midiTrigger.channel) > 0 ? ` ch ${Number(q.midiTrigger.channel)}` : ''}`;
     if (hk && show.APP_KEYS.has(hk)) note(q, `its hotkey ${hk} is one of this app’s own keys: change it (its Triggers tab)`);
-    if (mt) note(q, `its MIDI trigger came across as “${cue.midiTrigger}”: check it (QLab’s conditions on the second byte are not read)`);
-    const trig = [q.useHotKey && !hk && (Number((q.hotKey || {}).QLActionKeyKeyCharacter) > 0 ? 'a hotkey this cannot hold (one with ⌘ or ctrl, or not a letter, digit or F-key)' : 'a hotkey with no key set'), q.useMIDITrigger && !mt && 'a MIDI trigger', q.useWallClock && 'a wall-clock trigger', q.useTimecode && 'a timecode trigger'].filter(Boolean);
-    if (trig.length) note(q, `had ${trig.join(' and ')}: not carried over${q.useTimecode ? ' (give it its time again on its Triggers tab)' : ''}`);
-    if (q.duckOthers) note(q, 'ducked other cues while it ran: not carried over (build it with two relative Fade cues)');
-    if (q.secondTriggerAction) note(q, 'had a second-trigger action: not carried over');
+    if (mt && mt !== 'pc' && (op2 === 2 || op2 === 3)) note(q, `its MIDI trigger came across as “${cue.midiTrigger}”: it fires on any ${mt === 'note' ? 'velocity' : 'value'}, where QLab’s fired only ${op2 === 2 ? 'below' : 'above'} ${b2}`);
+    // a time of day: hours, minutes, seconds, and the days it is on (all seven: every day)
+    const clock = q.useWallClock ? clockOf(q) : null;
+    if (clock) cue.clockTrigger = clock;
+    const tc = q.useTimecode ? timecodeText(q.timecode) : null;
+    if (tc) cue.timecodeTrigger = tc;
+    const trig = [q.useHotKey && !hk && (Number((q.hotKey || {}).QLActionKeyKeyCharacter) > 0 ? 'a hotkey this cannot hold (one with ⌘ or ctrl, or not a letter, digit or F-key)' : 'a hotkey with no key set'), q.useMIDITrigger && !mt && 'a MIDI trigger', q.useWallClock && !clock && 'a wall-clock trigger', q.useTimecode && !tc && 'a timecode trigger'].filter(Boolean);
+    if (trig.length) note(q, `had ${trig.join(' and ')}: not carried over${q.useTimecode && !tc ? ' (give it its time again on its Triggers tab)' : ''}`);
+    if (tc) note(q, `its timecode trigger came across as ${tc}: it fires when the show’s timecode input is on (Settings ▸ Integrations ▸ Network ▸ Timecode)`);
+    if (q.duckOthers) {
+      // (QLab keeps the duck level as a gain: below 1 ducks, above 1 boosts)
+      const d = toDb(q.duckLevel);
+      if (d) { cue.duckOthers = Math.max(-60, Math.min(12, d)); if (Number(q.duckTime) >= 0 && Math.abs(Number(q.duckTime) - 1) > 0.0001) cue.duckTime = secs(q.duckTime); }
+    }
+    const second = Number(q.secondTriggerAction) || 0;
+    if (SECOND_TRIGGER[second]) {
+      cue.secondTrigger = SECOND_TRIGGER[second];
+      if (second === 3 || second === 4) note(q, `its second trigger was a hard stop${second === 4 ? ' and restart: here it restarts' : ': here it stops'}`);
+    } else if (second) note(q, `its second trigger played the playlist’s ${second === 6 ? 'next' : 'previous'} cue: not carried over`);
+    if (second && q.secondTriggerOnRelease) cue.secondOnRelease = true;
+    if (q.autoLoad) cue.autoLoad = true;
     if (q.skipIfDisarmed) note(q, 'was "skip if disarmed": not carried over');
-    if (q.fadeAndStopOthers && cue.type !== 'group') cue.fadeOthers = secs(q.fadeAndStopOthersTime) || 0.01;
+    if (q.fadeAndStopOthers && cue.type !== 'group') { cue.fadeOthers = secs(q.fadeAndStopOthersTime) || 0.01; fadeScope(q, cue); }
     return cue;
   };
   const targetOf = (q: Archived) => ids.get(q.cueTargetUniqueID || (q.cueTarget && q.cueTarget.uniqueID)) || null;
@@ -351,8 +494,10 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       else if (q.groupMode === 2) cue.mode = 'first';
       else if (q.groupMode === 4) cue.mode = 'random';
       else if (q.groupMode !== 3) note(q, `was a ${GROUP_MODE[q.groupMode] || `mode ${q.groupMode}`} group: here it fires all its children together`);
-      if (q.fadeAndStopOthers) cue.fadeOthers = secs(q.fadeAndStopOthersTime) || 0.01;
+      if (q.fadeAndStopOthers) { cue.fadeOthers = secs(q.fadeAndStopOthersTime) || 0.01; fadeScope(q, cue); }
       cue.children = (q.cues || []).map(convert);
+      // (a playlist plays its cues one after another itself: QLab does not run their continue modes, and nor does this)
+      if (q.groupMode === 6) for (const k of cue.children!) delete k.continue;
       for (const k of q.cues || []) if (k.continueMode && ![1, 2, 3, 6].includes(q.groupMode)) note(k, 'its continue mode is inside a group: not run here yet');
     } else if (type === 'AudioCue') {
       cue = common(q, { id, type: 'audio', file: fileOf(q), gainDb: mainLevel(q.levels) });
@@ -375,8 +520,9 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       }
       if (Number(q.rate) > 0 && Math.abs(Number(q.rate) - 1) > 0.0001) {
         cue.rate = Math.max(0.25, Math.min(4, Math.round(Number(q.rate) * 1000) / 1000));
-        if (q.preservePitch === true || q.pitchShift === false) cue.preservePitch = true;
-        note(q, `plays at rate ${cue.rate}${cue.rate !== Number(q.rate) ? ` (it was ${q.rate}: outside what can be played here)` : ''}: check whether it should keep its pitch (Audio ▸ More ▸ Keep pitch)`);
+        if (q.preservePitch === true || q.pitchShift === false || q.doPitchShift === false || q.doPitchShift === 0) cue.preservePitch = true;      // (QLab 5.6 saves doPitchShift 0)
+        const known = q.doPitchShift !== undefined || q.preservePitch !== undefined || q.pitchShift !== undefined;
+        note(q, `plays at rate ${cue.rate}${cue.rate !== Number(q.rate) ? ` (it was ${q.rate}: outside what can be played here)` : ''}${known ? (cue.preservePitch ? ', keeping its pitch' : ', its pitch moving with it') : ': check whether it should keep its pitch (Audio ▸ More ▸ Keep pitch)'}`);
       }
       if (q.doFade) {
         // its integrated fade: the level drawn over the stretch of the file it plays
@@ -386,36 +532,59 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       }
       if ((q.effects || []).length) note(q, `had ${q.effects.length} audio effect${q.effects.length === 1 ? '' : 's'}: not carried over`);
       ownOutputs(q, cue, note);
-      // a click sent to its own outputs with the main level down would arrive silent, and nobody told
+      // a mono file left on QLab's default crosspoints goes to cue output 1 alone; on a bus here it plays in the middle
+      if (!cue.outputs && cue.pan === undefined && cue.file && routing.wavChannels(cue.file) === 1) {
+        const x = (r: number, c: number) => { const e = Object.values<Archived>((q.levels && q.levels.entries) || {}).find((k) => k && k.row === r && k.column === c); return e ? Number(e.initialLevel) : 0; };
+        if (x(1, 1) > 0 && !(x(1, 2) > 0)) monoLeft.push(label(q));
+      }
       if (Number(cue.plays) > 1 && cue.loops) { delete cue.plays; note(q, 'had a play count and slices: the slices’ counts are kept, the play count of the whole is not'); }
-      if (Number(cue.gainDb) <= SILENT_DB && Object.values<Archived>((q.levels && q.levels.entries) || {}).some((e: Archived) => e && e.row === 0 && e.column > 0 && Number(e.initialLevel) > 0)) note(q, 'played only on outputs of its own, with its main level down: it is silent until you raise its level (the inspector’s Level; its outputs are under Own outputs)');
+      // a click sent to outputs of its own with the main level down would arrive silent, and nobody told. (Only when
+      // its crosspoints do send it somewhere other than QLab's default: every cue's output levels are at unity.)
+      if (Number(cue.gainDb) <= SILENT_DB && cue.outputs) note(q, 'played only on outputs of its own, with its main level down: it is silent until you raise its level (the inspector’s Level; its outputs are under Own outputs)');
     } else if (type === 'FadeCue') {
       cue = common(q, { id, type: 'fade', target: targetOf(q), duration: secs(q.duration), stopTarget: !!(q.stopTargetWhenDone || (q.fade && q.fade.stopTargetWhenDone)) });
       const main: Archived | undefined = Object.values<Archived>((q.fade && q.fade.entries) || {}).find((e: Archived) => e && e.row === 0 && e.column === 0 && e.live !== false);
       const others = Object.values<Archived>((q.fade && q.fade.entries) || {}).filter((e: Archived) => e && !(e.row === 0 && e.column === 0) && e.live !== false).length;
       cue.relative = q.mode === 1 || (q.fade && q.fade.fadeType === 'relative');
+      const pictured = !!(q.doOpacity || q.doTranslation || q.doScale || q.doRotation);
       if (main) cue.db = toDb(main.endValue);
-      else { cue.db = cue.relative ? 0 : mainLevel(targetCue(q) && targetCue(q)!.levels); note(q, 'does not fade its target’s main level: what it faded is not carried over'); }
+      else { cue.db = cue.relative ? 0 : mainLevel(targetCue(q) && targetCue(q)!.levels); if (!pictured && !q.doRate) note(q, 'does not fade its target’s main level: what it faded is not carried over'); }
       if (cue.relative) note(q, 'is a relative fade: check its amount (it is measured from the target’s own level here)');
       if (others) note(q, `also faded ${others} other level${others === 1 ? '' : 's'} (outputs or crosspoints): only the main level is kept`);
       if (q.doRate && Number(q.rate) > 0) { cue.rate = Math.max(0.25, Math.min(4, Math.round(Number(q.rate) * 1000) / 1000)); note(q, `also fades its target’s rate to ${cue.rate}: check it`); }
       else if (q.doRate) note(q, 'also faded its target’s rate, to a rate this could not read: set Rate to on the Fade');
-      if (q.doOpacity || q.doTranslation || q.doScale || q.doRotation) note(q, 'also faded video geometry: where the file keeps those values is not known to this, so they are not carried over (set To opacity, position, scale or rotation on the Fade)');
+      // a picture's place: opacity 0–1 (a percent here), position in stage pixels, scale, rotation in degrees
+      const num = (v: unknown) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Number(v) : null);
+      if (q.doOpacity && num(q.opacity) !== null) cue.opacity = Math.round(num(q.opacity)! * 1000) / 10;
+      if (q.doTranslation) { if (num(q.translationX) !== null) cue.x = Math.round(num(q.translationX)! * 100) / 100; if (num(q.translationY) !== null) cue.y = Math.round(num(q.translationY)! * 100) / 100; }
+      if (q.doScale && num(q.scaleX)! > 0) { cue.scale = Math.round(num(q.scaleX)! * 1000) / 1000; if (num(q.scaleY) !== null && Math.abs(num(q.scaleY)! - num(q.scaleX)!) > 0.001) note(q, 'faded the scale differently across and down: one scale is kept'); }
+      if (q.doRotation && num(q.rotation) !== null) { cue.rotation = Math.round(num(q.rotation)! * 100) / 100; if (Number(q.rotationType)) note(q, 'rotated about another axis than the screen’s: here it turns flat on the stage'); }
+      if (pictured && !main) delete cue.db;      // (it moves the picture, not the sound: its level stays)
       if (q.targetMode) note(q, 'targeted an output patch or audio map: not carried over');
       const t = targetCue(q);
       if (t && !['AudioCue', 'GroupCue', 'MicCue', 'VideoCue', 'TextCue', 'TitlesCue', 'CameraCue'].includes(t.$type)) note(q, `targets a ${t.$type.replace(/Cue$/, '')} cue: a Fade here moves a sound, a picture or a group of them`);
+    } else if (type === 'ResetCue') {
+      cue = common(q, { id, type: 'reset', target: targetOf(q) });
+      if (q.targetMode) note(q, 'reset an output patch or audio map: not carried over');
+    } else if (type === 'TargetCue') {
+      // the cue to re-aim, and the number of the cue it is aimed at instead (QLab keeps the number, not the cue)
+      const to = byNumber.get(text(q.targetCueNumber));
+      cue = common(q, { id, type: 'target', target: targetOf(q), ...(to ? { to } : {}) });
+      if (text(q.targetCueNumber) && !to) note(q, `re-aimed its target at cue ${text(q.targetCueNumber)}, which is not in the workspace`);
+      else if (!text(q.targetCueNumber)) note(q, 'has no new target set');
     } else if (SIMPLE[type]) {
       cue = common(q, { id, type: SIMPLE[type] });
       if (SIMPLE[type] !== 'memo') cue.target = targetOf(q);
       const t = targetCue(q);
       if (type === 'DevampCue') {
         if (t && t.$type !== 'AudioCue') note(q, 'targets something other than an Audio cue');
-        if (q.fireNextCueAtMomentLoopEnds) note(q, 'started the next cue when the loop ended: not carried over');
+        if (q.fireNextCueAtMomentLoopEnds) cue.startNext = true;
+        if (q.stopTargetWhenDone) note(q, 'stopped its target at the end of the slice: here the sound plays on past its loop');
         if ((t && (t.slices || []).length) || q.devampType === 0) note(q, 'its target has slices: here they are loop regions, and this Devamp lets the track out of the one it is going round');
       }
     } else if (type === 'LoadCue') {
-      cue = common(q, { id, type: 'load', target: targetOf(q), at: secs(q.loadTime) });
-      if (Number(q.loadTime) < 0) note(q, 'loaded back from the end: a Load cue here takes a time from the start');
+      // (a negative time is from the end, in QLab and here)
+      cue = common(q, { id, type: 'load', target: targetOf(q), at: Number.isFinite(Number(q.loadTime)) ? Math.round(Number(q.loadTime) * 1000) / 1000 : 0 });
       const t = targetCue(q);
       if (t && t.$type !== 'AudioCue' && t.$type !== 'VideoCue') note(q, `loads a ${t.$type.replace(/Cue$/, '')} cue: a Load cue here sets where one Audio or Video cue starts`);
     } else if (type === 'WaitCue') {
@@ -432,14 +601,21 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
         else if (secs(q.duration)) note(q, `re-sent its message for ${secs(q.duration)} s: it is sent once here`);
       } else {
         cue = common(q, { id, type: 'memo' });
-        cue.notes = `${cue.notes ? cue.notes + '\n' : ''}(QLab Network cue: ${text(q.plainTextString) ? `plain text “${text(q.plainTextString)}”` : text(q.hexCodesString) ? `hex ${text(q.hexCodesString)}` : 'a device command'})`;
-        note(q, 'was a Network cue that is not an OSC message (plain text, hex or a device command): kept as a Memo');
+        // what it held, in a word: plain text, hex, a command for a device, or nothing at all (a new cue left empty)
+        // (an OSC message cue left empty is saved as "{custom}", with its patch's details under `f53.` names)
+        const plain = text(q.plainTextString), hex = text(q.hexCodesString);
+        const device = Object.keys(q.allParameterValues || {}).some((k) => !k.startsWith('f53.') && k !== 'com.figure53.oscmessage') || (osc.trim() && osc.trim() !== '{custom}');
+        const kind = plain ? 'plain text' : hex ? 'hex' : device ? 'a device command' : '';
+        cue.notes = `${cue.notes ? cue.notes + '\n' : ''}(QLab Network cue: ${plain ? `plain text “${plain}”` : hex ? `hex ${hex}` : kind || 'no message'})`;
+        note(q, kind ? `was a Network cue that is not an OSC message (${kind}): kept as a Memo` : 'was a Network cue with no message: kept as a Memo');
       }
     } else if (type === 'VideoCue') {
       // The file, level and times are read where an Audio cue keeps them (a Video cue is an Audio cue with a picture
-      // in QLab too). No workspace with a Video cue has been seen by this code: where its geometry is kept in the
-      // file is not known, so it is looked for under the names QLab gives those settings over OSC, and said either way.
-      cue = common(q, { id, type: 'video', file: fileOf(q), gainDb: mainLevel(q.levels) });
+      // in QLab too). Its place on the stage is kept under the names QLab's OSC dictionary gives it (opacity,
+      // translationX and Y, scaleX and Y, layer, fullSurface), as workspaces QLab 5.6 saved have it.
+      // (QLab 4 keeps a Video cue's sound, and so its level, on an Audio cue inside it: `audioCue`)
+      const sound: Archived | null = q.levels ? q : q.audioCue && typeof q.audioCue === 'object' ? q.audioCue : null;
+      cue = common(q, { id, type: 'video', file: fileOf(q), gainDb: mainLevel(sound && sound.levels) });
       if (!cue.file) note(q, 'has no file');
       const len = Number(q.lastSeenFileDuration) || 0;
       if (secs(q.startTime)) cue.from = secs(q.startTime);
@@ -449,18 +625,23 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       if (q.holdLastFrame) cue.holdEnd = true;
       const found = geometry(q, cue);
       note(q, found.length
-        ? `is a Video cue: its ${found.join(', ')} came across under the names QLab uses for them over OSC, which have not been checked against a real workspace. Look at it on the stage`
+        ? `is a Video cue: its file, level, times and ${found.join(', ')} came across. Look at it on the stage (QLab’s stage and this one may not be the same size)`
         : 'is a Video cue: its file, level and times came across; its place on the stage (position, scale, opacity, layer) was not found in the file, so it fits the stage here');
       if ((q.slices || []).length) note(q, 'had slices: not carried over for a Video cue');
       if (Number(q.rate) && Math.abs(Number(q.rate) - 1) > 0.0001) note(q, `played at rate ${q.rate}: rate is not here yet`);
       if ((q.videoEffects || q.effects || []).length) note(q, 'had effects: not carried over');
     } else if (type === 'TextCue' || type === 'TitlesCue') {
-      // (QLab keeps a Text cue's words as styled text; a plain `text` is read if the file has one)
-      const words = typeof q.text === 'string' ? q.text : (q.text && typeof q.text.NSString === 'string' ? q.text.NSString : '');
+      // QLab 5 keeps a Text cue's words as styled text (`titlesAttributedString`); a plain `text` is read if the file has one
+      const styled: Archived | null = q.titlesAttributedString && typeof q.titlesAttributedString === 'object' ? q.titlesAttributedString : null;
+      const words = styled && typeof styled.NSString === 'string' ? styled.NSString : typeof q.text === 'string' ? q.text : (q.text && typeof q.text.NSString === 'string' ? q.text.NSString : '');
       cue = common(q, { id, type: 'text', text: words || text(q.name) || 'Text' });
       geometry(q, cue);
-      note(q, words ? 'is a Text cue: its words came across; its font, size and colour did not (QLab keeps them as styled text). Set them, and look at it on the stage'
-        : 'is a Text cue: its words could not be read from the file (QLab keeps them as styled text), so its name stands in for them. Type them again, and set the font, size and colour');
+      const style = styled ? styleOf(styled, q.lastSeenFontNames) : null;
+      if (style) Object.assign(cue, style.fields);
+      note(q, !words ? 'is a Text cue: its words could not be read from the file (QLab keeps them as styled text), so its name stands in for them. Type them again, and set the font, size and colour'
+        : style && style.mixed ? `is a Text cue: its words came across, with the style of their first letter (${style.said}); QLab had more than one style in them. Look at it on the stage`
+          : style ? `is a Text cue: its words came across, in ${style.said}. Look at it on the stage (QLab’s point sizes are taken as stage pixels)`
+            : 'is a Text cue: its words came across; its font, size and colour did not. Set them, and look at it on the stage');
     } else if (type === 'CameraCue') {
       cue = common(q, { id, type: 'camera' });
       geometry(q, cue);
@@ -491,15 +672,23 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       note(q, `was a Timecode cue: it is one here too (${t.cue.output === 'ltc' ? `LTC on output ${t.cue.channel}` : 'MTC'} from ${t.cue.timecode} at ${t.cue.fps}). Check it${t.unsure.length ? `: ${t.unsure.join(' and ')} could not be read and ${t.unsure.length === 1 ? 'is' : 'are'} as a new cue has ${t.unsure.length === 1 ? 'it' : 'them'}` : ' against the workspace'}`);
     } else if (type === 'MIDIFileCue' && fileOf(q)) {
       cue = common(q, { id, type: 'midifile', file: fileOf(q) });
-      if (Number(q.rate) > 0 && Math.abs(Number(q.rate) - 1) > 0.0001) cue.rate = Math.round(Number(q.rate) * 1000) / 1000;
+      { const rate = Number(q.playbackRate ?? q.rate); if (rate > 0 && Math.abs(rate - 1) > 0.0001) cue.rate = Math.round(rate * 1000) / 1000; }      // (QLab 5.6 saves it as playbackRate)
       if (text(q.midiPatchID)) note(q, 'was sent to one MIDI patch: here MIDI goes to the output chosen in Settings ▸ Integrations ▸ Network (every output, until you choose)');
     } else {
       const what = UNSUPPORTED[type] || String(type || 'unknown').replace(/Cue$/, '');
       cue = common(q, { id, type: 'memo' });
       if (!cue.name) cue.name = `(${what} cue)`;
-      const midi = type === 'MIDICue';         // there is a MIDI cue here, but what a QLab one sends is not read yet
-      cue.notes = `${cue.notes ? cue.notes + '\n' : ''}(QLab ${what} cue: ${midi ? 'its message is one this does not send (MIDI timecode, or an empty SysEx). Make a MIDI cue here in its place' : 'not in Endless Cues yet. It does nothing here'}.)`;
-      note(q, midi ? 'was a MIDI cue whose message this does not send (MIDI timecode, or an empty SysEx): kept as a Memo' : `was a ${what} cue: kept as a Memo that does nothing`);
+      const midi = type === 'MIDICue';         // a MIDI cue whose message could not be read: say what it held
+      const script = type === 'ScriptCue' && text(q.source).trim();
+      // a Light cue whose commands do not all read as ours (a colour as rgbw(…), say): its commands kept in its notes
+      const light = type === 'LightCue' && text(q.commandText).trim();
+      const bad = light ? lightCommands.parse(light).find((c) => c.error && !/pulled from another cue/.test(c.error)) : null;
+      cue.notes = `${cue.notes ? cue.notes + '\n' : ''}(QLab ${what} cue: ${midi ? `${midiWhy(q)}. Make a MIDI cue here in its place if it should send something`
+        : script ? `an AppleScript, which this does not run. Its script was:\n${text(q.source).trim()}\n`
+          : light ? `its commands, which a Light cue here cannot all read, were:\n${light}\n` : 'not in Endless Cues yet. It does nothing here'}.)`;
+      note(q, midi ? `was a MIDI cue with ${midiWhy(q)}: kept as a Memo` : script ? 'was a Script cue (AppleScript, which this does not run): kept as a Memo, its script in its notes'
+        : light ? `was a Light cue with a command a Light cue here cannot read${bad && bad.error ? ` (${bad.error})` : ''}: kept as a Memo, its commands in its notes`
+          : type === 'LightCue' ? 'was a Light cue with no commands: kept as a Memo' : `was a ${what} cue: kept as a Memo that does nothing`);
       if (q.cues) for (const k of q.cues) convert(k);
     }
     made.set(q.uniqueID, cue);
@@ -520,6 +709,7 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
   }
   if (!doc.lists.length) doc.lists.push({ id: show.newId('list'), name: 'Main', cues: [] });
 
+  if (monoLeft.length) issues.push({ id: null, cue: 'Mono sounds', why: `${monoLeft.length} mono sound${monoLeft.length === 1 ? '' : 's'} (${monoLeft.slice(0, 3).join('; ')}${monoLeft.length > 3 ? '…' : ''}) went to QLab’s output 1 alone, as QLab sends a mono file unless told otherwise; here ${monoLeft.length === 1 ? 'it plays' : 'they play'} in the middle of the bus. Pan ${monoLeft.length === 1 ? 'it' : 'them'} hard left (Pan −100) if that is what was meant` });
   if (lightNames.size) issues.push({ id: null, cue: 'Light patch', why: `QLab’s light patch is not read. The Light cues name: ${[...lightNames].slice(0, 24).join(', ')}${lightNames.size > 24 ? '…' : ''}. Add instruments and groups with those names under Settings ▸ Integrations ▸ Light` });
 
   // a target that was not a cue we kept (or was never set) leaves the cue broken, as it should be; say which

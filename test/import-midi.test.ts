@@ -15,7 +15,8 @@ test('a QLab MIDI cue’s pressure and pitch bend come across as text this sends
 });
 
 test('a QLab Timecode cue is read by its field names, and what could not be read is said', () => {
-  assert.deepEqual(timecodeOf({ startTimecode: '10:00:00:00', outputType: 1, LTCChannel: 3, duration: 90, framerate: 25 }),
+  // (LTCChannel counts from 0, as QLab 5.6 saves it: 2 is the third output)
+  assert.deepEqual(timecodeOf({ startTimecode: '10:00:00:00', outputType: 1, LTCChannel: 2, duration: 90, framerate: 25 }),
     { cue: { timecode: '10:00:00:00', fps: '25', output: 'ltc', channel: 3, duration: 90 }, unsure: [] });
   assert.deepEqual(timecodeOf({ startTimecode: { hours: 1, minutes: 2, seconds: 3, frames: 4 }, outputType: 0, smpteFormat: 29.97 }),
     { cue: { timecode: '01:02:03:04', fps: '29.97df', output: 'mtc' }, unsure: [] });
