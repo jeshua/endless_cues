@@ -188,3 +188,11 @@ test('OSC control’s no-passcode row never edits, and a show this computer has 
   const trust = require('../core/show/trust') as typeof import('../core/show/trust');
   assert.equal(trust.isMine({}, '/somewhere/A.ecshow', 'show_x'), false);
 });
+
+test('the sound is made by Web Audio until this computer chooses the native engine (Settings ▸ Audio ▸ Audio engine)', () => {
+  const { engineOf } = require('../app/main/native-audio') as typeof import('../app/main/native-audio');
+  assert.equal(engineOf({}), 'webaudio', 'a computer that has chosen nothing');
+  assert.equal(engineOf({ audio: { engine: 'native' } }), 'native');
+  // it is this computer's (config.json), never a show's: nothing in a new show names an engine
+  assert.ok(!/engine/i.test(JSON.stringify(show.defaultSettings().audio)));
+});

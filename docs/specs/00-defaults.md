@@ -98,6 +98,7 @@ controllers mapped to the desk.
 | A waveform's peaks | Read when a view asks to draw that sound | None | No. |
 | Falling back to the system output when the chosen device goes away | On | None | No: the alternative is silence. Said in a notice. |
 | The Live view | **Hidden** (`view.live`, computer) | Settings ▸ General; View ▸ Show the Live View | **Yes: it was always shown.** |
+| The native audio engine (`ec-audio`, [18](18-native-audio.md)) | **Off**: Web Audio makes the sound (`audio.engine` 'webaudio', computer). Chosen while something plays, it takes over once nothing does; if it stops three times in a minute, or there is no program, Web Audio plays for the rest of the sitting, said in a notice and the show log | Settings ▸ Audio ▸ Audio engine; computer | New, off. The status bar names the engine in use beside the output. |
 
 ### The network and other equipment
 

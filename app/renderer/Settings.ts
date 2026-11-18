@@ -121,6 +121,13 @@ function GoPane({ s }: { s: State }) {
 /** A bus as the mixer has it: the show's, and whether this device has its outputs. */
 type MixerBus = Bus & { noOutput?: boolean };
 
+/** A few words under the engine's switch: what it is, and what is happening to it. */
+function engineHelp(e: State['mixer']['engine']) {
+  if (e.wanted === 'native' && e.failed) return `The native engine failed (${e.failed}). Web Audio plays until the app is opened again.`;
+  if (e.pending) return `${e.pending === 'native' ? 'Native' : 'Web Audio'} takes over when nothing is playing.`;
+  return 'Native plays from its own program, with lower latency; not yet proven on a show. A change waits until nothing is playing. This computer’s.';
+}
+
 function AudioPane({ s, info }: { s: State; info: Info }) {
   const a = s.doc.settings.audio, m = s.mixer;
   const buses = a.buses;
@@ -133,6 +140,9 @@ function AudioPane({ s, info }: { s: State; info: Info }) {
     <${Row} title="Output device" help=${m.deviceOk ? '' : 'That output could not be used.'}>
       <div><select value=${m.device} onChange=${(e: On<HTMLSelectElement>) => cmd({ op: 'device', id: e.target.value })}>${m.devices.map((d) => html`<option value=${d.id}>${d.label}</option>`)}</select>
         <div class="dim" style="font-size:11.5px;margin-top:4px">${m.outputs} output${m.outputs === 1 ? '' : 's'}${s.midi && s.midi.test ? ' · test run, no device open' : ''}</div></div><//>
+    <${Row} title="Audio engine" help=${engineHelp(m.engine)}>
+      <select data-audio-engine value=${m.engine.wanted} onChange=${(e: On<HTMLSelectElement>) => cmd({ op: 'audio-engine', engine: e.target.value })}>
+        <option value="webaudio">Web Audio (default)</option><option value="native">Native (experimental)</option></select><//>
     ${m.fallback ? html`<div class="problem" style="margin-bottom:10px">${m.fallback.label} is gone. Playing on the default output until it returns.</div>` : null}
     ${lost.map((b) => html`<div class="problem" style="margin-bottom:10px">${b.name} goes to outputs ${b.out}–${b.out! + 1}; this device has ${m.outputs}. It is silent until it has them.</div>`)}
     <${Row} title="Safety limiter" help="Catches peaks above −0.3 dBFS at the end of the chain.">

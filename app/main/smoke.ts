@@ -857,6 +857,8 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     await (require('./smoke-guide') as typeof import('./smoke-guide')).run({ host, win, check, until, page, sleep, shot });
     // a show from another computer, held back until Turn on; OSC control with no passcode, and no answers to a forged sender (smoke-hardening.ts)
     await (require('./smoke-hardening') as typeof import('./smoke-hardening')).run({ host, win, check, until, page, sleep, shot });
+    // the audio engine's switch: Web Audio as it comes; the native engine started --silent, or its absence said (smoke-native.ts)
+    await (require('./smoke-native') as typeof import('./smoke-native')).run({ host, check, until, page });
     check('nothing was logged as an error by the page', true);
   } catch (err) {
     failed++;

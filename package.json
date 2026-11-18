@@ -18,7 +18,10 @@
     "postinstall": "node -e \"if(process.platform==='darwin')require('child_process').spawnSync('xattr',['-cr','node_modules/electron/dist/Electron.app'])\"",
     "demo": "node build/compile.mjs && node examples/make-demo.js",
     "fake-prop": "node build/compile.mjs && node bin/ec-fake-prop.js",
-    "pack": "node build/compile.mjs && electron-builder --dir",
+    "native": "cargo build --release --manifest-path native/Cargo.toml",
+    "native:dist": "node build/compile.mjs && node build/native.js",
+    "native:vectors": "node build/compile.mjs && node build/native-vectors.js",
+    "pack": "node build/compile.mjs && npm run native && electron-builder --dir",
     "dist": "node build/compile.mjs && electron-builder",
     "dist:mac": "node build/compile.mjs && electron-builder --mac",
     "dist:win": "node build/compile.mjs && electron-builder --win",
@@ -59,6 +62,17 @@
       "!**/*.js.map"
     ],
     "asar": true,
+    "beforePack": "build/native.js",
+    "extraResources": [
+      {
+        "from": "native/dist/${os}-${arch}",
+        "to": ".",
+        "filter": [
+          "ec-audio",
+          "ec-audio.exe"
+        ]
+      }
+    ],
     "publish": [
       {
         "provider": "generic",

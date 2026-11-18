@@ -16,6 +16,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createHost } from './host';
+import { binaryPath } from './native-audio';
 import type { HostCommand, HostResult } from './host';
 import type { Relay } from './preload';
 import { createAssistant, COMPATIBLE, CLI, findBinary } from '../../core/assistant/assistant';
@@ -38,6 +39,9 @@ export interface AppConfig extends UpdateConfig {
   recent?: string[];
   audioDevice?: string;
   audioDeviceLabel?: string;
+  /** the audio engine (docs/specs/18-native-audio.md): 'webaudio' (the default) or 'native', and the native engine's
+   *  own choice of output (it names devices its own way) */
+  audio?: { engine?: 'webaudio' | 'native'; device?: string; deviceLabel?: string };
   skipLights?: boolean;
   /** outputs held back for a rehearsal: { osc, midi, timecode, dmx } */
   overrides?: Record<string, boolean>;
@@ -615,7 +619,9 @@ app.whenReady().then(async () => {
 
   assistant = createAssistant({ config: TEST ? { provider: 'demo' } : assistantConfig(), log: (l) => log(`[assistant] ${l}`), changed: () => host && host.cmd({ op: 'state' }) });
   if (!TEST && (config.assistant || {}).cloudEmail) assistant.setAccount({ email: config.assistant!.cloudEmail });
-  host = createHost({ BrowserWindow, ipcMain, getConfig: () => config, saveConfig: (c) => { if (!SMOKE) { saveConfig(c); if ('recent' in c || 'overrides' in c) buildMenu(); } }, log, smoke: TEST, net: DRIVE_NET, assistant, trash: (p) => shell.trashItem(p), screen, userDir: app.getPath('userData') });
+  host = createHost({ BrowserWindow, ipcMain, getConfig: () => config, saveConfig: (c) => { if (!SMOKE) { saveConfig(c); if ('recent' in c || 'overrides' in c) buildMenu(); } }, log, smoke: TEST, net: DRIVE_NET, assistant, trash: (p) => shell.trashItem(p), screen, userDir: app.getPath('userData'),
+    // the native audio engine's program, used only once this computer chooses it (Settings ▸ Audio ▸ Audio engine)
+    nativeBinary: binaryPath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, root: path.join(__dirname, '..', '..') }) });
 
   // the keys, asked for once by the preload before the page's modules load (core/ui/keys.ts)
   ipcMain.on('ec-ui-tables', (e) => { e.returnValue = { keys: uiKeys.forPage() }; });

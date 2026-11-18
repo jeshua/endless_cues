@@ -1,0 +1,3 @@
+# (the project writes long lines; this keeps the Rust near the TypeScript beside it)
+max_width = 140
+use_small_heuristics = "Max"

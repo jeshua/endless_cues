@@ -33,3 +33,6 @@ __pycache__/
 /examples/**/*.js
 *.js.map
 !/app/renderer/vendor/*.js
+# The native audio engine as packed, one folder per platform and architecture (build/native.ts)
+/native/dist/
+/native/target/

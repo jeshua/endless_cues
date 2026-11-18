@@ -67,6 +67,7 @@ node bin/ec-mcp.js --show My.ecshow                                          # o
 | [`core/net/`](core/net) | OSC, both ways, no dependency. |
 | [`app/main/`](app/main) | The Electron main process: the show host (document + engine + mixer + modules) and the app shell. |
 | [`app/audio/`](app/audio) | The hidden window that makes the sound (Web Audio). It holds no show state. |
+| [`native/`](native) | The native audio engine, `ec-audio` (Rust; `npm run native` builds it): the same player as the audio window, opening the device itself. Off until Settings ▸ Audio ▸ Audio engine chooses it ([`docs/specs/18-native-audio.md`](docs/specs/18-native-audio.md)). |
 | [`app/stage/`](app/stage) | The stage: the output window Video, Text and Camera cues are drawn in ([`core/video/`](core/video) is its arithmetic). It holds no show state. |
 | [`app/renderer/`](app/renderer) | The window: a view of the host. Preact + htm, vendored; bundled into one file by `build/compile.mjs`. |
 | [`app/main/modules/`](app/main/modules) | OSC control, Lighting desk, Web remote, Show feedback, Main and backup. Off until a show turns them on. |

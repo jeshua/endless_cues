@@ -154,6 +154,35 @@ Without them (or with `EC_UNSIGNED=1`) the build is ad-hoc signed; the site then
 the download, how to open it (`xattr -dr com.apple.quarantine …`) and gives the SHA-256 to check the file against.
 An unsigned build is acceptable for an alpha among people who know what that command does, and not beyond that.
 
+## The native audio engine
+
+Every packaged build carries `ec-audio` ([18](specs/18-native-audio.md)), one program for its platform and
+architecture, in the app's resources beside the archive (`Contents/Resources/ec-audio` on a Mac, `resources\ec-audio.exe`
+on Windows), where `app/main/native-audio.ts` looks for it (`process.resourcesPath`). It is off until a person chooses
+it, and an app without it plays exactly as before.
+
+- **How it gets there.** `build/native.ts` is electron-builder's `beforePack` hook: before each architecture is
+  packed it runs `cargo build --release --target <triple>` and copies the program to `native/dist/<os>-<arch>/`,
+  which `extraResources` takes. So `npm run pack`, `npm run dist:*` and `node bin/release.js mac` all build it; by hand,
+  `npm run native:dist -- --arch arm64,x64`. `EC_NO_NATIVE=1` packs without it. (`npm run native` is the development
+  build, `native/target/release/ec-audio`, which the app run from source uses; `npm run pack` makes it too.)
+- **What each target needs.** A Rust toolchain (https://rustup.rs) and the target for each architecture:
+  - Mac, both architectures on either kind of Mac: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
+    Xcode's command-line tools link both; nothing else is needed.
+  - Windows (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`): built on Windows, with the Visual Studio Build
+    Tools' C++ workload. From a Mac it needs `cargo-xwin` (`cargo install cargo-xwin`, and the MSVC libraries it
+    downloads) in place of plain cargo, which `build/native.ts` does not do yet: build the `.exe` on Windows, or with
+    `cargo xwin build --release --target …`, and put it in `native/dist/win-<arch>/` before `node bin/release.js win`
+    with `EC_NO_NATIVE=1`.
+  - Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`): built on Linux, with ALSA's headers
+    (`libasound2-dev`); another architecture needs its cross linker (or `cross`).
+- **Signing.** On a Mac, electron-builder signs every Mach-O file inside the app, `Contents/Resources/ec-audio`
+  among them, with the app's identity, the hardened runtime and `entitlementsInherit` (`build/entitlements.mac.plist`,
+  which has `com.apple.security.device.audio-input` for when it opens an input). Check a signed build with
+  `codesign -dv --entitlements - "…/Endless Cues Public Alpha.app/Contents/Resources/ec-audio"`: the same Team ID as the
+  app, and the runtime flag. On Windows, `build/sign-win.ts` is called for each `.exe` electron-builder signs; check
+  that `ec-audio.exe` is among them the first time a signed installer is made.
+
 ## Windows and Linux
 
 `npm run dist:win` and `npm run dist:linux` exist and have never been run to a working app. Neither is offered until a

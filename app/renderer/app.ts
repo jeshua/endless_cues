@@ -983,7 +983,7 @@ function App() {
         : html`<span class="issue-mark" data-issue-mark title="Something went wrong. Shown in Edit, to report."><span class="dot standby"></span></span>`) : null}
       <span class="grow"></span>
       ${s.mixer.muted && html`<span class="warns">output muted (test run)</span>`}
-      <button data-output-device onClick=${() => setSettings('audio')}>${(s.mixer.devices.find((d) => d.id === s.mixer.device) || {}).label || 'System default output'}</button>
+      <button data-output-device onClick=${() => setSettings('audio')} title=${s.mixer.engine.failed ? `The native engine failed: ${s.mixer.engine.failed}` : 'The output, and the engine making the sound'}>${(s.mixer.devices.find((d) => d.id === s.mixer.device) || {}).label || 'System default output'}<span class="dim" data-audio-engine-used> · ${s.mixer.engine.using === 'native' ? 'Native' : 'Web Audio'}</span></button>
       <button data-report-open onMouseDown=${(ev: MouseEvent) => ev.preventDefault()} onClick=${() => report.open()} title="Report a problem, or send an idea">Report</button>
       <span>public alpha · v${info.version}</span>
     </div>

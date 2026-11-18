@@ -23,15 +23,22 @@
         │  mixer, drawers, settings      │      │  what it is told; no state │
         └────────────────────────────────┘      └────────────────────────────┘
               also through cmd(c): UDP (OSC control), HTTP (web remote)
+                                                ┌────────────────────────────┐
+                    (when chosen) JSON lines ─▶ │  ec-audio  (native/audio)  │
+                    on stdin / stdout           │  Rust; the device itself;  │
+                                                │  plays what it is told     │
+                                                └────────────────────────────┘
 ```
 
-Three processes, one owner of truth.
+Three processes, one owner of truth; four when this computer has chosen the native audio engine.
 
 ## Why it is split this way
 
 **The show must outlive the screen.** The engine is in the main process because the operator's window is the part most likely to be reloaded, resized, blocked by a modal or crashed by a rendering bug. If the window dies, the main process reloads it and pushes the state again; what is sounding never noticed.
 
 **The audio window holds no show state.** It is a player: `play`, `fade`, `stop`, `seek`, `move`, `region`. If it crashes, the host makes a new one and clears the engine's idea of what is running, so the next GO works. The cost is one renderer process; the benefit is that Web Audio's whole engine (decoding, sample-accurate scheduling, device routing) comes for free on three platforms. [05 · Audio](05-audio.md) says where that stops being enough.
+
+**The native audio engine is the same player in another language.** `ec-audio` (`native/audio/`, Rust) is a child process of the main process, started only when this computer chooses it (Settings ▸ Audio ▸ Audio engine). It takes the audio window's own commands as JSON lines on its standard input and answers with the window's own events on its standard output; `app/main/native-audio.ts` starts it, starts it again when it exits, and after three exits in a minute hands the sound back to the audio window for the sitting. The audio window keeps running beside it for MIDI and for reading waveforms. Like the window it holds no show state, and a crash in it cannot take the main process with it ([18](18-native-audio.md), [ADR 0007](../adr/0007-native-audio.md)).
 
 **The stage window is the same idea for pictures.** `app/stage/stage.html` is the output window Video, Text and Camera cues are drawn in; `app/main/stage.ts` owns it and the display it is on. It too holds no show state, and the sound of a video never passes through it ([13 · Video and the stage](13-video.md)).
 

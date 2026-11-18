@@ -1,6 +1,6 @@
 # 05 · Audio
 
-Source: `app/audio/audio.html` (the player), `app/main/host.ts` (its controller), `core/engine/waveform.ts` (peaks), `core/audio/chain.ts` (a sound's own tools), `core/audio/kinds.ts` (the kinds of sound).
+Source: `app/audio/audio.html` (the player), `app/main/host.ts` (its controller; the native engine beside it is [18](18-native-audio.md)), `core/engine/waveform.ts` (peaks), `core/audio/chain.ts` (a sound's own tools), `core/audio/kinds.ts` (the kinds of sound).
 
 ## The signal path
 
@@ -307,6 +307,8 @@ Web Audio in a hidden window was the right first engine: it shipped a real show,
 5. **Live inputs with low, known latency** (Mic cues).
 
 The plan ([12 · Roadmap](12-roadmap.md)) is a native audio engine (Rust, `cpal` for devices) as a sidecar process speaking the same small command set the audio window speaks today (`play`, `fade`, `stop`, `seek`, `move`, `region`, `bus`, …). The engine and host do not change: the audio backend is already an injected interface. The Web Audio player stays as the fallback and as the thing that runs in a browser for a hosted demo.
+
+Its first version is built and off by default: [18 · The native audio engine](18-native-audio.md) (Settings ▸ Audio ▸ Audio engine). While it is chosen this window still runs, for MIDI and for reading a file's peaks and samples.
 
 Until then, 0.1 says plainly: one output device; any number of buses, each on a pair of its outputs; a cue may be sent to outputs of its own; and all routing beyond 1–2 is checked by meters in a test run, not yet by ear.
 

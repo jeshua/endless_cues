@@ -73,6 +73,9 @@ import * as showCheck from '../../core/show/check';
 import * as runFrom from '../../core/engine/run-from';
 import * as rigDevices from '../../core/rig/devices';
 import { createRig } from './rig-service';
+import { spawn as spawnChild } from 'child_process';
+import { createAudioRouter, createNativeAudio, engineOf } from './native-audio';
+import type { AudioEngine, Spawn } from './native-audio';
 import type { RigCommand } from './rig-service';
 import type { StageCommand } from './stage';
 import * as trust from '../../core/show/trust';
@@ -155,6 +158,7 @@ interface Commands {
   level: { id: string; db: number };
   master: { db: number; commit?: boolean };
   device: { id: string; label?: string };
+  'audio-engine': { engine: string };
   'fade-from-target': {};
   'revert-fade': {};
   // the network and MIDI
@@ -227,7 +231,7 @@ export type AudioEvent =
   | { type: 'ended'; key: string }
   | { type: 'where'; key: string; t: number; at: number }
   | { type: 'error'; key: string; detail?: string; url?: string }
-  | { type: 'devices'; list: AudioDevice[]; inputs?: unknown[]; current?: string }
+  | { type: 'devices'; list: AudioDevice[]; inputs?: unknown[]; current?: string | { type: 'none' } }
   | { type: 'sink'; id: string; ok: boolean; detail?: string; fallback?: boolean }
   | { type: 'outputs'; channels: number }
   | { type: 'outch'; ch?: number[] }
@@ -353,9 +357,13 @@ export interface HostOptions {
   trash?: ((file: string) => Promise<void>) | null;
   screen?: Screen | null;
   userDir?: string | null;
+  /** the native audio engine's program (docs/specs/18-native-audio.md); null: there is none */
+  nativeBinary?: string | null;
+  /** how it is started (a test's fake; child_process.spawn otherwise) */
+  spawnNative?: Spawn;
 }
 
-function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke = false, net = false, assistant = null, trash = null, screen = null, userDir = null }: HostOptions) {
+function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke = false, net = false, assistant = null, trash = null, screen = null, userDir = null, nativeBinary = null, spawnNative = spawnChild }: HostOptions) {
   let document = new ShowDocument();
   let clip: ReturnType<typeof clipboard.take> | null = null;     // the cue clipboard: kept here, not with the show, so a paste can land in another show
   let rev = 0;                      // bumps whenever the document changes
@@ -498,7 +506,39 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     if (key !== lostFor) { lostFor = key; lostNow = routing.lost(document.doc, state.outputs); }
     return lostNow;
   }
-  const audioCmd = (cmd: AudioCommand | LtcCmd) => { if (audioWin && !audioWin.isDestroyed() && state.audioReady) audioWin.webContents.send('audio-cmd', cmd); };
+  // ── which engine makes the sound (app/main/native-audio.ts; docs/specs/18-native-audio.md) ──
+  // The hidden audio window (Web Audio) by default; the native engine (`ec-audio`) when this computer has chosen it.
+  // Either way the window stays: MIDI, a waveform's peaks and a sound's samples are its alone.
+  const router = createAudioRouter({
+    toWindow: (cmd) => { if (audioWin && !audioWin.isDestroyed()) audioWin.webContents.send('audio-cmd', cmd); },
+    makeNative: (handlers) => createNativeAudio({ binary: nativeBinary, spawn: spawnNative, silent: smoke, exists: (f) => fs.existsSync(f), log, ...handlers }),
+    resolve: (file) => playPath(file) || null,
+    onEvent: (ev) => { try { onAudioEvent(ev); } catch (err) { log(`[audio] event ${ev && ev.type}: ${(err as Error).stack || err}`); } },
+    // (as when the audio window dies: what it was playing is gone, and the next GO works once the new one is ready)
+    onDown: (was, why) => {
+      if (engine.running.size) log(`[audio] ${why}: the sounds playing are gone`);
+      if (was === 'native') relist = true;        // (the window lists its devices as it opens, and not again unless asked)
+      state.audioReady = false; state.devices = []; state.level = null;
+      engine.running.clear(); stage.clear(); decodeSent.clear(); irSent.clear();
+      schedulePush();
+    },
+    onFellBack: (why) => notice(`The native audio engine failed (${why}). Web Audio plays for the rest of this sitting.`, 12000),
+    log,
+  });
+  /** The engine this computer has chosen (a test run plays on Web Audio until it asks for the other). */
+  const engineChosen = (): AudioEngine => (smoke ? 'webaudio' : engineOf(getConfig()));
+  /** The output chosen for the engine making the sound (each engine names devices its own way, so each has its own). */
+  function chosenOutput() {
+    const c = getConfig() || {};
+    return router.status().using === 'native' ? { id: (c.audio || {}).device, label: (c.audio || {}).deviceLabel || '' } : { id: c.audioDevice, label: c.audioDeviceLabel || '' };
+  }
+  function keepOutput(id: string, label: string) {
+    if (router.status().using === 'native') saveConfig({ audio: { ...(getConfig().audio || {}), device: id, deviceLabel: label } });
+    else saveConfig({ audioDevice: id, audioDeviceLabel: label });
+  }
+  const nativeLacks = new Set<string>();     // the commands the native engine has said it cannot carry out yet (each said once)
+  let relist = false;            // the window to be asked for its devices again (the native engine made the sound meanwhile)
+  const audioCmd = (cmd: AudioCommand | LtcCmd) => router.cmd(cmd as AudioCommand);
   // The file the sound is read from: the show's own, but for AIFF and CAF (which Chromium cannot read), a WAV copy
   // of the same samples made beside the system's temporary files (core/audio/pcm-container.ts).
   const copyFails = new Map<string, string>();      // a file that could not be copied -> why (said once)
@@ -951,7 +991,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // ── the hidden audio window ───────────────────────────────────────────
   function startAudio() {
     if (audioWin && !audioWin.isDestroyed()) return;
-    state.audioReady = false;
     audioWin = new BrowserWindow({
       show: false, width: 200, height: 100,
       // (--expose-gc: the audio window asks for its memory back when it lets go of decoded sound; see `tidy` in audio.html)
@@ -960,23 +999,26 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     audioWin.loadFile(path.join(__dirname, '../audio/audio.html'), smoke ? { query: { silent: '1', outs: '8' } } : {});      // (a test run plays to no device, one that it pretends has eight outputs)
     audioWin.webContents.on('render-process-gone', (_e, d) => {
       log(`[audio] the audio window died (${d.reason}); making a new one`);
-      engine.running.clear();
-      stage.clear();
+      router.windowGone();          // (what it was playing is gone with it, if it was the one playing)
       audioWin = null;
       setTimeout(startAudio, 500);
     });
     audioWin.on('closed', () => { audioWin = null; });
   }
-  ipcMain.on('audio-event', (_e: IpcMainEvent, ev: AudioEvent) => { try { onAudioEvent(ev); } catch (err) { log(`[audio] event ${ev && ev.type}: ${(err as Error).stack || err}`); } });
+  // (through the router: while the native engine plays, only what is still the window's counts of what it says)
+  ipcMain.on('audio-event', (_e: IpcMainEvent, ev: AudioEvent) => { try { router.fromWindow(ev); } catch (err) { log(`[audio] event ${ev && ev.type}: ${(err as Error).stack || err}`); } });
   function onAudioEvent(ev: AudioEvent) {
     switch (ev.type) {
       case 'ready': {
+        // (the engine that makes the sound is ready: the audio window, or the native engine; either starts knowing nothing)
         state.audioReady = true;
-        const want = (getConfig() || {}).audioDevice;
-        if (!smoke) outWatch = deviceWatch.step(null, { type: 'chosen', id: want || 'default', label: (getConfig() || {}).audioDeviceLabel || '' }).state;
-        if (want && want !== 'default' && !smoke) audioCmd({ op: 'sink', id: want });
-        irSent.clear();              // (a new audio window has no impulse responses)
+        const want = chosenOutput();
+        if (!smoke) outWatch = deviceWatch.step(null, { type: 'chosen', id: want.id || 'default', label: want.label }).state;
+        if (router.status().using === 'native' || relist) { relist = false; audioCmd({ op: 'devices' }); }      // (the window lists its own as it opens)
+        if (want.id && want.id !== 'default' && !smoke) audioCmd({ op: 'sink', id: want.id });
+        irSent.clear(); decodeSent.clear();          // (a new engine has no impulse responses and nothing decoded)
         sendMixer(); probe(); decodedKey = ''; decodeAhead(); ltcInKey = ''; listenForLtc();
+        schedulePush();
         break;
       }
       case 'duration': trimEndAt(ev.file, ev.secs); if (probeWaits.has(ev.file)) { probeWaits.get(ev.file)!(ev.secs); probeWaits.delete(ev.file); } engine.setDuration(ev.file, ev.secs); break;
@@ -987,12 +1029,12 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'where': stage.soundAt(ev); break;
       // (the audio window has dropped it; told again so the two can never disagree about what is sounding)
       case 'error': playlog.ended(ev.key); showLog.add('error', `${nameOf(ev.key)} cannot be played: ${ev.detail || 'its file cannot be read'}`); log(`[audio] ${ev.key}: ${ev.detail || 'cannot play'} (${ev.url})`); audioCmd({ op: 'stop', key: ev.key }); engine.audioEnded(ev.key); break;
-      case 'devices': state.devices = ev.list; state.inputs = ev.inputs || []; if (!smoke) state.device = ev.current || 'default'; watchOutput({ type: 'devices', list: ev.list || [] }); schedulePush(); break;
+      case 'devices': state.devices = ev.list; state.inputs = ev.inputs || []; if (!smoke) state.device = typeof ev.current === 'string' && ev.current ? ev.current : 'default'; watchOutput({ type: 'devices', list: ev.list || [] }); schedulePush(); break;
       case 'sink':
         // (a move made by the watcher, to the default and back, is not the operator's choice: it is not kept as one)
         if (ev.fallback) { if (ev.ok) { state.device = ev.id; state.deviceOk = true; state.deviceDetail = ''; } else log(`[audio] the output could not be moved to ${ev.id}: ${ev.detail || ''}`); schedulePush(); break; }
         state.deviceOk = !!ev.ok; state.deviceDetail = ev.ok ? '' : String(ev.detail || '');
-        if (ev.ok) { state.device = ev.id; saveConfig({ audioDevice: ev.id, audioDeviceLabel: (state.devices.find((d) => d.id === ev.id) || {}).label || '' }); }
+        if (ev.ok) { state.device = ev.id; keepOutput(ev.id, (state.devices.find((d) => d.id === ev.id) || {}).label || ''); }
         else if (watchOutput({ type: 'refused' })) { /* said by the watcher: the show is on the default until it shows up */ }
         else notice(`Could not use that output: ${state.deviceDetail}`, 6000);
         schedulePush();
@@ -1008,7 +1050,12 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       // the show's sound being recorded: 16-bit stereo, a quarter of a second at a time, straight to the file
       case 'rec': if (recording) { recording.rate = ev.rate; const b = Buffer.from(ev.pcm.buffer, ev.pcm.byteOffset, ev.pcm.byteLength); try { fs.writeSync(recording.fd, b); recording.bytes += b.length; } catch (err) { log(`[rec] ${(err as Error).message}`); stopRecording(); notice(`Recording stopped: ${(err as Error).message}`, 8000); } } break;
       case 'recording': if (recording) recording.rate = ev.rate; break;
-      case 'operror': log(`[audio] ${ev.op}${ev.key ? ` ${ev.key}` : ''} failed: ${ev.detail}`); break;
+      case 'operror':
+        log(`[audio] ${ev.op}${ev.key ? ` ${ev.key}` : ''} failed: ${ev.detail}`);
+        // (what the native engine cannot do yet for a cue is said once a sitting for each kind of command: the sound plays
+        // without it. The mixer's commands, sent whether or not a show uses them, are only logged.)
+        if (router.status().using === 'native' && ev.key && /not in the native engine/i.test(String(ev.detail || '')) && !nativeLacks.has(ev.op)) { nativeLacks.add(ev.op); notice(`The native engine cannot do ${ev.op} yet: the sound plays without it.`, 6000); }
+        break;
       // the output going away under the show (an interface unplugged): said at once, where the operator is looking
       case 'ctx':
         log(`[audio] context ${ev.error ? 'ERROR (the output failed)' : ev.state}`);
@@ -1216,7 +1263,9 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
                // the chosen output is away and the show is on the default meanwhile; the monitor feed, and whether the device has the output it wants
                fallback: outWatch.fallback && outWatch.wanted ? { label: outWatch.wanted.label || 'the chosen output' } : null,
                monitor: { ...(a.monitor || {}), live: !!(state.monitor && state.monitor.on), peak: state.monitorPeak == null ? -60 : state.monitorPeak },
-               levels: cleanLimits(a.levels), audioReady: state.audioReady, muted: state.muted },
+               levels: cleanLimits(a.levels), audioReady: state.audioReady, muted: state.muted,
+               // the audio engine: this computer's choice, the one making the sound, one waiting for nothing to play, why the native one was given up
+               engine: router.status() },
       // each output's level, the sounds that have other than two channels, and what this device cannot play of the show's routing
       routing: { outCh: state.outCh || [], channels: state.channels || {}, lost: lost().filter((p) => !p.id).map((p) => p.why) },
       // each playing sound's own level, by cue id (the meter on its row in the cue list)
@@ -1597,6 +1646,16 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         if (!state.muted) audioCmd({ op: 'masterDb', db: Number(c.db) || 0 });
         if (c.commit) document.edit([{ op: 'show.set', path: 'settings.audio.masterDb', value: Math.round(Number(c.db) * 10) / 10 }], { label: 'master fader' });
         break;
+      }
+      // this computer's audio engine (Settings ▸ Audio): at once with nothing playing, else when everything has stopped
+      case 'audio-engine': {
+        const want: AudioEngine = c.engine === 'native' ? 'native' : 'webaudio';
+        if (!smoke) saveConfig({ audio: { ...(getConfig().audio || {}), engine: want } });
+        const when = router.choose(want, { playing: engine.running.size > 0 });
+        if (when === 'later') notice(`The ${want === 'native' ? 'native engine' : 'Web Audio engine'} takes over when nothing is playing.`, 6000);
+        else if (when === 'failed') notice(`The native audio engine failed earlier (${router.status().failed}). Web Audio plays until the app is opened again.`, 9000);
+        schedulePush();
+        return { engine: want, when };
       }
       case 'device': {
         outWatch = deviceWatch.step(outWatch, { type: 'chosen', id: c.id, label: (state.devices.find((d) => d.id === c.id) || {}).label || c.label || '' }).state;
@@ -2112,8 +2171,14 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     if (!smoke) clockTimer = setInterval(() => { try { checkClock(); } catch (err) { log(`[clock] ${(err as Error).message}`); } }, 500);
     if (!smoke) backupTimer = setInterval(() => { try { checkBackup(); } catch (err) { log(`[backup] ${(err as Error).message}`); } }, 20000);
     startAudio();
+    router.choose(engineChosen());
     stage.start();
-    ticker = setInterval(() => { if (engine.active().length || state.level) schedulePush(); }, TICK_MS);
+    ticker = setInterval(() => {
+      // (an engine chosen while something played takes over once nothing does)
+      const r = router.status();
+      if (r.pending && !engine.running.size) router.choose(r.pending);
+      if (engine.active().length || state.level) schedulePush();
+    }, TICK_MS);
     bind(document);                 // the untitled show the app starts on is a show like any other: its edits reach the engine
   }
   /** The show log's last lines as a problem report may carry them: no cue's name and no file's (core/log/show-log.ts). */
@@ -2133,6 +2198,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     hub.close();
     lighting.close();
     if (audioWin && !audioWin.isDestroyed()) audioWin.destroy();
+    router.stop();
     stage.stop();
   }
 

@@ -1,0 +1,11 @@
+# The native audio engine (docs/specs/18-native-audio.md). One crate for now: `audio`, the `ec-audio` program.
+[workspace]
+members = ["audio"]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
