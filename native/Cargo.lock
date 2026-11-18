@@ -234,6 +234,7 @@ name = "ec-audio"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "coreaudio-rs",
  "cpal",
  "crossbeam-channel",
  "rtrb",

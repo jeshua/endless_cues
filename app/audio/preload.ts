@@ -91,7 +91,11 @@ export interface AudioEvents {
   operror: { op: string; key: string; detail: string };
   ctx: { state: AudioContextState; error?: true };
   level: { monitor: number | null; ducking: boolean; ducked: string[]; db: number; channels: { peak: number; rms: number }[]; buses: Record<string, number>; outs: number[];
-    cues: Record<string, number>; voices: number; limiting: boolean };
+    cues: Record<string, number>; voices: number; limiting: boolean;
+    /** the native engine's (docs/specs/18-native-audio.md): buffers the device played that it never filled, since it
+     *  started; frames a streamed sound had nothing decoded for, since it started; the busiest buffer since the last
+     *  level, as a share of the buffer's own time */
+    xruns?: number; starved?: number; load?: number };
 }
 export type AudioEventType = keyof AudioEvents;
 export type AudioEvent = { [K in AudioEventType]: { type: K } & AudioEvents[K] }[AudioEventType];

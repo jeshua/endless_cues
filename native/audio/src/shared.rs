@@ -102,8 +102,15 @@ pub struct Meters {
     /// the mixer's frame count and the moment (ns since `epoch()`) the first frame of the last block is heard
     pub frame: AtomicU64,
     pub frame_ns: AtomicU64,
-    /// the device's own delay to the ear, as cpal reports it (ns), at the last block
+    /// the device's own delay to the ear (ns), at the last block: cpal's, and on macOS what the device adds (mac.rs)
     pub latency_ns: AtomicU64,
+    /// buffers the device played that the engine never filled (a gap in the device's own clock between two
+    /// callbacks, or the silent clock having to catch up), since the program started
+    pub xruns: AtomicU64,
+    /// frames in the device's last buffer (what it gave, whatever was asked)
+    pub buffer_frames: AtomicU64,
+    /// the longest a buffer took to render since this was read, as a share of the buffer's own time (1: all of it)
+    pub load: Peak,
 }
 impl Default for Meters {
     fn default() -> Self {
@@ -117,6 +124,9 @@ impl Default for Meters {
             frame: AtomicU64::new(0),
             frame_ns: AtomicU64::new(0),
             latency_ns: AtomicU64::new(0),
+            xruns: AtomicU64::new(0),
+            buffer_frames: AtomicU64::new(0),
+            load: Peak::default(),
         }
     }
 }

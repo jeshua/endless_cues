@@ -150,6 +150,8 @@ export interface NativeAudioOptions {
   spawn: Spawn;
   /** a test run: `--silent`, no device at all */
   silent?: boolean;
+  /** with `silent`: the outputs to pretend the device has (`--outs`; the test run's audio window pretends eight) */
+  outs?: number;
   exists?: (file: string) => boolean;
   log: (line: string) => void;
   onEvent: (ev: AudioEvent) => void;
@@ -166,7 +168,7 @@ export interface NativeAudioOptions {
 export const GIVE_UP = { exits: 3, withinMs: 60_000 };
 
 /** `ec-audio`, kept running. */
-export function createNativeAudio({ binary, spawn, silent = false, exists, log, onEvent, onExit = () => {}, onGiveUp, now = Date.now, later = setTimeout, restartMs = 500 }: NativeAudioOptions) {
+export function createNativeAudio({ binary, spawn, silent = false, outs = 0, exists, log, onEvent, onExit = () => {}, onGiveUp, now = Date.now, later = setTimeout, restartMs = 500 }: NativeAudioOptions) {
   let child: NativeChild | null = null;
   let stopped = true, gaveUp: string | null = null;
   const exits: number[] = [];
@@ -182,7 +184,7 @@ export function createNativeAudio({ binary, spawn, silent = false, exists, log, 
     stopped = false;
     if (!binary || (exists && !exists(binary))) { log(`[native] not found: ${binary || '(no path for this computer)'}`); giveUp('there is no native engine on this computer'); return; }
     let c: NativeChild;
-    try { c = spawn(binary, silent ? ['--silent'] : [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }); }
+    try { c = spawn(binary, silent ? ['--silent', ...(outs > 0 ? ['--outs', String(outs)] : [])] : [], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }); }
     catch (err) { giveUp(`it could not be started: ${(err as Error).message}`); return; }
     child = c;
     let done = false;

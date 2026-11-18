@@ -21,17 +21,29 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// What reaches the control thread: a line from the host, or word from one of its helpers.
 pub enum In {
     Line(String),
-    Decoded { file: String, path: String, result: Result<Pcm, String>, quiet: bool },
+    Decoded {
+        file: String,
+        path: String,
+        result: Result<Pcm, String>,
+        quiet: bool,
+    },
     Events(Vec<Value>),
-    StreamFailed { id: u64, key: String, detail: String },
+    StreamFailed {
+        id: u64,
+        key: String,
+        detail: String,
+    },
     DeviceError(String),
+    /// the computer's devices changed (true: its default output did)
+    DevicesChanged(bool),
     Quit,
 }
 
 /// The device side, as the control thread drives it: what devices there are, and opening one.
 pub trait Output {
-    /// The `devices` event's fields: `list`, `inputs`, `current`.
-    fn devices(&mut self) -> Value;
+    /// The `devices` event's fields (`list`, `inputs`, `current`), worked out by what this gives, which may be slow
+    /// (listing CoreAudio's devices takes a third of a second) and so is run off the control thread.
+    fn lister(&self) -> Box<dyn FnOnce() -> Value + Send>;
     /// Opens an output (None: the system's default), moving the mixer over to it. Says the rate, outputs and id
     /// of the device it is on afterwards (the old one, if the new one would not open: `error` says why), and, if
     /// the mixer could not be got back from the old device, the queues of a new one.
@@ -56,8 +68,8 @@ pub struct Opened {
 /// No device at all (a test run, or an offline render): every open is refused.
 pub struct NoOutput(pub f64, pub usize);
 impl Output for NoOutput {
-    fn devices(&mut self) -> Value {
-        json!({ "list": [], "inputs": [], "current": { "type": "none" } })
+    fn lister(&self) -> Box<dyn FnOnce() -> Value + Send> {
+        Box::new(|| json!({ "list": [], "inputs": [], "current": { "type": "none" } }))
     }
     fn open(&mut self, _id: Option<&str>, _tx: &mut Producer<Msg>) -> Opened {
         Opened { sr: self.0, channels: self.1, id: "default".into(), fresh: None, error: Some("a test run opens no audio device".into()) }
@@ -113,6 +125,10 @@ pub struct Control {
     master_gain: Option<f64>,
     limiter: bool,
     outch_said: String,
+    /// frames a stream had nothing decoded for, all streams, since the program started
+    starved: u64,
+    /// when a line that was not a command was last said (ns)
+    bad_said_ns: u64,
 }
 
 fn num(v: &Value, k: &str) -> Option<f64> {
@@ -178,6 +194,8 @@ impl Control {
             master_gain: None,
             limiter: true,
             outch_said: String::new(),
+            starved: 0,
+            bad_said_ns: 0,
         }
     }
 
@@ -282,8 +300,20 @@ impl Control {
             return;
         }
         match serde_json::from_str::<Value>(line) {
-            Ok(cmd) => self.command(&cmd),
-            Err(e) => eprintln!("[native] not a command ({e}): {}", line.chars().take(200).collect::<String>()),
+            Ok(cmd) if cmd.is_object() => self.command(&cmd),
+            Ok(_) => self.bad_line("not a command (a command is one JSON object)", line),
+            Err(e) => self.bad_line(&format!("not a command ({e})"), line),
+        }
+    }
+
+    /// A line that is not a command: said (once a second at most, so a flood of them cannot flood the host back).
+    fn bad_line(&mut self, why: &str, line: &str) {
+        let shown: String = line.chars().take(120).collect();
+        eprintln!("[native] {why}: {shown}");
+        let now = now_ns();
+        if now.saturating_sub(self.bad_said_ns) >= 1_000_000_000 || self.bad_said_ns == 0 {
+            self.bad_said_ns = now;
+            self.emit(json!({ "type": "operror", "op": "", "key": "", "detail": format!("{why}: {shown}") }));
         }
     }
 
@@ -446,8 +476,13 @@ impl Control {
                 let k = text(c, "key").or(text(c, "file")).unwrap_or("").to_string();
                 self.not_yet(op, &k, what);
             }
-            "" => eprintln!("[native] a command with no op"),
-            other => self.not_yet(other, &key, ""),
+            "" => self.bad_line("a command with no op", &c.to_string()),
+            // (every op of the audio window's is named above: this one is no command at all)
+            other => {
+                if self.said.insert((other.to_string(), String::new())) {
+                    self.emit(json!({ "type": "operror", "op": other, "key": key, "detail": "not a command this engine knows" }));
+                }
+            }
         }
     }
 
@@ -758,12 +793,37 @@ impl Control {
         }
     }
 
+    /// The devices, said once they are listed (on a helper thread: a GO is never kept waiting by it).
     fn devices(&mut self) {
-        let mut d = self.out.devices();
-        if let Some(o) = d.as_object_mut() {
-            o.insert("type".into(), json!("devices"));
+        let list = self.out.lister();
+        let work = move || {
+            let mut d = list();
+            if let Some(o) = d.as_object_mut() {
+                o.insert("type".into(), json!("devices"));
+            }
+            d
+        };
+        if self.inline {
+            let d = work();
+            self.emit(d);
+            return;
         }
-        self.emit(d);
+        let helpers = self.helpers.clone();
+        let _ = std::thread::Builder::new().name("ec-devices".into()).spawn(move || {
+            let _ = helpers.send(In::Events(vec![work()]));
+        });
+    }
+
+    /// The computer's devices changed: said to the host (which decides whether to move); and on the system's
+    /// default output, the new default is followed, as the audio window's is.
+    pub fn devices_changed(&mut self, default_moved: bool) {
+        if default_moved && self.device == "default" {
+            eprintln!("[native] the system's default output changed: following it");
+            if let Err(e) = self.open(None) {
+                eprintln!("[native] the new default output: {e}");
+            }
+        }
+        self.devices();
     }
 
     fn sink(&mut self, c: &Value) {
@@ -861,7 +921,8 @@ impl Control {
             }
         }
         for (key, n) in slow {
-            eprintln!("[native] {key}: the stream ran dry {n} times (the disk was slow)");
+            self.starved += n;
+            eprintln!("[native] {key}: the stream ran dry for {n} frames (the disk was slow)");
         }
         let said = outch.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",");
         if said != self.outch_said {
@@ -871,6 +932,7 @@ impl Control {
         self.emit(json!({
             "type": "level", "monitor": null, "ducking": false, "ducked": [], "db": main, "channels": channels,
             "buses": buses, "outs": outs, "cues": cues, "voices": self.voices.len(), "limiting": limiting,
+            "xruns": self.meters.xruns.load(Relaxed), "starved": self.starved, "load": (m.load.take() as f64 * 1000.0).round() / 1000.0,
         }));
     }
 

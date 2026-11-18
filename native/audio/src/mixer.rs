@@ -9,6 +9,7 @@
 //! nothing is allocated or freed here.
 
 use crate::arith::db_of;
+use crate::capture::Capture;
 use crate::limiter::Limiter;
 use crate::params::{Glide, SHAPE_MAX};
 use crate::shared::{BusShared, Meters, MAX_OUT};
@@ -157,6 +158,8 @@ pub struct Mixer {
     pub meters: Arc<Meters>,
     pub frame: u64,
     pub detached: bool,
+    /// `--capture`: every buffer handed to the device, copied out (a test's; None otherwise)
+    pub capture: Option<Capture>,
 }
 
 impl Mixer {
@@ -179,6 +182,7 @@ impl Mixer {
             meters,
             frame: 0,
             detached: false,
+            capture: None,
         }
     }
 
@@ -367,12 +371,16 @@ impl Mixer {
         let ch = self.channels;
         let frames = out.len() / ch;
         self.meters.latency_ns.store(latency_ns, Relaxed);
+        let frame0 = self.frame;
         let mut at = 0;
         while at < frames {
             let n = (frames - at).min(BLOCK);
             let ns = present_ns + (at as f64 / self.sr * 1e9) as u64;
             self.block(&mut out[at * ch..(at + n) * ch], n, ns);
             at += n;
+        }
+        if let Some(c) = &mut self.capture {
+            c.put(&out[..frames * ch], ch, self.sr, frame0, present_ns, latency_ns);
         }
     }
 

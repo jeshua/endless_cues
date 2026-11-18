@@ -12,6 +12,7 @@ use cpal::{FromSample, SampleFormat, SizedSample};
 use crossbeam_channel::Sender;
 use rtrb::{Consumer, Producer, RingBuffer};
 use serde_json::{json, Value};
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -22,7 +23,8 @@ pub fn engine(sr: f64, channels: usize, meters: Arc<Meters>) -> (Mixer, Ends) {
     (Mixer::new(sr, channels, rx, btx, meters.clone()), Ends { tx, rx: brx, meters })
 }
 
-/// A test run's clock: no device, the mixer rendered in real time on a thread of its own (into nothing).
+/// A test run's clock: no device, the mixer rendered in real time on a thread of its own (into nothing). Each block
+/// is said to be heard at the moment it is due (not when the thread woke), as a device's clock would say.
 pub fn run_silent(mut mixer: Mixer, block: usize) {
     std::thread::Builder::new()
         .name("ec-silent".into())
@@ -30,15 +32,21 @@ pub fn run_silent(mut mixer: Mixer, block: usize) {
             let ch = mixer.channels;
             let mut buf = vec![0f32; block * ch];
             let period = Duration::from_secs_f64(block as f64 / mixer.sr);
-            let mut next = Instant::now();
+            let start = Instant::now();
+            let mut next = start;
             loop {
-                mixer.render(&mut buf, now_ns(), 0);
+                let due = now_ns().saturating_add((next.saturating_duration_since(Instant::now())).as_nanos() as u64);
+                let t = Instant::now();
+                mixer.render(&mut buf, due, 0);
+                mixer.meters.load.put((t.elapsed().as_secs_f64() / period.as_secs_f64()) as f32);
                 next += period;
                 let now = Instant::now();
                 if next > now {
                     std::thread::sleep(next - now);
                 } else if now - next > Duration::from_millis(200) {
-                    next = now; // (the computer slept: carry on from now, not by catching up)
+                    // (the computer slept, or the thread was held up: carry on from now, not by catching up)
+                    mixer.meters.xruns.fetch_add(1, Relaxed);
+                    next = now;
                 }
             }
         })
@@ -126,7 +134,7 @@ impl CpalOut {
         mixer.set_device(sr, channels);
         let (mut inbox_tx, inbox) = RingBuffer::<Box<Mixer>>::new(1);
         let (outbox, back) = RingBuffer::<Box<Mixer>>::new(1);
-        let slot = Slot { mixer: None, inbox, outbox };
+        let slot = Slot { mixer: None, inbox, outbox, clock: Clock::new(extra_ns(device, sr), self.meters.clone()) };
         let errors = self.errors.clone();
         let built = match cfg.sample_format() {
             SampleFormat::F32 => build_f32(device, &config, slot, errors),
@@ -157,6 +165,71 @@ struct Slot {
     mixer: Option<Box<Mixer>>,
     inbox: Consumer<Box<Mixer>>,
     outbox: Producer<Box<Mixer>>,
+    clock: Clock,
+}
+
+/// The device's clock as the callback reads it: when a buffer is heard, and whether one was missed.
+struct Clock {
+    /// the device's own latency and its stream's, after the buffer's host time (ns; macOS, mac.rs)
+    extra_ns: u64,
+    /// the last callback's device timestamp, and how long its buffer was (ns)
+    last: Option<(cpal::StreamInstant, u64)>,
+    meters: Arc<Meters>,
+}
+
+impl Clock {
+    fn new(extra_ns: u64, meters: Arc<Meters>) -> Self {
+        Clock { extra_ns, last: None, meters }
+    }
+    /// When this buffer's first frame will be heard and the device's part of that (ns), counting a gap in the
+    /// device's clock since the last buffer as buffers missed.
+    #[inline]
+    fn tick(&mut self, info: &cpal::OutputCallbackInfo, frames: usize, sr: f64) -> (u64, u64) {
+        let ts = info.timestamp();
+        let lat = ts.playback.duration_since(&ts.callback).unwrap_or_default().as_nanos() as u64 + self.extra_ns;
+        let len = (frames as f64 / sr * 1e9) as u64;
+        self.meters.buffer_frames.store(frames as u64, Relaxed);
+        if let Some((prev, prev_len)) = self.last {
+            if let Some(gap) = ts.callback.duration_since(&prev) {
+                let gap = gap.as_nanos() as u64;
+                if prev_len > 0 && gap > prev_len + prev_len / 2 {
+                    self.meters.xruns.fetch_add(((gap + prev_len / 2) / prev_len).saturating_sub(1).max(1), Relaxed);
+                }
+            }
+        }
+        self.last = Some((ts.callback, len));
+        let now = now_ns();
+        // (macOS: the buffer's own host time, which cpal has, put on this program's clock)
+        #[cfg(target_os = "macos")]
+        if let Some(h) = crate::mac::instant_ns(&ts.callback) {
+            let ahead = h as i64 - crate::mac::host_now_ns() as i64 + self.extra_ns as i64;
+            let lat = ahead.max(0) as u64;
+            return (now + lat, lat);
+        }
+        (now + lat, lat)
+    }
+    /// How long the buffer took to render, as a share of its own time.
+    #[inline]
+    fn busy(&self, started_ns: u64, frames: usize, sr: f64) {
+        let len = frames as f64 / sr * 1e9;
+        if len > 0.0 {
+            self.meters.load.put(((now_ns().saturating_sub(started_ns)) as f64 / len) as f32);
+        }
+    }
+}
+
+/// What the device adds to cpal's idea of the delay (ns): on macOS its safety offset and latencies (mac.rs).
+fn extra_ns(device: &cpal::Device, sr: f64) -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        let name = device.name().ok();
+        if let Some(x) = crate::mac::extra(name.as_deref()) {
+            eprintln!("[native] the device's latency: {} frames and its stream's {} (its safety offset {})", x.device, x.stream, x.safety);
+            return (crate::mac::heard_frames(&x) as f64 / sr * 1e9) as u64;
+        }
+    }
+    let _ = (device, sr);
+    0
 }
 
 impl Slot {
@@ -181,22 +254,18 @@ impl Slot {
     }
 }
 
-/// When the buffer's first frame will be heard, and the device's own part of that, from cpal's timestamps.
-#[inline]
-fn when(info: &cpal::OutputCallbackInfo) -> (u64, u64) {
-    let ts = info.timestamp();
-    let lat = ts.playback.duration_since(&ts.callback).unwrap_or_default().as_nanos() as u64;
-    (now_ns() + lat, lat)
-}
-
 /// A stream of f32 samples (the usual case): the mixer writes into the device's buffer directly.
 fn build_f32(device: &cpal::Device, config: &cpal::StreamConfig, mut slot: Slot, errors: Sender<In>) -> Result<cpal::Stream, String> {
+    let (ch, sr) = (config.channels as usize, config.sample_rate.0 as f64);
     let cb = move |data: &mut [f32], info: &cpal::OutputCallbackInfo| {
-        let (present, lat) = when(info);
+        let t0 = now_ns();
+        let frames = data.len() / ch.max(1);
+        let (present, lat) = slot.clock.tick(info, frames, sr);
         match slot.get() {
             Some(m) => m.render(data, present, lat),
             None => data.fill(0.0),
         }
+        slot.clock.busy(t0, frames, sr);
         slot.done();
     };
     device
@@ -221,7 +290,8 @@ where
     let mut scratch = vec![0f32; 8192 * ch];
     let sr = config.sample_rate.0 as f64;
     let cb = move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
-        let (present, lat) = when(info);
+        let t0 = now_ns();
+        let (present, lat) = slot.clock.tick(info, data.len() / ch.max(1), sr);
         let Some(m) = slot.get() else {
             data.fill(T::EQUILIBRIUM);
             return;
@@ -236,6 +306,7 @@ where
             }
             at += n;
         }
+        slot.clock.busy(t0, data.len() / ch.max(1), sr);
         slot.done();
     };
     device
@@ -251,17 +322,21 @@ where
 }
 
 impl Output for CpalOut {
-    fn devices(&mut self) -> Value {
-        let mut list = vec![json!({ "id": "default", "label": "System default" })];
-        if let Ok(devs) = self.host.output_devices() {
-            for d in devs {
-                if let Ok(n) = d.name() {
-                    list.push(json!({ "id": n, "label": n }));
+    fn lister(&self) -> Box<dyn FnOnce() -> Value + Send> {
+        let current = self.current.clone();
+        Box::new(move || {
+            let host = cpal::default_host();
+            let mut list = vec![json!({ "id": "default", "label": "System default" })];
+            if let Ok(devs) = host.output_devices() {
+                for d in devs {
+                    if let Ok(n) = d.name() {
+                        list.push(json!({ "id": n, "label": n }));
+                    }
                 }
             }
-        }
-        let inputs: Vec<String> = self.host.input_devices().map(|ds| ds.filter_map(|d| d.name().ok()).collect()).unwrap_or_default();
-        json!({ "list": list, "inputs": inputs, "current": self.current })
+            let inputs: Vec<String> = host.input_devices().map(|ds| ds.filter_map(|d| d.name().ok()).collect()).unwrap_or_default();
+            json!({ "list": list, "inputs": inputs, "current": current })
+        })
     }
 
     fn open(&mut self, id: Option<&str>, tx: &mut Producer<Msg>) -> Opened {

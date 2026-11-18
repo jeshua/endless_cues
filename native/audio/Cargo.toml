@@ -24,3 +24,12 @@ serde_json = "1"
 
 [dev-dependencies]
 assert_no_alloc = "1.1"
+
+# (macOS: the device's own latency, which cpal does not report: see mac.rs)
+[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-rs = { version = "0.11", default-features = false, features = ["audio_unit", "core_audio"] }
+
+# The QA scripts (qa/main.rs): long runs and runs on real devices, by hand
+[[example]]
+name = "qa"
+path = "qa/main.rs"

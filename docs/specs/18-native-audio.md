@@ -53,7 +53,9 @@ error is a log line (`[native]`).
 | Files | `decode`, `keep`, `probe` | `decoded` and `duration` and `missing` as the audio window reports them. WAV, AIFF, MP3, FLAC, Ogg/Vorbis, AAC/M4A (symphonia). |
 | Levels | `fade` (with `shape`), `others`, `masterDb`, `master`, `bus`, `buses`, `limiter`, `play`'s `gainDb`, `envelope` and `pan` | Every change of level is a ramp computed on the audio thread, per sample. The limiter is the last thing before each pair of outputs, as now. |
 | Where things are | `where`, events `where`, `ended`, `level` | `level` about 30 times a second: the same fields the audio window sends. |
-| Measuring itself | `ec-audio measure` | GO-to-output latency and its spread, by the program's own clock and the device's reported output latency; with `--loopback <input>` (a cable from an output back to an input) by ear, as it were. |
+| Measuring itself | `ec-audio measure`, `ec-audio listen` | GO-to-output latency and its spread, by the program's own clock and the device's own timestamps; with `--loopback <input>` (a cable, or BlackHole, from an output back to an input) as found in the recorded input, stamped by the input's own clock. `listen` hears clicks on an input (and records it) for measuring another program the same way. |
+| Saying how it is doing | `level`'s `xruns`, `starved`, `load` | `xruns`: buffers the device played that the engine never filled, since it started (a gap in the device's own clock between two callbacks); the host writes each new one in the show log. `starved`: frames a streamed sound had nothing decoded for. `load`: the busiest buffer since the last `level`, as a share of its own time. |
+| A test's capture | `--capture FILE.wav` | Off unless given. Every buffer handed to the device, written to a 32-bit float WAV (a new file at each change of rate or outputs), each buffer's moment beside it (`FILE.blocks.csv`) and each command as it was taken (`FILE.cmds.jsonl`). Through a ring and a writer thread: the callback copies and never waits. |
 
 Not done yet (each says so by `operror`, and the sound plays without it): sound design (`design`,
 `sweep`, `ir`, a `play`'s `own.chain`/`own.eq`), a sound's outputs of its own (`own.outputs`), the ducker (`ducker`,
@@ -61,6 +63,21 @@ Not done yet (each says so by `operror`, and the sound plays without it): sound 
 (`automation`), microphones, recording, LTC in and out, keep-pitch rate. While the native engine is chosen, the audio
 window still runs for what is not sound: MIDI (Web MIDI), and reading a file's peaks and samples for the waveform and
 the tempo (`peaks`, `pcm`).
+
+## Details found by measuring (docs/internal/native-qa.md)
+
+- **When a buffer is heard, on macOS.** cpal says a buffer plays one buffer after its callback, whatever the device.
+  The engine reads the buffer's own CoreAudio host time out of cpal's timestamp and adds the device's own latency
+  and its stream's (`mac.rs`), as Chromium does for `outputLatency`; `measure` and `where` use that moment.
+- **Listing the devices takes a third of a second on macOS**, so it is done on a helper thread: a GO sent after a
+  `devices` or a `sink` is not kept waiting behind it.
+- **Devices plugged in or taken out are said.** The engine listens to CoreAudio for a change of the devices or of the
+  system's default output, and says `devices` (as the audio window does on `devicechange`), so the host's fallback
+  and return work; on the system default, it follows a new default, as the window's context does.
+- **An M4A's encoder priming is left out** (its `iTunSMPB` tag: AAC's 2112 frames of silence at the start, and its
+  padding at the end), as Chromium leaves it out; MP3's is left out by symphonia from its LAME header.
+- **A file too long to hold is not decoded** (more than 2²⁸ samples: about 46 minutes of stereo at 48 kHz): `decoded`
+  says why, and it streams. With the native engine the host does not read a file's bytes to decode it.
 
 ## The arithmetic both sides use
 
@@ -71,5 +88,11 @@ same vectors (`native/audio/tests/vectors.json`, written by `npm run native:vect
 
 ## Not verified yet
 
-Everything about this engine on real equipment: its latency and steadiness on an interface (`ec-audio measure`
-is the script), a lost device, Windows (WASAPI) and Linux (ALSA), more than two outputs, and listening to any of it.
+Run on one Mac with no interface (docs/internal/native-qa.md): BlackHole (a digital loopback), RØDE's
+virtual devices and the built-in speakers, measured through the capture and the loopback; the scripts are
+`native/audio/qa/` and `test/native-qa/webaudio.ts`, and `EC_SMOKE_NATIVE=1 npm run smoke` runs the smoke run on this
+engine (what fails there, and why, is in that report). Not yet: an audio interface (its latency, a real analogue
+round trip, more than two outputs), a device really unplugged (the engine's error path and its watcher have run only
+on a device list that did not change, and on `sink` to an output that is not there), a Video cue's sound (WebM's Opus: symphonia has no decoder for it, so
+the cue is unplayable on this engine), Windows (WASAPI) and Linux
+(ALSA), a system default changed under it, and listening to any of it.

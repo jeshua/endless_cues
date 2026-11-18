@@ -14,6 +14,13 @@ async function run({ host, check, until, page }: Pick<Smoke, 'host' | 'check' | 
   const snap = () => host.snapshot() as Snap;
   const used = () => page<string>(`(document.querySelector('[data-audio-engine-used]') || {}).textContent || ''`);
   host.cmd({ op: 'panic', hard: true });
+  if (process.env.EC_SMOKE_NATIVE === '1') {
+    // (the whole run was on the native engine: it is still the one making the sound, and the switch back works)
+    check('EC_SMOKE_NATIVE: the native engine made the sound for the whole run, and the status bar says so', snap().mixer.engine.using === 'native' && /Native/.test(await used()), [snap().mixer.engine, await used()]);
+    host.cmd({ op: 'audio-engine', engine: 'webaudio' });
+    check('…and asked for Web Audio, the window makes the sound at once', await until(() => snap().mixer.engine.using === 'webaudio' && snap().mixer.audioReady, 3000), snap().mixer.engine);
+    return;
+  }
   check('the sound is made by Web Audio as the app comes, and the status bar says so', snap().mixer.engine.using === 'webaudio' && snap().mixer.engine.wanted === 'webaudio' && /Web Audio/.test(await used()), [snap().mixer.engine, await used()]);
   const r = host.cmd({ op: 'audio-engine', engine: 'native' });
   // (where the app itself looks: its resources in a packaged app, native/target in a checkout)

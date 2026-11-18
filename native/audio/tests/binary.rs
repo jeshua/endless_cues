@@ -18,8 +18,12 @@ struct Program {
 
 impl Program {
     fn start() -> Self {
+        Self::with(&[])
+    }
+    fn with(more: &[&str]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_ec-audio"))
             .arg("--silent")
+            .args(more)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -41,6 +45,11 @@ impl Program {
     fn send(&mut self, v: Value) {
         let i = self.stdin.as_mut().unwrap();
         writeln!(i, "{v}").unwrap();
+        i.flush().unwrap();
+    }
+    fn raw(&mut self, s: &str) {
+        let i = self.stdin.as_mut().unwrap();
+        i.write_all(s.as_bytes()).unwrap();
         i.flush().unwrap();
     }
     /// The first event (from now on) that `pick` takes, within `secs`.
@@ -129,4 +138,104 @@ fn the_program_with_no_device() {
         assert!(Instant::now() < until, "it did not exit when its input closed");
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn what_is_not_a_command_is_said_and_nothing_breaks() {
+    let tone = wav("bad.wav", 0.5, 48000, 2, 0.25);
+    let file = tone.to_str().unwrap().to_string();
+    let mut p = Program::start();
+    p.wait(2.0, |e| e["type"] == "ready");
+    // not JSON; JSON but not an object; an object with no op; an op nobody has; ten megabytes on one line
+    p.raw("{ this is not json\n");
+    let e = p.wait(2.0, |e| e["type"] == "operror");
+    assert_eq!(e["op"], "");
+    assert!(e["detail"].as_str().unwrap().starts_with("not a command"), "{e}");
+    p.raw("[1, 2, 3]\n{\"key\": \"x\"}\n{\"op\": \"frobnicate\", \"key\": \"x\"}\n");
+    let e = p.wait(2.0, |e| e["type"] == "operror" && e["op"] == "frobnicate");
+    assert_eq!(e["detail"], "not a command this engine knows");
+    let big = format!("{{\"op\": \"play\", \"key\": \"big\", \"file\": \"{}\", \"pad\": \"{}\"}}", file, "x".repeat(10 << 20));
+    p.raw(&format!("{big}\n"));
+    let mut junk = "y".repeat(10 << 20);
+    junk.push('\n');
+    p.raw(&junk);
+    // commands for keys that are not playing do nothing, and say nothing
+    for op in ["stop", "pause", "resume", "fade", "seek", "cut", "loop", "region", "rate", "others", "lanes", "move"] {
+        p.send(json!({ "op": op, "key": "nobody", "t": 1, "db": -6, "secs": 1, "at": 1, "rate": 2, "sync": {} }));
+    }
+    // the ten-megabyte play played
+    p.wait(5.0, |e| e["type"] == "level" && e["cues"]["big"].as_i64().is_some_and(|d| d > -60));
+    p.send(json!({ "op": "stopAll" }));
+    p.wait(2.0, |e| e["type"] == "level" && e["voices"] == 0);
+    // its standard input closed: it goes, cleanly
+    drop(p.stdin.take());
+    let until = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(status) = p.child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(Instant::now() < until, "it did not exit when its input closed");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let errs: Vec<&Value> = p.seen.iter().filter(|e| e["type"] == "operror" || e["type"] == "error").collect();
+    assert!(errs.iter().all(|e| e["key"] != "nobody"), "nothing said of a key that is not playing: {errs:?}");
+}
+
+#[test]
+fn the_level_event_says_buffers_missed_and_streams_run_dry() {
+    let mut p = Program::start();
+    let lv = p.wait(2.0, |e| e["type"] == "level");
+    assert_eq!(lv["xruns"], 0);
+    assert_eq!(lv["starved"], 0);
+    assert!(lv["load"].as_f64().is_some_and(|l| (0.0..1.0).contains(&l)), "{lv}");
+}
+
+#[test]
+fn a_capture_is_what_the_mixer_gave_with_each_buffers_moment_and_each_command() {
+    let dir = std::env::temp_dir().join(format!("ec-audio-capture-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cap = dir.join("cap.wav");
+    let tone = wav("cap-tone.wav", 0.25, 48000, 2, 0.25);
+    let file = tone.to_str().unwrap().to_string();
+    let mut p = Program::with(&["--capture", cap.to_str().unwrap()]);
+    p.wait(2.0, |e| e["type"] == "ready");
+    p.send(json!({ "op": "decode", "file": file }));
+    p.wait(2.0, |e| e["type"] == "decoded");
+    p.send(json!({ "op": "play", "key": "t", "file": file, "gainDb": -6 }));
+    p.wait(2.0, |e| e["type"] == "ended");
+    drop(p.stdin.take());
+    let until = Instant::now() + Duration::from_secs(3);
+    while p.child.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < until, "it exits");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let b = std::fs::read(&cap).unwrap();
+    assert_eq!(&b[8..16], b"WAVEfmt ");
+    assert_eq!(u16::from_le_bytes([b[20], b[21]]), 3, "32-bit float");
+    let data: Vec<f32> = b[58..].chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let peak = data.iter().fold(0f32, |m, x| m.max(x.abs()));
+    assert!((peak - 0.25 * 0.501).abs() < 0.002, "the tone, 6 dB down: {peak}");
+    let loud = data.chunks(2).filter(|f| f[0].abs() > 0.0).count();
+    assert!((11000..=12100).contains(&loud), "a quarter of a second of it: {loud} frames");
+    let blocks = std::fs::read_to_string(dir.join("cap.blocks.csv")).unwrap();
+    let rows: Vec<Vec<u64>> = blocks
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("segment"))
+        .map(|l| l.split(',').map(|x| x.parse().unwrap()).collect())
+        .collect();
+    let frames: u64 = rows.iter().map(|r| r[2]).sum();
+    assert_eq!(frames as usize, data.len() / 2, "every frame in the file is in a buffer of the log");
+    assert!(rows.windows(2).all(|w| w[1][4] > w[0][4]), "each buffer heard after the one before");
+    let cmds = std::fs::read_to_string(dir.join("cap.cmds.jsonl")).unwrap();
+    let ops: Vec<String> = cmds
+        .lines()
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).unwrap();
+            assert!(v["ns"].as_u64().is_some());
+            let c: Value = serde_json::from_str(v["line"].as_str().unwrap()).unwrap();
+            c["op"].as_str().unwrap().to_string()
+        })
+        .collect();
+    assert_eq!(ops, ["decode", "play"]);
 }
