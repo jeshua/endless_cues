@@ -50,85 +50,85 @@ mode; keeping a marker and finding or correcting a tempo are edits and wait for 
 
 ### Sound
 
-| Behaviour | Default | Switch | Changed here |
+| Behaviour | Default | Switch | Notes |
 |---|---|---|---|
-| Ducking (a bus dips while another sounds) | Off (`settings.audio.duck.on`) | Settings ▸ Audio; show | No. Nothing switches it on in a new or imported show (tested). |
-| A cue ducking the others while it runs | Off (`duckOthers` 0) | The cue, under More | No. |
-| "Fade & stop others" on a cue or group | Off (0) | The cue, under More | No. |
-| A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.ts` `stopsTarget`) | The Fade cue's switch | **Yes: it was always off**, as QLab's is, which leaves a faded sound playing at −∞. An imported QLab fade carries QLab's own setting, so it plays as it did there. |
-| Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip | It never ran by itself. |
-| Quantise on a group | Off (`onBeat` 'now') | The group, under More | No. |
-| A skip or crossfade from the Playing strip waiting for the bar | Off ("on the bar" unticked; kept by the window, not the show) | The Playing strip, under More | New here, off. |
-| A new long sound put on the Music bus by its length | **Off** (`settings.editing.longSoundsToMusic`) | Settings ▸ Show ▸ Long sounds go on the Music bus; show | **Yes: it was always on.** A sound added with no bus chosen now goes on the bus every Audio cue starts on (Effects, or the show's Audio template). |
-| Auto-load (a cue loads the one after it) | Off | The cue, under More | No. |
-| The safety limiter (a ceiling at −0.3 dBFS on each output pair) | **On** (`settings.audio.limiter`) | Settings ▸ Audio; show | No. It does nothing to sound that would not clip; left for the owner to decide (QLab has none). |
-| Level limits (−60 … +12 dB) | On | Settings ▸ Audio; show | No: a range, as QLab has. |
-| The monitor feed | Off | Settings ▸ Audio; show | No. |
-| Reverb and delay sends | Off (no send on any bus) | The bus | No. |
-| Upcoming sounds read into memory ahead of their GO | On | None | No: this is what makes a GO immediate (QLab's loading). |
-| A waveform's peaks | Read when a view asks to draw that sound | None | No. |
-| Falling back to the system output when the chosen device goes away | On | None | No: the alternative is silence. Said in a notice. |
-| The native audio engine (`ec-audio`, [18](18-native-audio.md)) | **Off**: Web Audio makes the sound (`audio.engine` 'webaudio', computer). Chosen while something plays, it takes over once nothing does; if it stops three times in a minute, or there is no program, Web Audio plays for the rest of the sitting, said in a notice and the show log | Settings ▸ Audio ▸ Audio engine; computer | New, off. The status bar names the engine in use beside the output. |
+| Ducking by kind (music and ambience dip under voice and live buses) | Off (`settings.audio.ducking.on`; absent is off) | Settings ▸ Audio; show | Nothing switches it on in a new or imported show (tested). |
+| A cue ducking the others while it runs | Off (`duckOthers` 0) | The cue, under More | |
+| "Fade & stop others" on a cue or group | Off (0) | The cue, under More | |
+| A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.ts` `stopsTarget`) | The Fade cue's switch | QLab leaves a faded sound playing at −∞ unless asked; an imported QLab fade carries QLab's own setting, so it plays as it did there. |
+| Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip | |
+| Quantise on a group | Off (`onBeat` 'now') | The group, under More | |
+| A skip or crossfade from the Playing strip waiting for the bar | Off ("on the bar" unticked; kept by the window, not the show) | The Playing strip, under More | |
+| A new long sound put on the Music bus by its length | **Off** (`settings.editing.longSoundsToMusic`) | Settings ▸ Show ▸ Long sounds go on the Music bus; show | A sound added with no bus chosen goes on the bus every Audio cue starts on (Effects, or the show's Audio template). |
+| Auto-load (a cue loads the one after it) | Off | The cue, under More | |
+| The safety limiter (a ceiling at −0.3 dBFS on each output pair) | **On** (`settings.audio.limiter`) | Settings ▸ Audio; show | It does nothing to sound that would not clip; left for the owner to decide (QLab has none). |
+| Level limits (−60 … +12 dB) | On | Settings ▸ Audio; show | A range, as QLab has. |
+| The monitor feed | Off | Settings ▸ Audio; show | |
+| Reverb and delay sends | Off (no send on any bus) | The bus | |
+| Upcoming sounds read into memory ahead of their GO | On | None | This is what makes a GO immediate (QLab's loading). |
+| A waveform's peaks | Read when a view asks to draw that sound | None | |
+| Falling back to the system output when the chosen device goes away | On | None | The alternative is silence. Said in a notice. |
+| The native audio engine (`ec-audio`, [18](18-native-audio.md)) | **Off**: Web Audio makes the sound (`audio.engine` 'webaudio', computer). Chosen while something plays, it takes over once nothing does; if it stops three times in a minute, or there is no program, Web Audio plays for the rest of the sitting, said in a notice and the show log | Settings ▸ Audio ▸ Audio engine; computer | The status bar names the engine in use beside the output. |
 
 ### The network and other equipment
 
 On a new show **no port is open for listening and nothing is transmitted** until a module is switched on, a
 setting asks for it, or a cue that sends is fired.
 
-| Behaviour | Default | Switch | Changed here |
+| Behaviour | Default | Switch | Notes |
 |---|---|---|---|
-| OSC control (QLab's addresses on 53000, answers on 53001, UDP and TCP) | **Off** (`modules.osc-control.enabled`) | Settings ▸ Integrations ▸ Modules ▸ OSC control; show | No. Unlike QLab, which listens as it comes: a port that runs the show stays shut until it is asked for. One switch opens it, with QLab's port already filled in. |
-| OSC control's "no passcode" row (what a sender with no passcode may do) | View and control, **never edit** (with no passcode set; nothing once there is one) | Settings ▸ Integrations ▸ Modules ▸ OSC control ▸ Who may do what (edit takes a passcode with edit access); show | **Yes.** It allowed editing too: anyone on the network could delete cues or save. QLab's no-passcode row is empty by default. |
-| OSC control's answers over UDP | Only to a sender that has sent `/connect` (`/connect`, `/version`, `/workspaces` to anyone), at most 32 KB a second to an address | None (over TCP everything is answered) | **Yes.** Every UDP sender was answered: a forged address got the answer. |
-| A show from another computer (not made, saved or turned on here) | **Network features off**: no module, no port, no connection, nothing sent, no device asked, no clock, OSC, MIDI or timecode trigger, no sound on another computer's share opened | The title bar's line ▸ Turn on (remembered for that show on this computer, in config.json `shows`) | **New.** It used to start whatever the show had switched on, on a double-click. |
-| The OSC input port (53000) for cue triggers and show commands | Shut. Opens by itself only when the show has an OSC trigger on a cue, an OSC show command, or the OSC control module on | Settings ▸ Integrations ▸ Network ▸ "listen" holds it open to watch what arrives; show | No. |
-| The web remote (HTTP on 8137) | Off | Settings ▸ Integrations ▸ Modules; show | No. |
-| Show feedback (OSC out as cues run) | Off | Settings ▸ Integrations ▸ Modules; show | No. |
-| Lighting desk (OSC to an Eos or grandMA, a ping, a reply port) | Off | Settings ▸ Integrations ▸ Modules; show | No. |
-| Main and backup | Off | Settings ▸ Integrations ▸ Modules; show | No. |
-| The app's own lighting: Art-Net (UDP 6454, with ArtPoll every 3 s) and sACN | Off (`settings.light.on`, and nothing is sent with no instrument patched) | Settings ▸ Integrations ▸ Light; show | No. |
-| Network cues (OSC, text, hex) | Sent when the cue is fired, to its patch. A new show has no patches | The cue | No. |
-| MIDI out (MIDI, MSC, MIDI File cues; MTC) | Sent when a cue that sends is fired | The cue | No. |
-| MIDI in | The computer's MIDI inputs are opened at launch (Web MIDI) and what arrives is shown in the monitor. It acts on nothing until a cue has a MIDI trigger, a MIDI show command is set, or a control is mapped | The cue's Triggers tab; Settings ▸ Integrations ▸ Network ▸ MIDI | No. Opening the inputs sends nothing. |
-| MIDI Show Control in | Off (`settings.midi.mscIn`) | Settings ▸ Integrations ▸ Network; show | No. |
-| Timecode chase (MTC or LTC in) | Off (`settings.timecode.source` 'off'; no audio input is opened) | Settings ▸ Integrations ▸ Network ▸ Timecode; show | No. |
-| Timecode out | Only while a Timecode cue runs | The cue | No. |
-| The stage (video) window | Opened only once a display (or "In a window") is chosen for it | Settings ▸ Integrations ▸ Video; computer | No. |
-| The door for coding agents (a local socket for `bin/ec-mcp.ts`) | Shut | Settings ▸ Assistant; computer | No. |
-| Reports to the service (Help ▸ Report a Problem…; [17](17-service-protocol.md) section 3) | Nothing is sent until the person presses Send. No telemetry and no crash reports. A report that could not be sent is kept on disk and tried again 30 s after the next launch and after 30 s, 2 and 10 minutes, three times at most | The form's Send; the picture, the show's name and the show log's last lines each have their own box (the picture on, the name off, the log off; the log goes as times, kinds, cue numbers and words, with every cue's and file's name taken out, in `context.show_log`) | New with Report a problem. |
-| The Rig page ([15](15-assistant-and-rig.md)) | A view that is always there. It reads what the app already knows; it opens no port and sends nothing. An empty new show has three rows | — | New with the rig. |
-| Asking a device whether it is there (one message every 2 s, kept out of the monitor) | A new or an imported show has no devices, so nothing is asked (`settings.rig.devices` is empty; a device's `alive.how` is `none` unless it says otherwise) | A device whose "Is it there" is *Ask it*: adding one is the switch, and the review says "asked every 2 s" | New with the rig. |
-| Listening for a device's heartbeat (this opens the input port) | Off | A device whose "Is it there" is *It says so by itself* | New with the rig. |
-| Looking for props (one `/ec/hello` to UDP 53100 on each network's broadcast address and on this computer) | Never by itself; never in Show mode, never while a cue runs | *Look for props* on the Rig page; the assistant's `find_devices` | New with the rig. |
-| A device command sent more than once (`resend`) | 0: each command is sent once | The device; the prop kit's two models set 3 | New with the rig. |
-| The assistant asking a device whether it is there | Off with the assistant | Choosing a provider. Then only a device that is in the show, or a model's own test message to a private address; never a command | New with the rig. |
-| The assistant reading files in the show folder | Off with the assistant | Choosing a provider, and then only when asked something that needs it. Never outside the folder, never the show's own files | New with the rig. |
-| Writing files into the show folder (prop firmware under `props/`, `AGENTS.md`, `CLAUDE.md`) | Never by itself | Accepting a proposal that lists them. An existing `secrets.h` is never replaced | New with the rig. |
-| A new show started from a folder | The folder's sounds are **not** made into cues. The assistant's drawer opens to say what is in the folder, and does nothing until a button in it is pressed | The assistant's first ask, or dropping them on the list | New with the rig. |
+| OSC control (QLab's addresses on 53000, answers on 53001, UDP and TCP) | **Off** (`modules.osc-control.enabled`) | Settings ▸ Integrations ▸ Modules ▸ OSC control; show | Unlike QLab, which listens as it comes: a port that runs the show stays shut until it is asked for. One switch opens it, with QLab's port already filled in. |
+| OSC control's "no passcode" row (what a sender with no passcode may do) | View and control, **never edit** (with no passcode set; nothing once there is one) | Settings ▸ Integrations ▸ Modules ▸ OSC control ▸ Who may do what (edit takes a passcode with edit access); show | Nobody may edit without a passcode. QLab's no-passcode row is empty by default. |
+| OSC control's answers over UDP | Only to a sender that has sent `/connect` (`/connect`, `/version`, `/workspaces` to anyone), at most 32 KB a second to an address | None (over TCP everything is answered) | A forged address is never answered. |
+| A show from another computer (not made, saved or turned on here) | **Network features off**: no module, no port, no connection, nothing sent, no device asked, no clock, OSC, MIDI or timecode trigger, no sound on another computer's share opened | The title bar's line ▸ Turn on (remembered for that show on this computer, in config.json `shows`) | |
+| The OSC input port (53000) for cue triggers and show commands | Shut. Opens by itself only when the show has an OSC trigger on a cue, an OSC show command, or the OSC control module on | Settings ▸ Integrations ▸ Network ▸ "listen" holds it open to watch what arrives; show | |
+| The web remote (HTTP on 8137) | Off | Settings ▸ Integrations ▸ Modules; show | |
+| Show feedback (OSC out as cues run) | Off | Settings ▸ Integrations ▸ Modules; show | |
+| Lighting desk (OSC to an Eos or grandMA, a ping, a reply port) | Off | Settings ▸ Integrations ▸ Modules; show | |
+| Main and backup | Off | Settings ▸ Integrations ▸ Modules; show | |
+| The app's own lighting: Art-Net (UDP 6454, with ArtPoll every 3 s) and sACN | Off (`settings.light.on`, and nothing is sent with no instrument patched) | Settings ▸ Integrations ▸ Light; show | |
+| Network cues (OSC, text, hex) | Sent when the cue is fired, to its patch. A new show has no patches | The cue | |
+| MIDI out (MIDI, MSC, MIDI File cues; MTC) | Sent when a cue that sends is fired | The cue | |
+| MIDI in | The computer's MIDI inputs are opened at launch (Web MIDI) and what arrives is shown in the monitor. It acts on nothing until a cue has a MIDI trigger, a MIDI show command is set, or a control is mapped | The cue's Triggers tab; Settings ▸ Integrations ▸ Network ▸ MIDI | Opening the inputs sends nothing. |
+| MIDI Show Control in | Off (`settings.midi.mscIn`) | Settings ▸ Integrations ▸ Network; show | |
+| Timecode chase (MTC or LTC in) | Off (`settings.timecode.source` 'off'; no audio input is opened) | Settings ▸ Integrations ▸ Network ▸ Timecode; show | |
+| Timecode out | Only while a Timecode cue runs | The cue | |
+| The stage (video) window | Opened only once a display (or "In a window") is chosen for it | Settings ▸ Integrations ▸ Video; computer | |
+| The door for coding agents (a local socket for `bin/ec-mcp.ts`) | Shut | Settings ▸ Assistant; computer | |
+| Reports to the service (Help ▸ Report a Problem…; [17](17-service-protocol.md) section 3) | Nothing is sent until the person presses Send. No telemetry and no crash reports. A report that could not be sent is kept on disk and tried again 30 s after the next launch and after 30 s, 2 and 10 minutes, three times at most | The form's Send; the picture, the show's name and the show log's last lines each have their own box (the picture on, the name off, the log off; the log goes as times, kinds, cue numbers and words, with every cue's and file's name taken out, in `context.show_log`) | |
+| The Rig page ([15](15-assistant-and-rig.md)) | A view that is always there. It reads what the app already knows; it opens no port and sends nothing. An empty new show has three rows | — | |
+| Asking a device whether it is there (one message every 2 s, kept out of the monitor) | A new or an imported show has no devices, so nothing is asked (`settings.rig.devices` is empty; a device's `alive.how` is `none` unless it says otherwise) | A device whose "Is it there" is *Ask it*: adding one is the switch, and the review says "asked every 2 s" | |
+| Listening for a device's heartbeat (this opens the input port) | Off | A device whose "Is it there" is *It says so by itself* | |
+| Looking for props (one `/ec/hello` to UDP 53100 on each network's broadcast address and on this computer) | Never by itself; never in Show mode, never while a cue runs | *Look for props* on the Rig page; the assistant's `find_devices` | |
+| A device command sent more than once (`resend`) | 0: each command is sent once | The device; the prop kit's two models set 3 | |
+| The assistant asking a device whether it is there | Off with the assistant | Choosing a provider. Then only a device that is in the show, or a model's own test message to a private address; never a command | |
+| The assistant reading files in the show folder | Off with the assistant | Choosing a provider, and then only when asked something that needs it. Never outside the folder, never the show's own files | |
+| Writing files into the show folder (prop firmware under `props/`, `AGENTS.md`, `CLAUDE.md`) | Never by itself | Accepting a proposal that lists them. An existing `secrets.h` is never replaced | |
+| A new show started from a folder | The folder's sounds are **not** made into cues. The assistant's drawer opens to say what is in the folder, and does nothing until a button in it is pressed | The assistant's first ask, or dropping them on the list | |
 
 ### The app itself
 
-| Behaviour | Default | Switch | Changed here |
+| Behaviour | Default | Switch | Notes |
 |---|---|---|---|
-| The assistant | Off (`provider: 'off'`). Nothing is sent to any service until a provider is chosen and a question is asked | Settings ▸ Assistant; computer | No. |
-| The assistant applying its own proposals | Off (`autoApply`) | Settings ▸ Assistant; computer | No. |
-| Checking for a new version (`core/update/updates.ts`) | **On**, by the owner's decision: once a day, only in Edit mode with nothing playing (a check that is due waits; in Show mode nothing about updates happens at all). The request is one GET of the feed's file (`https://downloads.endlesscues.com/latest-mac.yml`) and sends nothing about the person or the show. A copy run from source never checks | Settings ▸ General ▸ Check for updates automatically; computer (`updates.auto`). Help ▸ Check for Updates… works either way | New with updates. |
-| Downloading and installing a new version | **Never by itself.** A version found is one line in the title bar; it downloads only after Download, installs when the app quits or on Restart now (Edit mode, nothing playing, after the unsaved-changes question). Show mode hides the line and stops a download | The line's buttons | New with updates. |
-| Test versions (the feed under `…/test/`) | Off | Settings ▸ General ▸ Test versions; computer (`updates.test`) | New with updates. |
-| Telemetry, crash reports | **None exist** | — | No. |
-| Timed backups (a copy of the show beside it, while it is changing) | Every 5 minutes, 30 kept (`settings.backup`) | Settings ▸ General; show | No: a file on this disk, sent nowhere. |
-| The playback log (`logs/playback.csv` in the show folder) | Written as cues run | None | No: a file on this disk. |
-| The show log (`logs/<date time>.log` and `.csv` in the show folder; an untitled show's in this computer's `logs/`) | Written as the show runs: every GO and what started it, each cue starting, stopping and fading, the GOs ignored, problems, mode changes, saves. One file a sitting, a new one after 2 MB, the newest 20 sittings kept. Written a moment later in the background, never while a GO waits; nothing that looks like a key or a password | View ▸ Show Log reads it | New: a file on this disk, sent nowhere. |
-| Check the show (Tools ▸ Check the Show, ⇧⌘F; the footer's Check; the Rig page) | Only when asked. It plays nothing and asks no device anything the Rig page does not already ask | — | New. |
-| Run from here (right-click ▸ Run from Here…, Tools ▸ Run from the Selected Cue…) | Only when asked, in Edit mode, after a preview of what it will start; Show mode refuses it | — | New. |
-| Keeping the display awake | On while the app is open | None | No. |
-| Reopening the last show at launch | On | None | No. |
-| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | No. QLab comes with 0; an imported workspace takes QLab's value. Left for the owner to decide. **Now it covers every GO** (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.ts`). |
-| Numbering new cues; the playhead locked to the selection | On, as QLab comes | Settings ▸ Show; show | No. |
-| Cue templates | None | "Start like this one" in the inspector | No. |
-| The side panel's Network section (the last messages sent) | **Hidden** | ⋯ ▸ Network in the Side Panel (also View ▸ Network and MIDI Monitor for the full monitor); this window's storage, per viewer | **Yes: it showed itself as soon as anything was sent.** |
-| A list column nothing in the list fills (Target, Pre-wait, Duration, Post-wait) | Not drawn; back with the first cue that has a value. Held as it was through Show mode | None | New. |
-| "Something went wrong. Report it?" in the status bar | On: offered, never sent by itself; a mark only in Show mode | × puts it away until the next | New. Nothing is sent until Send in the form. |
+| The assistant | Off (`provider: 'off'`). Nothing is sent to any service until a provider is chosen and a question is asked | Settings ▸ Assistant; computer | |
+| The assistant applying its own proposals | Off (`autoApply`) | Settings ▸ Assistant; computer | |
+| Checking for a new version (`core/update/updates.ts`) | **On**, by the owner's decision: once a day, only in Edit mode with nothing playing (a check that is due waits; in Show mode nothing about updates happens at all). The request is one GET of the feed's file (`https://downloads.endlesscues.com/latest-mac.yml`) and sends nothing about the person or the show. A copy run from source never checks | Settings ▸ General ▸ Check for updates automatically; computer (`updates.auto`). Help ▸ Check for Updates… works either way | |
+| Downloading and installing a new version | **Never by itself.** A version found is one line in the title bar; it downloads only after Download, installs when the app quits or on Restart now (Edit mode, nothing playing, after the unsaved-changes question). Show mode hides the line and stops a download | The line's buttons | |
+| Test versions (the feed under `…/test/`) | Off | Settings ▸ General ▸ Test versions; computer (`updates.test`) | |
+| Telemetry, crash reports | **None exist** | — | |
+| Timed backups (a copy of the show beside it, while it is changing) | Every 5 minutes, 30 kept (`settings.backup`) | Settings ▸ General; show | A file on this disk, sent nowhere. |
+| The playback log (`logs/playback.csv` in the show folder) | Written as cues run | None | A file on this disk. |
+| The show log (`logs/<date time>.log` and `.csv` in the show folder; an untitled show's in this computer's `logs/`) | Written as the show runs: every GO and what started it, each cue starting, stopping and fading, the GOs ignored, problems, mode changes, saves. One file a sitting, a new one after 2 MB, the newest 20 sittings kept. Written a moment later in the background, never while a GO waits; nothing that looks like a key or a password | View ▸ Show Log reads it | A file on this disk, sent nowhere. |
+| Check the show (Tools ▸ Check the Show, ⇧⌘F; the footer's Check; the Rig page) | Only when asked. It plays nothing and asks no device anything the Rig page does not already ask | — | |
+| Run from here (right-click ▸ Run from Here…, Tools ▸ Run from the Selected Cue…) | Only when asked, in Edit mode, after a preview of what it will start; Show mode refuses it | — | |
+| Keeping the display awake | On while the app is open | None | |
+| Reopening the last show at launch | On | None | |
+| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | QLab comes with 0; an imported workspace takes QLab's value. Left for the owner to decide. It covers every GO (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.ts`). |
+| Numbering new cues; the playhead locked to the selection | On, as QLab comes | Settings ▸ Show; show | |
+| Cue templates | None | "Start like this one" in the inspector | |
+| The side panel's Network section (the last messages sent) | **Hidden** | ⋯ ▸ Network in the Side Panel (also View ▸ Network and MIDI Monitor for the full monitor); this window's storage, per viewer | |
+| A list column nothing in the list fills (Target, Pre-wait, Duration, Post-wait) | Not drawn; back with the first cue that has a value. Held as it was through Show mode | None | |
+| "Something went wrong. Report it?" in the status bar | On: offered, never sent by itself; a mark only in Show mode | × puts it away until the next | Nothing is sent until Send in the form. |
 
 ## Is every integration free?
 

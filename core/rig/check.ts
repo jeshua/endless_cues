@@ -96,7 +96,7 @@ function uses(doc: ShowDoc) {
 
 /** The edit that makes a patch a device: the same id, so every cue that named the patch still does. null: its id cannot be a device's. */
 function patchToDevice(doc: ShowDoc, patch: Patch): Op[] | null {
-  if (!rigDevices.ID.test(String(patch.id))) return null;       // (an older patch id with a capital or a dash)
+  if (!rigDevices.ID.test(String(patch.id))) return null;       // (a patch id with a capital or a dash is not a device's)
   const device: Record<string, unknown> = { id: patch.id, name: patch.name, host: patch.host, port: patch.port, protocol: patch.protocol || 'udp' };
   for (const k of ['framing', 'listenPort', 'iface', 'destinations', 'notes'] as const) if (patch[k] !== undefined && patch[k] !== '' && patch[k] !== null) device[k] = patch[k];
   if (patch.device && MODELS[patch.device] && patch.device !== 'generic') device.model = patch.device;

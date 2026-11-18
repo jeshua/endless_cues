@@ -49,7 +49,7 @@ silhouette, above the brow only) and enlarge holes the figure already has:
   holes left out.
 - **tiny**: 16 px. Heavier again.
 
-What a person can make out (looked at, at true size, Nov 2026):
+What a person can make out (looked at, at true size):
 
 - **128 px and up**: all of it. A skull mask with eye sockets and a nose, antlers, two hands holding it, shoulders.
 - **64 px**: an antlered skull held up by two arms; the eyes are two small points of light.

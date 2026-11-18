@@ -18,8 +18,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-/** This computer's record of its own shows: { "<show folder>": "<show id>" } (`true`: taken from its recent shows). */
-export type TrustRecord = Record<string, string | true>;
+/** This computer's record of its own shows: { "<show folder>": "<show id>" }. */
+export type TrustRecord = Record<string, string>;
 
 const KEEP = 400;                   // the record keeps the last this many shows (the oldest go first)
 
@@ -37,8 +37,7 @@ function isMine(record: TrustRecord | null | undefined, dir: unknown, id: unknow
   const key = keyOf(dir, platform);
   if (!key || !record || typeof record !== 'object') return false;
   const had = Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
-  // (`true`: a folder taken from the list of recent shows when the record was first made, whatever id it has)
-  return had === true || (typeof had === 'string' && had === String(id || ''));
+  return typeof had === 'string' && had === String(id || '');
 }
 
 /** The record with this show in it (the newest last; the oldest dropped past KEEP). A new object: the old is not changed. */
@@ -53,15 +52,7 @@ function remember(record: TrustRecord | null | undefined, dir: unknown, id: unkn
   return out;
 }
 
-/** The first record, for a computer that had shows before there was one: its recent shows (and the last one open)
- *  are taken as its own, so nothing that was already working here is held back by an update. */
-function firstRecord(config: { recent?: unknown; lastShow?: string | null } = {}, platform?: string): TrustRecord {
-  const out: TrustRecord = {};
-  for (const dir of [...(Array.isArray(config.recent) ? config.recent : []), config.lastShow]) if (dir) out[keyOf(dir, platform)] = true;
-  return out;
-}
-
 /** A path that names another computer: \\host\share\…, //host/share/…, and Windows's \\?\ and \\.\ forms. */
 const isRemote = (file: unknown) => /^[\\/]{2}/.test(String(file || ''));
 
-export { keyOf, isMine, remember, firstRecord, isRemote, KEEP };
+export { keyOf, isMine, remember, isRemote, KEEP };

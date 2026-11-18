@@ -1,6 +1,6 @@
 # 0004 · What is open and what is paid
 
-**Status:** accepted. Bring-your-own-key is kept and widened: Anthropic, OpenRouter, OpenAI, any OpenAI-compatible service, and local models through Ollama.
+**Status:** accepted. Bring-your-own-key covers Anthropic, OpenRouter, OpenAI, any OpenAI-compatible service, and local models through Ollama.
 
 ## Decision
 

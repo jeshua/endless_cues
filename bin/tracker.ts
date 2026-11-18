@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Counts docs/qlab-tracker.md: per stage, how many items are done, partly done and not started. */
+/** Counts docs/qlab-tracker.md: per area, how many items are done, partly done and not started. */
 import * as fs from 'fs';
 import * as path from 'path';
 

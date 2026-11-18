@@ -129,8 +129,8 @@ Reviewed against the manufacturers' published documentation (ETC's Eos family on
 | Eos ping: `/eos/ping` → `/eos/out/ping` | Agrees. |
 | Eos heard: `/eos/out/active/cue/<list>/<n>`, `/eos/out/pending/cue/<list>/<n>` | Agrees with the manual's implicit output as quoted on ETC's forum; the active cue is re-sent about once a second while it runs. |
 | Eos device template: `/eos/key/go_0`, `/eos/macro/<n>/fire`, `/eos/sub/<n>` 0–1, `/eos/chan/<n>` 0–100, `/eos/newcmd "…#"` | `go_0` agrees with third-party set-up sheets. `/eos/key/stop` and the argument ranges are as remembered from the manual and were **not** re-read: check them at the desk (step E7). |
-| grandMA3 fire | **Changed.** It sent `Go+ Sequence <list> Cue <n>`; the manual's keyword for running a named cue with its own timing is Goto ("jump in a list using the original cue timing"), with the cue first: now `/gma3/cmd "Goto Cue <n> Sequence <list>"`. The device template's "Go to cue" was reordered to match. |
-| grandMA3 set-up text | **Corrected.** The manual gives a new OSC line no prefix (the note said "default gma3"), and commands need the line's Receive and **Receive Command** set to Yes as well as Enable Input. The address is `/cmd` with one string; with the prefix, `/gma3/cmd`. |
+| grandMA3 fire: `/gma3/cmd "Goto Cue <n> Sequence <list>"` | The manual's keyword for running a named cue with its own timing is Goto ("jump in a list using the original cue timing"), with the cue first. The device template's "Go to cue" is in the same order. |
+| grandMA3 set-up text | The manual gives a new OSC line no prefix, and commands need the line's Receive and **Receive Command** set to Yes as well as Enable Input. The address is `/cmd` with one string; with the prefix, `/gma3/cmd`. |
 | grandMA3 port | The manual states no default. The template's 8000 is only a starting value: use the port on the desk's OSC line. |
 
 **At an Eos desk (or Nomad on a second computer).** Needs a show file with cue list 1 holding cues 1, 2, 2.5 and 3 with visibly different looks, and a cue list 2 with a cue 1.

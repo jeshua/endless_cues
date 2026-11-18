@@ -6,9 +6,8 @@
  * seen at once, and undoable — but NOT kept. Nothing reaches show.json until
  * `save()`, which writes the file and records a version (versions.ts). Until
  * then `unsaved()` says exactly what is pending, change by change, so the app
- * can mark each changed control, put one back, and warn before quitting. (It
- * used to save every move the moment it was made, which is how an accidental
- * nudge of a level became the show.)
+ * can mark each changed control, put one back, and warn before quitting (so an
+ * accidental nudge of a level never becomes the show).
  *
  * Pending edits are not lost to a crash: they are journalled beside the show
  * (show.unsaved.json) and offered back, still unsaved, the next time it opens.
@@ -211,12 +210,6 @@ class ShowDocument extends EventEmitter {
   // ── versions ──────────────────────────────────────────────────────────
 
   listVersions() { return this.showDir ? versions.list(this.showDir) : []; }
-
-  /** (The older name: a version is what a save records.) */
-  saveVersion(opts: { note?: string } = {}) {
-    const all = this.showDir ? versions.list(this.showDir) : [];
-    return this.save(opts) || { ...all[all.length - 1], same: true };
-  }
 
   /** What a version differs by from the show as it is now (or from another version). */
   compareVersion(id: string, otherId: string | null = null) {

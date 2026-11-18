@@ -84,7 +84,7 @@ export type Coerced = { ok: true; value: unknown } | { ok: false; why: string };
 const COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink', 'grey',
   'coral', 'amber', 'lime', 'forest', 'mint', 'sky', 'indigo', 'lavender', 'magenta', 'brown'];
 // The colours the inspector and the list's menu offer first; any other is chosen with "…" (a colour wheel). The
-// other names stay valid (older shows, the QLab import, the assistant), and a colour chosen on the wheel is kept as
+// other names stay valid (the QLab import and the assistant write them), and a colour chosen on the wheel is kept as
 // '#rrggbb', so a show file's `color` is a name or a hex value and every reader takes both (`cleanColor`).
 const PALETTE = ['none', 'red', 'orange', 'yellow', 'green', 'blue'];
 /** A cue's colour as the show keeps it: a name from COLORS, or '#rrggbb' (lower case); null when it is neither. */

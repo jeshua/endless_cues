@@ -2,9 +2,7 @@
  * What kind of sound a bus carries, and what follows from it.
  *
  * A bus has a `kind`: music, voice (recorded dialogue and voice-over), effects, ambience (beds and loops) or live
- * (microphones). A bus that does not say (every bus of a show from before kinds) is read from its id and name
- * (`kindOf`), which decides only what it is CALLED and where a new sound is offered: nothing about how an old
- * show plays changes because of a kind it never wrote down.
+ * (microphones). A bus that does not say is effects (`kindOf`).
  *
  * A KIND IS A LABEL. By itself it does nothing to any sound: a new show, and a show brought in from QLab, play
  * as a plain cue list. Everything a kind could bring is a switch that is off until a person turns it on, and
@@ -36,10 +34,8 @@ export interface KindBus { id: string; name?: string; kind?: string; stopFade?: 
 export interface DuckUnder { depth: number; attack: number; hold: number; release: number; range: 'voice' | 'all' }
 /** A show's ducking by kind, every number filled in. */
 export interface Ducking { on: boolean; threshold: number; by: string[]; under: Record<string, DuckUnder> }
-/** An older show's one pair (settings.audio.duck). */
-export interface DuckPair { on?: boolean; key?: string; target?: string; threshold?: unknown; depth?: unknown; attack?: unknown; hold?: unknown; release?: unknown; range?: string }
 /** What of a show's audio settings the kinds read. */
-export interface KindAudio { buses?: KindBus[]; ducking?: { on?: unknown; threshold?: unknown; by?: unknown; under?: unknown } | null; duck?: DuckPair | null }
+export interface KindAudio { buses?: KindBus[]; ducking?: { on?: unknown; threshold?: unknown; by?: unknown; under?: unknown } | null }
 /** One rule of the ducker as the sound window runs it: a bus that dips, and the buses it listens to. */
 export type DuckRule = { target: string; keys: string[]; threshold: number } & DuckUnder;
 /** What the cue engine needs of a bus. */
@@ -54,15 +50,9 @@ const KINDS: Record<string, { label: string; what: string }> = {
 };
 const KIND_ORDER: Kind[] = ['music', 'voice', 'effects', 'ambience', 'live'];
 
-/** A bus's kind: the one it says, else read from its id and name (a show from before kinds). */
+/** A bus's kind: the one it says, else effects. */
 function kindOf(bus: Omit<KindBus, 'id'> & { id?: string } | null | undefined): Kind {
-  if (bus && KINDS[bus.kind!]) return bus.kind as Kind;
-  const t = `${(bus && bus.id) || ''} ${(bus && bus.name) || ''}`.toLowerCase();
-  if (/\b(mic|mics|microphone|live|input|radio mic|lav)/.test(t)) return 'live';
-  if (/\b(vocal|vocals|voice|voices|vo|v\.o|dialog|dialogue|speech|narrat)/.test(t)) return 'voice';
-  if (/\b(amb|ambience|ambient|atmos|bed|beds|room tone|background)/.test(t)) return 'ambience';
-  if (/\b(music|mx|band|track|tracks|song|songs|score|playback)/.test(t)) return 'music';
-  return 'effects';
+  return bus && KINDS[bus.kind!] ? bus.kind as Kind : 'effects';
 }
 
 /** What is SUGGESTED for a bus of a kind. Nothing writes these by itself: choosing a kind only names the bus, and
@@ -105,43 +95,25 @@ const DUCKING: Ducking = {
 const num = (v: unknown, d: number, lo: number, hi: number) => (v !== null && v !== '' && Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : d);
 const underOf = (u: { depth?: unknown; attack?: unknown; hold?: unknown; release?: unknown; range?: unknown } | null | undefined, d: DuckUnder): DuckUnder => ({ depth: num(u && u.depth, d.depth, -60, 0), attack: num(u && u.attack, d.attack, 0.005, 5), hold: num(u && u.hold, d.hold, 0, 10), release: num(u && u.release, d.release, 0.02, 20), range: u && u.range === 'all' ? 'all' : u && u.range === 'voice' ? 'voice' : d.range });
 
-/** The show's ducking by kind with every number filled in, or null for a show that has none (an older show: its
- *  one pair, `settings.audio.duck`, is read instead). */
-function duckingOf(audio: KindAudio | null | undefined): Ducking | null {
-  const d = audio && audio.ducking;
-  if (!d || typeof d !== 'object') return null;
-  const by = Array.isArray(d.by) ? d.by.filter((k) => KINDS[k]) : DUCKING.by;
+/** The show's ducking by kind with every number filled in: the defaults (off) for a show that has not set it. */
+function duckingOf(audio: KindAudio | null | undefined): Ducking {
+  const raw = audio && audio.ducking, d = raw && typeof raw === 'object' ? raw : {} as NonNullable<KindAudio['ducking']>;
+  const by = Array.isArray(d.by) ? d.by.filter((k) => KINDS[k]) : [...DUCKING.by];
   const under: Record<string, DuckUnder> = {};
   for (const [k, u] of Object.entries(d.under && typeof d.under === 'object' ? d.under : DUCKING.under)) if (KINDS[k] && u) under[k] = underOf(u, DUCKING.under[k] || DUCKING.under.music);
   return { on: d.on === true, threshold: num(d.threshold, DUCKING.threshold, -80, 0), by, under };
 }
 
 /** The ducker's rules as the sound window runs them: one per bus that dips, [{ target, keys, threshold, depth,
- *  attack, hold, release, range }]. A show with `ducking` is read by kind; one without, by its old single pair
- *  (`duck`: { on, key, target, … }), exactly as it always was. */
+ *  attack, hold, release, range }], read by kind. */
 function duckRules(audio: KindAudio | null | undefined): DuckRule[] {
   const a: KindAudio = audio || {}, buses = Array.isArray(a.buses) ? a.buses : [];
   const d = duckingOf(a);
-  if (!d) {
-    const o = a.duck;
-    if (!o || !o.on || !o.key || o.key === (o.target || 'music')) return [];
-    return [{ target: o.target || 'music', keys: [o.key], threshold: Number(o.threshold), depth: Number(o.depth), attack: Number(o.attack), hold: Number(o.hold), release: Number(o.release), range: o.range === 'all' ? 'all' : 'voice' }];
-  }
   if (!d.on) return [];
   const keys = buses.filter((b) => d.by.includes(kindOf(b))).map((b) => b.id);
   if (!keys.length) return [];
   // (a kind may not duck under itself: a bus that is listened to is never one that dips)
   return buses.filter((b) => d.under[kindOf(b)] && !keys.includes(b.id)).map((b) => ({ target: b.id, keys, threshold: d.threshold, ...d.under[kindOf(b)] }));
-}
-
-/** An older show's one pair, as ducking by kind: the same depth and times, on the kind its target bus is. */
-function duckingFromPair(audio: KindAudio | null | undefined): Ducking {
-  const o: DuckPair = (audio && audio.duck) || {}, buses = (audio && audio.buses) || [];
-  const target = buses.find((b) => b.id === o.target);
-  const kind = target ? kindOf(target) : 'music';
-  const under = { ...DUCKING.under };
-  if (o.on !== undefined) under[kind === 'voice' || kind === 'live' ? 'music' : kind] = underOf(o, DUCKING.under.music);
-  return { on: !!o.on, threshold: num(o.threshold, DUCKING.threshold, -80, 0), by: [...DUCKING.by], under };
 }
 
 // ── where the speech is ───────────────────────────────────────────────────────
@@ -230,7 +202,7 @@ function featuresOf(x: Float32Array, rate: number, { tempo }: { tempo?: ReturnTy
  *   4. under 15 s                                                            effects
  *   5. 20 s or more, sounding nearly all the time, its level steady (under
  *      4 dB of swing)                                                        ambience
- *   6. half a minute or more                                                 music (the rule before kinds); else effects
+ *   6. half a minute or more                                                 music; else effects
  * It is a guess: the app shows it and the person confirms or changes it.
  */
 function guessKind(x: Float32Array, rate: number, opts: { tempo?: ReturnType<typeof tempoMap> } = {}) {
@@ -252,4 +224,4 @@ function busFor(audio: KindAudio | null | undefined, kind: string) {
   return b ? b.id : null;
 }
 
-export { KINDS, KIND_ORDER, DUCKING, kindOf, defaultsOf, withSuggested, rulesOf, duckingOf, duckRules, duckingFromPair, speechSpans, featuresOf, guessKind, busFor };
+export { KINDS, KIND_ORDER, DUCKING, kindOf, defaultsOf, withSuggested, rulesOf, duckingOf, duckRules, speechSpans, featuresOf, guessKind, busFor };

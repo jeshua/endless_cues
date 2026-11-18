@@ -142,7 +142,7 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     check('show mode refuses an edit', !!host.cmd({ op: 'edit', ops: [{ op: 'cue.remove', id: rain }] }).error);
     // (every command that changes the show or its folder, not only `edit`: each is refused before it looks at anything.
     // A hand on the mixer — a bus's fader, the master — is running the show, and is not.)
-    { const open: string[] = []; for (const op of ['fade-from-target', 'ducking-by-kind', 'relink', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here'] as HostOp[]) { const r = await host.cmd({ op, id: rain } as HostCommand); if (!r || !/Show mode/.test(r.error || '')) open.push(op); }
+    { const open: string[] = []; for (const op of ['fade-from-target', 'relink', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here'] as HostOp[]) { const r = await host.cmd({ op, id: rain } as HostCommand); if (!r || !/Show mode/.test(r.error || '')) open.push(op); }
       check('…and every other command that changes the show (a Fade’s level from its target, Find the tempo, relink, undo, tidying its sounds…)', open.length === 0, open); }
     await shot('4-show-mode');
     host.cmd({ op: 'mode', mode: 'edit' });
@@ -264,8 +264,8 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     host.cmd({ op: 'fire', number: 'MIC2' });
     check('…and a Fade takes it out and closes it', await until(() => !snap().engine.active.some((a) => a.mic), 3000));
     host.cmd({ op: 'undo' });
-    // ducking: with the vocals bus sounding (a Mic cue's stand-in signal), the music bus is dipped; when it stops, it comes back
-    const duckSet = host.cmd({ op: 'edit', ops: [{ op: 'show.set', path: 'settings.audio.duck.on', value: true }, { op: 'show.set', path: 'settings.audio.duck.hold', value: 0.1 }, { op: 'cue.add', cue: { type: 'mic', number: 'DK1' }, list: host.document.doc.lists[0].id }], label: 'ducking' });
+    // ducking by kind: with the vocals bus (a voice) sounding (a Mic cue's stand-in signal), the music bus is dipped; when it stops, it comes back
+    const duckSet = host.cmd({ op: 'edit', ops: [{ op: 'show.set', path: 'settings.audio.ducking', value: { on: true, under: { music: { depth: -8, attack: 0.05, hold: 0.1, release: 1, range: 'voice' } } } }, { op: 'cue.add', cue: { type: 'mic', number: 'DK1' }, list: host.document.doc.lists[0].id }], label: 'ducking' });
     host.cmd({ op: 'fire', number: 'DK1' });
     check('ducking: a bus dips while another is sounding', await until(() => snap().mixer.ducking === true, 4000), [duckSet, snap().mixer.ducking]);
     host.cmd({ op: 'stop', number: 'DK1' });

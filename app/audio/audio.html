@@ -61,7 +61,7 @@
   and a reverb; core/audio/chain.js is what each is and builds the nodes, on any context). It sits between the
   sound's source and its level (`design`), so a fade, the envelope, a duck and the bus all come after it and none
   of them changes how hard a compressor is driven. A sound with no chain has nothing there: its source plays
-  straight into its level, as it always did. With `tail` on, a stopped or ended sound's reverb and delay ring
+  straight into its level. With `tail` on, a stopped or ended sound's reverb and delay ring
   out before its voice is let go (`ring`). `measure` renders the same chain offline, for the test run to read.
 
   MIDI: this window also holds the computer's MIDI ports (Web MIDI), because a hidden window is the one place

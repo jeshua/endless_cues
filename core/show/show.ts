@@ -28,10 +28,11 @@ import type { EngineCue, EngineDoc } from '../engine/cue-engine';
 const FORMAT = 'endless-cues-show';
 const VERSION = 1;
 
+// (a bus's kind is a label: core/audio/kinds.ts)
 const DEFAULT_BUSES: Bus[] = [
-  { id: 'music', name: 'Music', db: 0 },
-  { id: 'effects', name: 'Effects', db: 0 },
-  { id: 'vocals', name: 'Vocals', db: 0 },
+  { id: 'music', name: 'Music', db: 0, kind: 'music' },
+  { id: 'effects', name: 'Effects', db: 0, kind: 'effects' },
+  { id: 'vocals', name: 'Vocals', db: 0, kind: 'voice' },
 ];
 
 function defaultSettings(): Settings {
@@ -44,8 +45,6 @@ function defaultSettings(): Settings {
       masterDb: 0,
       limiter: true,
       buses: DEFAULT_BUSES.map((b) => ({ ...b })),
-      // ducking: one bus dips while another is sounding (music under the voices)
-      duck: { on: false, key: 'vocals', target: 'music', threshold: -35, depth: -8, attack: 0.05, hold: 0.5, release: 1, range: 'voice' },
       // level limits: a cue or a fade asking for more than `max` dB is played at `max`; a level at or below `min` is silence
       levels: { min: -60, max: 12 },
       // the monitor feed: a mono copy of what outputs 1–2 get, on one more output of the device (`out`, counted from 1)
@@ -104,9 +103,9 @@ function defaultSettings(): Settings {
 
 function defaultModules(): Modules {
   return {
-    // (who may do what is `passcodes` [{ code, view, edit, control }] and `noPasscode` { view, edit, control }, once set;
-    //  `passcode` is the older single one, which grants everything. 53001 is where QLab answers a UDP sender.)
-    'osc-control': { enabled: false, passcode: '', replyPort: 53001 },
+    // (who may do what is `passcodes` [{ code, view, edit, control }] and `noPasscode` { view, edit, control }, once set.
+    //  53001 is where QLab answers a UDP sender.)
+    'osc-control': { enabled: false, replyPort: 53001 },
     'show-feedback': { enabled: false, patch: '', prefix: '/endlesscues' },
     'lighting-desk': { enabled: false, kind: 'etc-eos', host: '', port: 8000, listenPort: 8001, list: 1 },
     'web-remote': { enabled: false, port: 8137, control: true, key: '' },
@@ -118,17 +117,6 @@ const isCue = (c: Cue | null): c is Cue => !!c;
 
 function newId(prefix = 'c') { return `${prefix}_${crypto.randomBytes(4).toString('hex')}`; }
 
-/** A NEW show's settings: the defaults, and the one thing only a show made from now on has: its buses say what
- *  kind of sound each carries. That is a label and does nothing by itself: a new show plays as a plain cue
- *  list, with ducking off (the one pair, `duck`, as every show has had) and nothing a kind could bring switched
- *  on. Ducking by kind (`ducking`) is written only when a person asks for it in Settings ▸ Audio. */
-function newSettings() {
-  const s = defaultSettings();
-  const KIND: Record<string, string> = { music: 'music', effects: 'effects', vocals: 'voice' };
-  s.audio.buses = s.audio.buses.map((b) => ({ ...b, kind: KIND[b.id] }));
-  return s;
-}
-
 function newShow(title = 'Untitled show'): ShowDoc {
   return {
     format: FORMAT,
@@ -136,7 +124,7 @@ function newShow(title = 'Untitled show'): ShowDoc {
     id: newId('show'),
     title,
     notes: '',
-    settings: newSettings(),
+    settings: defaultSettings(),
     modules: defaultModules(),
     lists: [{ id: newId('list'), name: 'Main', cues: [] }],
   };
@@ -470,8 +458,7 @@ const KEY_ORDER = ['format', 'version', 'id', 'title', 'notes', 'type', 'number'
 /** A show as it is written: its settings may go without the rig. */
 type Written = Omit<ShowDoc, 'settings'> & { settings: Omit<Settings, 'rig'> & Partial<Pick<Settings, 'rig'>> };
 function stringify(doc: Written): string {
-  // (a rig with nothing in it is not written: a show with no equipment is, on disk, exactly what it was before
-  // there was a rig, and an older app reading the file meets nothing new)
+  // (a rig with nothing in it is not written: a show with no equipment has no rig on disk)
   const rig = doc && doc.settings && doc.settings.rig;
   if (rig && typeof rig === 'object' && !(rig.devices || []).length && !(rig.checks || []).length && !rig.script && Object.keys(rig).every((k) => ['devices', 'checks', 'script'].includes(k))) {
     const { rig: _none, ...settings } = doc.settings;
@@ -496,4 +483,4 @@ function stringify(doc: Written): string {
 
 function hash(doc: Written) { return crypto.createHash('sha256').update(stringify(doc)).digest('hex').slice(0, 16); }
 
-export { parseClock, normaliseHotkey, APP_KEYS, FORMAT, VERSION, newShow, newId, normalise, problems, toEngineDoc, stringify, hash, walk, index, locate, findByNumber, defaultSettings, newSettings, defaultModules, deepMerge };
+export { parseClock, normaliseHotkey, APP_KEYS, FORMAT, VERSION, newShow, newId, normalise, problems, toEngineDoc, stringify, hash, walk, index, locate, findByNumber, defaultSettings, defaultModules, deepMerge };

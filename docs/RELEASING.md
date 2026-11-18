@@ -117,7 +117,7 @@ EC_WIN_SIGN_P12_PASS=<its password> node bin/release.js win --x64-only`. Windows
 
 ## Updates
 
-An installed app (from 0.3.0-alpha.2) reads `latest-mac.yml` from `https://downloads.endlesscues.com/`, or from
+An installed app reads `latest-mac.yml` from `https://downloads.endlesscues.com/`, or from
 `…/test/` with Settings ▸ General ▸ Test versions on: once a day in Edit mode with nothing playing, and on Help ▸
 Check for Updates…. A newer version there is offered in one line in the title bar; nothing is downloaded until the
 person presses Download, and it installs when they quit (or press Restart now). The rules are in
@@ -159,7 +159,7 @@ An unsigned build is acceptable for an alpha among people who know what that com
 Every packaged build carries `ec-audio` ([18](specs/18-native-audio.md)), one program for its platform and
 architecture, in the app's resources beside the archive (`Contents/Resources/ec-audio` on a Mac, `resources\ec-audio.exe`
 on Windows), where `app/main/native-audio.ts` looks for it (`process.resourcesPath`). It is off until a person chooses
-it, and an app without it plays exactly as before.
+it, and an app without it plays on Web Audio.
 
 - **How it gets there.** `build/native.ts` is electron-builder's `beforePack` hook: before each architecture is
   packed it runs `cargo build --release --target <triple>` and copies the program to `native/dist/<os>-<arch>/`,

@@ -1,25 +1,22 @@
 # 09 · QLab parity
 
-A feature-by-feature comparison of Endless Cues 0.1 (Public Alpha) with QLab 5, audited on 2026-11-13 from commit `dad5c9e` and revised on 2026-11-15 against the code and the tracker.
+A feature-by-feature comparison of Endless Cues (Public Alpha) with QLab 5. What is being done, and what is next, item by item, is [`../qlab-tracker.md`](../qlab-tracker.md); when a row here and a line there disagree, the tracker is the newer word.
 
-This is a snapshot: the marks are as they were on the day of the revision. What has been done since, and what is next, is in [`../qlab-tracker.md`](../qlab-tracker.md).
-
-**How it was made.** QLab's side is the official manual at <https://qlab.app/docs/v5/> (current to QLab 5.6.5), read page by page and written down as a flat inventory of about 1,900 features and behaviours. Our side was read from the code at commit `dad5c9e`, not from these specs, and every line was given a status and a `file:line`. Both inventories are kept beside this document so any row can be checked:
+**How it is made.** QLab's side is the official manual at <https://qlab.app/docs/v5/> (current to QLab 5.6.5), read page by page and written down as a flat inventory of about 1,900 features and behaviours, kept beside this document so any row can be checked:
 
 - [`../internal/research/qlab-5/qlab-core-audio.md`](../internal/research/qlab-5/qlab-core-audio.md): workspace, cues, groups, lists, carts, inspector, tools, settings, audio (942 items)
 - [`../internal/research/qlab-5/qlab-control-network.md`](../internal/research/qlab-5/qlab-control-network.md): network, OSC, MIDI, timecode, scripting, collaboration, remote (407 items)
 - [`../internal/research/qlab-5/qlab-video-lighting.md`](../internal/research/qlab-5/qlab-video-lighting.md): video and lighting (574 items)
-- [`../internal/research/qlab-5/endless-cues-0.1.md`](../internal/research/qlab-5/endless-cues-0.1.md): what our code did on 2026-11-13 (about 200 items; not revised)
 
-**Limits of the audit.** The manual's screenshots were not read, so three command lists that exist only as images (the Keyboard, Workspace MIDI and OSC control tables) are known only in part. The OSC dictionary has 1,214 methods; the audio, video and settings families were listed by name, not read one by one. On our side the app was not launched: the unit tests were run (47 of 47 pass), and the audio window and the interface were read, not exercised. Nothing here was checked against a running copy of QLab.
+Our side is marked from the code and the tracker. Something the tracker calls "written, not run" is 🟡 unless a unit test or a smoke check covers it, and where a check uses a stand-in (a pretended eight-output device, a made signal in place of a microphone, a MIDI message handed to the host) the note says so.
 
-**The revision of 2026-11-15.** Every row was marked again from the tracker and the code as they stood that day; QLab's manual was not read again, so the QLab column is as it was. The app was still not exercised by hand for every row. The unit tests were run (141 of 142 pass; one is skipped because it needs a workspace file kept outside the repository), and the end-to-end smoke run was read, not run. Something the tracker calls "written, not run" is 🟡 unless a unit test or a smoke check covers it, and where a check uses a stand-in (a pretended eight-output device, a made signal in place of a microphone, a MIDI message handed to the host) the note says so.
+**Limits.** The manual's screenshots were not read, so three command lists that exist only as images (the Keyboard, Workspace MIDI and OSC control tables) are known only in part. The OSC dictionary has 1,214 methods; the audio, video and settings families were listed by name, not read one by one. Nothing here was checked against a running copy of QLab.
 
 **Marks.** ✅ we do it · 🟡 partly (the note says what exists) · ❌ we do not · ➕ we do it and QLab does not. The marks are strict: something the engine can do but no show file, key or button can reach is ❌ or 🟡, never ✅.
 
 ## Scorecard
 
-Of 270 QLab features compared, we do 116 (43%), do 121 in part (45%) and lack 33 (12%). 27 rows are things we have and QLab does not. (Before the branches of 2026-11-15 were brought together the count was 87, 95 and 88.) On 2026-11-13 the same count was 61, 59 and 151 of 271, with 22.
+Of 270 QLab features compared, we do 116 (43%), do 121 in part (45%) and lack 33 (12%). 27 rows are things we have and QLab does not.
 
 | Area | ✅ | 🟡 | ❌ | ➕ |
 |---|---|---|---|---|
@@ -67,7 +64,7 @@ What a QLab user would hit, in the order they would hit it:
 9. **Main and backup is a module that has not run on two computers**, with no failover and no audio switch-over. Nobody else can edit a show while you do.
 10. **Windows and Linux have never been launched by a person**, and the macOS build is not signed.
 
-The first audit also found things that were wrong or unfinished in our own code, independent of QLab. Where each stands is in [Found on our side](#found-on-our-side).
+What is unfinished in our own code, independent of QLab, is in [Open on our side](#open-on-our-side).
 
 ---
 
@@ -260,7 +257,7 @@ The first audit also found things that were wrong or unfinished in our own code,
 | Wait, Memo | Yes | ✅ | |
 | Script | AppleScript | 🟡 | Not code, by design: a short list of show commands as text, run in order with waits (`/cue/12/start`, `/go`, `/panic`, `/playhead/20`, `wait 2`). It can do what an operator's hands could do to this show's transport; it cannot run arbitrary code or reach another application. Tested, smoke-checked. |
 | Mix | No (a Fade on a patch is the nearest) | ➕🟡 | Ramps bus faders over its duration; the mixer shows where a cue has put a fader until a hand is on it (smoke-checked by the gains, not heard). |
-| Jump | No (Devamp and slices are the nearest) | ➕🟡 | Moves a playing track to another place in itself as a cut, a fade or a blend. Untested; the beat-aligned parts read a tempo the app can now find. |
+| Jump | No (Devamp and slices are the nearest) | ➕🟡 | Moves a playing track to another place in itself as a cut, a fade or a blend. Untested; the beat-aligned parts read a tempo the app can find. |
 
 ## 10. Audio
 
@@ -440,7 +437,7 @@ All of this is tested to the byte against the MIDI, MTC, MSC, Standard MIDI File
 |---|---|---|---|
 | Several people editing one workspace over the network, with permissions | Yes | ❌ | |
 | Phone or tablet remote | QLab Remote (iOS; paid for control and editing) | 🟡 | A web page for any device: list, standby, notes, running; GO, playhead, Panic; view-only switch. A fader per bus and the master, and Load to Time, behind a Levels button (drawn in an offscreen browser; not on a phone). No editing, no carts. Plain HTTP with a key in the address. |
-| QLab Remote itself connecting to us | n/a | ❌ | Not tried. TCP in, the reply port and the property and update methods now exist; QLab Remote may still not connect (no Bonjour, no encrypted connection). |
+| QLab Remote itself connecting to us | n/a | ❌ | Not tried. TCP in, the reply port and the property and update methods exist; QLab Remote may still not connect (no Bonjour, no encrypted connection). |
 | Stream Deck | Official plugin over OSC, no passcode | 🟡 | Transport, playhead moves, start-by-number, `/cue/selected` and the actions that make or move cues are all written to the same addresses. Not tried. |
 | Bitfocus Companion | Community module over OSC | 🟡 | The same. Not tried. |
 | Main and backup computers | By hand (a patch with two destinations, or MIDI / OSC from one to the other) | 🟡 | A Main and backup module: the main says its transport again to the backup over OSC control (GO, playhead, start, stop, pause, panic, reset, load to time), with a heartbeat each end watches. Tested with two engines in one test, not on two computers. No automatic failover and no audio switch-over; edits and the mixer are not mirrored. |
@@ -497,7 +494,7 @@ A Resolume template exists for Network cues, so a media server can be driven too
 
 | Feature | QLab 5 | Us | Note |
 |---|---|---|---|
-| macOS | 11 and later | 🟡 | Built and smoke-run in CI. Not signed or notarised yet. |
+| macOS | 11 and later | 🟡 | Signed and notarised builds (`node bin/release.js mac`); smoke-run in CI. |
 | Windows, Linux | No | ➕🟡 | Installers are configured and unit tests pass in CI on both. One copy of the app at a time, opening a show from the desktop and the shortcut labels are written for both; the app has still not been launched by a person on either. |
 | Price | Free for stereo audio and basic video; licences for the rest; rent by the day | ➕ | Nothing is locked. AGPL. |
 | Demo mode, licence manager, USB and offline licences | Yes | n/a | |
@@ -505,52 +502,25 @@ A Resolume template exists for Network cues, so a media server can be driven too
 
 ---
 
-## Found on our side
+## Open on our side
 
-Things the first audit turned up in our own code, none of which depends on QLab, each with where it stood on 2026-11-15.
+Things in our own code, none of which depends on QLab:
 
-**Built, but no show can reach it.** Decided (R8; `04-cue-engine.md` section 12). A Jump's Loop from has a field. Chained sections of a track (`stanza`), a child that fires when a sibling sound ends (`after`, `afterWait`), a pre-wait of "the longest sibling sound", `withScene`, light-cue groups and the `visuals` hook are taken out of the engine. A field the table does not list is kept on save instead of dropped (tested), so a file that carries one is not damaged; it is not played.
-
-**Beat features with nothing to feed them.** Mostly fixed. A cue now has a `tempo` (found from its sound when asked, or typed), and the engine reads its beats and bars from it (tested), so quantise to beat or bar has something to read. Loop regions can be typed in on Time & Loops as well as made from markers. Still open: a tempo that changes within a track, the Jump blends' match scores, and drawing a region on the waveform.
-
-**Built, but no control.**
-
-- Load to Time: fixed (⌘T, smoke-checked).
-- Jump to a cue by number: fixed (⌘J, smoke-checked).
-- Renumber; add, rename and remove a cue list: the controls are written (⌘R, Settings ▸ Show) and have not been run by hand.
-- Hold as a transport key: fixed (H).
-- Comparing two saved versions: fixed (the Versions drawer compares any two; smoke-checked).
-- Show recording: switched on (● Rec in the mixer; the file is smoke-checked, not listened to). The monitor feed is a show setting (Settings ▸ Audio): metered, not heard.
-
-**Wrong or doubtful.**
-
-- Continue modes ignored below the top level and for any start other than GO: fixed, and tested. Inside a group they run in the two "start first" modes.
-- A Stop cue not clearing a pending auto-follow: fixed, and tested.
-- Load to Time on a cue with a pre-wait losing its offset: fixed, and tested.
-- A Mix cue's fader moves not shown on the mixer: fixed (the knob is labelled until Reset or a hand on it; smoke-checked).
-- Devamp doing nothing to a Start–End loop or a held region: fixed for a held or armed region (tested). A Start–End loop has not been checked.
-- A field written by a newer version being dropped on save: fixed for cues, and tested; settings were already kept.
-
-**Says one thing, does another.**
-
-- The engine's header and the Mix cue's summary saying Mix "turns ducking on or off": corrected.
-- `core/show/versions.ts` saying every edit is saved at once: corrected.
-- The "Endless Cues account" assistant provider: no longer offered (it shows only in a show already set to it).
-- `.ecshow` declared as a file type with nothing to open one: a handler is written for a show folder, a `show.json` and a `.qlab5`. Not run from the desktop in a packaged build.
-- `docs/specs/12-roadmap.md` listing built things as future: brought up to date (R18).
-- Settings ▸ Integrations ▸ Modules listing built things as planned (microphones and ducking, main and backup, video, MIDI controllers): corrected; only motion capture is listed.
-
-**Untested.** Now covered by a unit test: quantise to a beat or bar from a tempo, holds and counted loop regions, a fade out landing on an End at. Parts of the audio window are covered by smoke checks that use stand-in signals (output routing, a Mic cue, ducking, the recording, a bus's EQ). Still with no test (R16): Jump and its blends, seek, voice-band fades, Mix, the OSC trigger path, the random group mode, and a hotkey firing a cue. Nothing in the audio window has been checked by ear.
+- **Read by the engine, not by a show**: a blended Jump's match scores (`04-cue-engine.md` section 12). A field the cue-type table does not list is kept on save, not played (tested).
+- **Beat grids**: a tempo that changes within a track is found in sections on synthesised tracks only; the Jump blends' match scores are not made.
+- **Devamp** on a Start–End loop has not been checked (a held or armed region is tested).
+- **Opening a show from the desktop**: a handler is written for a show folder, a `show.json` and a `.qlab5`; not run from the desktop in a packaged build.
+- **Untested**: parts of the audio window are covered only by smoke checks that use stand-in signals (output routing, a Mic cue, ducking, the recording, a cue's eq). Nothing in the audio window has been checked by ear.
 
 ## What to do, in order
 
-1. **Run what is written and not run**, by hand, and fix what that finds: renumber, the cue-list controls, the right-click menu, the single keys T D W F, the keys that move a cue, S on a cue, relinking missing sounds, the Mix cue's mark on the mixer, the clock trigger firing, opening a show from the desktop. Bring the tracker, the roadmap and the Modules pane's "coming" list in line with the code.
+1. **Run what is written and not run**, by hand, and fix what that finds: the right-click menu, S on a cue, relinking missing sounds, the clock trigger firing, opening a show from the desktop.
 2. **Meet the hardware**: a MIDI interface, timecode equipment, a multi-output audio interface, a real microphone, a dimmer or a fixture on an Art-Net or sACN node, a lighting desk, a projector on a second display, two computers for main and backup; then QLab Remote, the Stream Deck plugin and Companion. Launch the app on Windows and on Linux. Sign the macOS build.
-3. **Write the tests that are still missing** (the last paragraph of "Found on our side").
+3. **Write the tests that are still missing** (the last line of "Open on our side").
 4. **What is left of sequencing**: hold-to-play on a cart button, triggers on a list, skip if disarmed, a Devamp that lands on the sample.
 5. **What is left of OSC**: levels as properties, the `/shallow` and `/uniqueIDs` forms, `/replyFormat`, MSC broadcast; and whatever trying the real remotes finds.
 6. **What is left of editing**: Record Cue Sequence, a timeline view of a group, rich-text notes, named presets for Paste Cue Properties.
 7. **What is left of audio depth**: trim on a cue, a fade's domain (slider, linear), a sample-exact envelope, a zoomed waveform that follows the playhead.
-8. **Audio beyond that**: plug-in effects, gangs, object audio. This probably needs a native audio engine behind the interface the cue engine already uses.
+8. **Audio beyond that**: plug-in effects, gangs, object audio, in the native audio engine ([18](18-native-audio.md)) behind the interface the cue engine already uses.
 9. **Timecode per list, editing from the web remote, collaboration.**
 10. **Video and lighting past their first slice**: more stages, masks, blending and warps, NDI and Syphon; a fixture library, fade curves, USB DMX. Each is still a product the size of everything above.

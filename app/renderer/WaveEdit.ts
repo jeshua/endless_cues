@@ -358,7 +358,7 @@ export function WaveEdit({ cue, duration, active, pin, onPick, locked = false, t
   };
   const addMarkerAt = (t: number) => { setMenu(null); const made: Marker[] = [...(cue.markers || []), { at: t, name: `Marker ${(cue.markers || []).length + 1}` }]; setCue(cue.id, { markers: moveMarker(made, made.length - 1, t, dur) }, 'add marker'); };
 
-  // ── the loop lane: drag a region's edge, or its middle to move it whole; a click holds it (as before) ──
+  // ── the loop lane: drag a region's edge, or its middle to move it whole; a click holds it ──
   const loopDown = (e: PointerEvent, i: number) => {
     e.stopPropagation();
     if (e.button !== 0) return;

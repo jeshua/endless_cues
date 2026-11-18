@@ -2,7 +2,7 @@
 
 ## What it is
 
-**A free, QLab-compatible cue list for running a show** (a puppet show, a play, a comedy night, a piece of digital art), with an assistant that helps build the show and connect its equipment (decided 2026-11-15).
+**A free, QLab-compatible cue list for running a show** (a puppet show, a play, a comedy night, a piece of digital art), with an assistant that helps build the show and connect its equipment.
 
 It is a show-control application for live performance. An operator sits in a booth with a list of cues and a GO button; pressing GO does the next thing: plays a sound, fades one, tells the lighting desk to go, starts a sequence. Endless Cues is that list, the engine that runs it, and the tools for building it.
 

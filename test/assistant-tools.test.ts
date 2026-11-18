@@ -56,7 +56,6 @@ test('the reference is the cue-type table: every type and field in brief, each i
   for (const op of Object.keys(OP_KEYS)) assert.ok(ref.includes(`"op": "${op}"`), op);
   // settings come from the show's own defaults, so a new one is known the day it exists: read_reference has every path
   for (const p of ['settings.midi.output', 'settings.midi.mscIn', 'settings.go.panicFade', 'modules.lighting-desk.enabled', 'out (routing', 'settings.light.instruments']) assert.ok(lookup('settings').text.includes(p), p);
-  assert.ok(lookup('settings').text.includes('settings.audio.duck.key="vocals"'), 'a duck\'s key is a bus, not a secret');
   TYPES.memo.fields.push({ key: 'madeUpToday', kind: 'text', label: 'Made up', help: 'A field that did not exist this morning.' });
   try {
     assert.match(reference(), /^memo — .*madeUpToday/m);

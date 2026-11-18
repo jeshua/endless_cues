@@ -2,7 +2,7 @@
  * The shape of a fade, and a sound's level envelope.
  *
  * A fade moves a level from where it is to where it is going; its SHAPE says how far along it is (0–1) at each
- * moment of its time (0–1). 'linear' is a straight line in dB (what every fade here was before shapes);
+ * moment of its time (0–1). 'linear' is a straight line in dB;
  * 's-curve' eases out of the start and into the end, so neither end of a long fade is heard as a corner; a custom
  * shape is a list of points [[x, y], …] from (0, 0) to (1, 1), joined by straight lines.
  *
@@ -88,7 +88,7 @@ function progressOf(shape: FadeShape | string | null | undefined, n = 65, from =
 
 /** An envelope as a cue keeps it: [[seconds, dB, bend?], …] in time order, levels between silence and +12. null:
  *  not one. (It is the Volume lane of core/audio/lanes.ts, where the arithmetic is; a point's third number bends the
- *  line to the next one, and an envelope with none is the straight lines in dB it always was.) */
+ *  line to the next one; with none, the lines are straight in dB.) */
 function cleanEnvelope(value: unknown) { return Lanes.cleanLane(value, Lanes.VOLUME); }
 
 /** The envelope's level (dB on the cue's own) at `t` seconds into the file. No envelope: 0, no change. */

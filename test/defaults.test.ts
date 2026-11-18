@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as show from '../core/show/show';
+import * as kinds from '../core/audio/kinds';
 import { TYPES, COMMON } from '../core/show/cue-types';
 import { importQlab } from '../core/import/qlab';
 import { rig } from './helpers';
@@ -15,7 +16,7 @@ import type { ShowDocument } from '../core/show/document';
 /** Everything a show can switch on that acts by itself, read from a document. */
 function clever(doc: ShowDoc) {
   const s = doc.settings, on: string[] = [];
-  if (s.audio.duck.on) on.push('ducking');
+  if (s.audio.ducking && s.audio.ducking.on) on.push('ducking');
   if (s.audio.monitor.on) on.push('the monitor feed');
   if (s.light.on) on.push('lighting output');
   if (s.timecode.source !== 'off') on.push('timecode chase');
@@ -52,7 +53,7 @@ test('a new cue of any type starts plain: no quantise, ducking, fading of others
 
 test('a show that has something switched on keeps it', () => {
   const doc = show.newShow('x');
-  doc.settings.audio.duck.on = true;
+  doc.settings.audio.ducking = { ...kinds.DUCKING, on: true };
   doc.settings.editing.longSoundsToMusic = true;
   doc.modules['web-remote'].enabled = true;
   const back = show.normalise(JSON.parse(show.stringify(doc))).doc;

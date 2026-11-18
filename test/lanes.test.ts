@@ -17,16 +17,16 @@ import type { LanePoint } from '../core/show/types';
 const near = (a: number, b: number, tol: number, what: string) => assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} is not within ${tol} of ${b}`);
 const spec = (id: string) => L.specOf(id, Chain.TOOLS);
 
-test('an old envelope reads and plays exactly as it did: straight lines in dB, held at both ends', () => {
+test('an envelope with no bends is straight lines in dB, held at both ends', () => {
   const env: LanePoint[] = [[0, 0], [2, -6], [4, -20], [9, 12]];
   assert.deepEqual(curves.cleanEnvelope(env), env, 'kept as it was written: no bend added');
   assert.strictEqual(curves.envelopeAt(env, 1), -3);
   assert.strictEqual(curves.envelopeAt(env, 3), -13);
   assert.strictEqual(curves.envelopeAt(env, -1), 0);
   assert.strictEqual(curves.envelopeAt(env, 99), 12);
-  // (the reading the audio window used to make by itself, before it read lanes.ts)
-  const old = (e: LanePoint[], t: number) => { if (t <= e[0][0]) return e[0][1]; for (let i = 1; i < e.length; i++) { const [t0, d0] = e[i - 1], [t1, d1] = e[i]; if (t <= t1) return d0 + (d1 - d0) * ((t - t0) / (t1 - t0)); } return e[e.length - 1][1]; };
-  for (let t = -0.5; t < 10; t += 0.137) assert.strictEqual(L.envelopeAt(env, t), old(env, t), `at ${t}`);
+  // (straight lines, worked out by hand)
+  const straight = (e: LanePoint[], t: number) => { if (t <= e[0][0]) return e[0][1]; for (let i = 1; i < e.length; i++) { const [t0, d0] = e[i - 1], [t1, d1] = e[i]; if (t <= t1) return d0 + (d1 - d0) * ((t - t0) / (t1 - t0)); } return e[e.length - 1][1]; };
+  for (let t = -0.5; t < 10; t += 0.137) assert.strictEqual(L.envelopeAt(env, t), straight(env, t), `at ${t}`);
 });
 
 test('a point may bend the line to the next: a positive bend starts slow, a negative one fast, and the ends stay put', () => {
@@ -133,7 +133,7 @@ test('an Audio cue hands its pan and its lines to the sound, and a Mic cue its p
   assert.deepEqual(o('a').automation, { pan: [[0, -40], [2, 40, 0.3]] });
   assert.deepEqual(o('a').envelope, [[0, -6]]);
   assert.strictEqual(o('m').pan, 25);
-  assert.ok(!('pan' in o('b')) && !('automation' in o('b')), 'a plain sound is played as it always was');
+  assert.ok(!('pan' in o('b')) && !('automation' in o('b')), 'a plain sound is played with no lines');
 });
 
 test('Run from here brings a sound back part way in, with its lines: they are read at the place it starts from', () => {
@@ -158,6 +158,6 @@ test('a QLab cue panned by its crosspoints between outputs 1 and 2 comes across 
   const [l, r] = L.panGains(-50);
   assert.deepEqual(panOfMatrix([{ 1: db(l), 2: db(r) }]), { pan: -50, db: 0 }, 'a mono file to both');
   assert.deepEqual(panOfMatrix([{ 1: db(l / 2) }, { 2: db(r / 2) }]), { pan: -50, db: -6 }, 'a stereo file, balanced, 6 dB down');
-  assert.strictEqual(panOfMatrix([{ 3: 0 }, { 4: 0 }]), null, 'other outputs: its own outputs, as before');
+  assert.strictEqual(panOfMatrix([{ 3: 0 }, { 4: 0 }]), null, 'other outputs: its own outputs, not a pan');
   assert.strictEqual(panOfMatrix([{ 1: 0, 2: 0, 3: 0 }]), null);
 });

@@ -107,8 +107,8 @@ The request was "a device as a small readable file in the show folder". **Device
   own would need every one of those again, and the review would become two reviews.
 - An untitled show has no folder yet, and must be able to have a device.
 - It is still a small readable block of text, in a file that diffs line by line.
-- Under `settings`, an older version of the app keeps what it does not know (`deepMerge` in `show.normalise`);
-  a new top-level key would be dropped by it.
+- Under `settings`, the app keeps what it does not know (`deepMerge` in `show.normalise`); an unknown top-level
+  key is not kept.
 
 Files in the show folder are for things that are not the show's state: the script, firmware, the agent guide.
 
@@ -122,8 +122,8 @@ Files in the show folder are for things that are not the show's state: the scrip
 }
 ```
 
-`defaultSettings()` gains `rig: { devices: [], checks: [], script: '' }`. No format version bump: nothing an
-older app would misread.
+`defaultSettings()` has `rig: { devices: [], checks: [], script: '' }`, and a rig with nothing in it is not
+written (`stringify`).
 
 ### 3.2 A device
 
@@ -215,7 +215,7 @@ This is that file's `compose`, moved to work on a device in a show; the two shar
 
 | Already there | What happens to it |
 |---|---|
-| **Network patches** (`settings.network.patches`) | Stay, unchanged, and old shows open and play as before. A network device is *also a patch to the hub*: the host gives the hub `devices` beside `patches`, and anything that sends to a patch id may name a device id (so a raw Network cue's `patch` may be a device: "a raw Network cue still works"). One thing differs on purpose: a Network cue with no patch chosen goes to "the only patch" counting **patches only**, so adding a device never re-aims an old cue. Settings ▸ Integrations ▸ Network keeps its patches and gains one line pointing at the Rig. A patch can be **made a device** in one edit (same id, so every cue that named the patch still does; its model's commands copied in): `device.add` with the patch's id plus `show.set` removing the patch, in one batch (the rule that a device and a patch may not share an id is checked on the batch as a whole, as `settingsTrouble` is, so the two may come in either order). |
+| **Network patches** (`settings.network.patches`) | Stay, unchanged: a show's patches open and play as they are. A network device is *also a patch to the hub*: the host gives the hub `devices` beside `patches`, and anything that sends to a patch id may name a device id (so a raw Network cue's `patch` may be a device: "a raw Network cue still works"). One thing differs on purpose: a Network cue with no patch chosen goes to "the only patch" counting **patches only**, so adding a device never re-aims an old cue. Settings ▸ Integrations ▸ Network keeps its patches and gains one line pointing at the Rig. A patch can be **made a device** in one edit (same id, so every cue that named the patch still does; its model's commands copied in): `device.add` with the patch's id plus `show.set` removing the patch, in one batch (the rule that a device and a patch may not share an id is checked on the batch as a whole, as `settingsTrouble` is, so the two may come in either order). |
 | **Device templates** (`core/net/devices.ts`) | Become **models**: what a new device is started from. The table gains two entries (the kit's props) and each entry gains optional `kind`, `alive` and `reports`. A patch's `device` field and the inspector's "Write the message" keep working as they do. |
 | **The lighting-desk module** and Light cues | Unchanged. It is how an operator *calls* light cues and has the desk follow. A desk may also be a device (for a Rig row, Try, and commands other than "fire"); the module's own status is a Rig row either way. Merging the two is not v1. |
 | **The monitor** | Unchanged, plus: asks and their replies stay out of it (first reply after a silence excepted); an entry keeps who it came from as `from: { address, port }`; `core/rig/senders.ts` groups what unknown senders have sent, for "is this your prop?". |
@@ -413,7 +413,7 @@ There are three classes, and only three:
 
 - **Read**: happens at once, changes nothing, sends nothing to any equipment.
 - **Proposal**: goes into the turn's draft and reaches the show only through `propose_changes` and a person's
-  Accept. There is one review card. It now has up to three parts: cues, devices and settings, files.
+  Accept. There is one review card. It has up to three parts: cues, devices and settings, files.
 - **Ask**: one "are you there?" sent to equipment, at once, under the rules below. This is the single new power.
 
 | Thing | Class | Notes |
@@ -601,10 +601,9 @@ The drawer shows, under the show's own line, four choices as rows, in this order
 | **A model on this computer** | "Ollama. Free and offline. Small models often cannot do this well." | Opens Settings ▸ Assistant on Ollama. |
 | **The built-in helper** | "No model, no internet, nothing sent anywhere. It does a few jobs: cues from a folder, adding a device, a cue for a command, “is everything ready?”." | Sets the provider to `demo`. Ready at once. |
 
-If Codex is found and Claude Code is not, it takes Claude Code's place. *Changed 2026-11-16:* the **Endless Cues
-assistant** ("free during the beta") is now the first row; choosing it signs in ([17](17-service-protocol.md)). Under the rows, one line: "Everything else in Endless Cues works without any of
-these." The provider's id stays `demo`; its name on screen becomes **Built-in helper**, since with this spec it
-does real work.
+If Codex is found and Claude Code is not, it takes Claude Code's place. The **Endless Cues
+assistant** ("free during the beta") is the first row; choosing it signs in ([17](17-service-protocol.md)). Under the rows, one line: "Everything else in Endless Cues works without any of
+these." The provider's id is `demo`; its name on screen is **Built-in helper**.
 
 #### 4.6.2 The built-in helper's turns
 
@@ -1103,8 +1102,8 @@ the app working with no hardware. It is the stand-in for the unit tests (loopbac
 **Must not touch.** `core/assistant/`, `core/kit/`, `core/engine/cue-engine.ts` (the engine does not change),
 `app/renderer/`, `app/main/main.ts`, `app/audio/`, the importer.
 
-**Tests.** Unit: a device round-trips through `normalise` and `stringify`; an old show (the fixture
-`test/fixtures/before-kinds.ecshow`) opens, plays and saves byte-for-byte as before, with patches untouched;
+**Tests.** Unit: a device round-trips through `normalise` and `stringify`; a show with no devices
+writes no rig, and opens, plays and saves unchanged, with patches untouched;
 every sentence of `trouble`; `compose` (defaults, ranges, enums, fade, quotes); the three operations, and
 `show.set` on the device list refused; a patch made a device in one batch keeps every cue aimed at it; a
 Device cue on a fake engine sends the composed message to the device, fades a value, is broken when its device
@@ -1253,11 +1252,11 @@ ports, so the rule about not running `theo` beside a running show covers `june` 
 | A device kept as its own file, to copy between shows | 3.1. An "export this device" file is the right later form. |
 | The assistant in Show mode, even to answer a question | It is disabled there today; changing that deserves its own decision. The Rig page works in Show mode without it. |
 | Writing marks into a script; regenerating cues from one | 3.8. |
-| Patches and the lighting-desk module folded into devices | Would touch every old show. They sit side by side. |
+| Patches and the lighting-desk module folded into devices | Would change every show's patches. They sit side by side. |
 | A drawn diagram of the rig | Needs a layout per show. |
-| Discovery of anything but kit props (mDNS, Art-Net nodes as devices, a sweep) | A sweep of the network made a printer print in the first show. One hello to one port is all v1 sends. |
+| Discovery of anything but kit props (mDNS, Art-Net nodes as devices, a sweep) | A sweep of the network can make a printer print. One hello to one port is all v1 sends. |
 | Disk space and mains power on the Rig | Worth having; platform-specific; not tonight. |
-| The hosted assistant | Built 2026-11-16 ([17](17-service-protocol.md)). |
+| The hosted assistant | Its own spec: [17](17-service-protocol.md). |
 
 ### Not verified until there is equipment
 

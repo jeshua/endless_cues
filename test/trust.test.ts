@@ -37,7 +37,7 @@ test('trust: a folder reached through a link is the same folder, and case does n
   assert.notEqual(trust.keyOf('/shows/A.ecshow', 'linux'), trust.keyOf('/shows/a.ecshow', 'linux'));
 });
 
-test('trust: the record keeps the newest shows, and a computer’s first record takes its recent shows as its own', () => {
+test('trust: the record keeps the newest shows', () => {
   let rec = {};
   for (let i = 0; i < trust.KEEP + 5; i++) rec = trust.remember(rec, `/shows/s${i}.ecshow`, `id${i}`);
   assert.equal(Object.keys(rec).length, trust.KEEP);
@@ -45,10 +45,6 @@ test('trust: the record keeps the newest shows, and a computer’s first record 
   assert.equal(trust.isMine(rec, `/shows/s${trust.KEEP + 4}.ecshow`, `id${trust.KEEP + 4}`), true);
   rec = trust.remember(rec, '/shows/s10.ecshow', 'id10');
   assert.equal(Object.keys(rec).at(-1), trust.keyOf('/shows/s10.ecshow'), 'remembered again: the newest');
-  const first = trust.firstRecord({ recent: ['/shows/a.ecshow', '/shows/b.ecshow'], lastShow: '/shows/c.ecshow' });
-  for (const d of ['a', 'b', 'c']) assert.equal(trust.isMine(first, `/shows/${d}.ecshow`, 'any id'), true, d);
-  assert.equal(trust.isMine(first, '/shows/d.ecshow', 'any id'), false);
-  assert.deepEqual(trust.firstRecord({}), {});
 });
 
 test('trust: another computer’s paths are \\\\host\\share and //host/share (and Windows’s \\\\?\\ forms)', () => {

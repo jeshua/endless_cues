@@ -71,7 +71,7 @@ test('a Fade cue uses its rising shape for a level going up and its falling shap
   assert.deepEqual(d.fades.at(-1)!.slice(4), [[[0, 0], [0.5, 0.9], [1, 1]], 0]);
 });
 
-test('a fade with no shape is sent exactly as it always was', () => {
+test('a fade with no shape is sent as a plain fade: no shape with it', () => {
   const s = fadeShow({ db: -30 });
   const r = rigAll(s.doc);
   r.engine.go(); r.engine.go();
@@ -120,7 +120,7 @@ test('an Audio cue hands its envelope to the sound; an emptied one is taken off 
   const plain = fadeShow();
   const p = rigAll(plain.doc);
   p.engine.go();
-  assert.deepEqual(Object.keys(p.audio.calls[0][2]).sort(), ['bus', 'exact', 'file', 'from', 'gainDb', 'loop'], 'a plain cue is played exactly as before');
+  assert.deepEqual(Object.keys(p.audio.calls[0][2]).sort(), ['bus', 'exact', 'file', 'from', 'gainDb', 'loop'], 'a plain cue is played with nothing more');
 });
 
 // ── rate ────────────────────────────────────────────────────────────────────

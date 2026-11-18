@@ -51,7 +51,7 @@ export interface AudioCommands {
   bus: { name: string; db: number; secs?: number };
   buses: { list?: { id: string; db?: number; out?: number; reverb?: number; delay?: number }[] };
   duck: { bus?: string; db: number; secs?: number; range?: string };
-  ducker: { rules?: DuckerRule[] | null; on?: boolean; key?: string; target?: string; threshold?: number; depth?: number; attack?: number; hold?: number; release?: number; range?: string };
+  ducker: { rules?: DuckerRule[] | null };
   monitor: { on?: boolean; out?: number; db?: number };
   outputs: { trims?: Record<string, number>; use?: number[] };
   fx: Partial<ReturnType<typeof routingOf>['fx']>;

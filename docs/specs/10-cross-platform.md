@@ -23,14 +23,14 @@ Electron gives the same Chromium (so the same Web Audio engine, decoding and dev
 | Sleep | `powerSaveBlocker` | same | same (depends on the desktop) | `main.ts` |
 | Never-take-focus test runs | activation policy `accessory` | `showInactive` only | `showInactive` only | `main.ts`, `smoke.ts` |
 
-Read for and fixed in the code without being run there (2026-11-15), so each is still to be seen working:
+Written for Windows and Linux from reading the code, without being run there, so each is still to be seen working:
 
 - **One copy of the app.** Windows and Linux start a second process when a show is opened while the app is running (macOS sends `open-file` to the first). `main.ts` takes the single-instance lock there, and the second hands its path to the first (`second-instance`) and quits.
 - **A show named on the command line** may end in `\`, or be the `show.json` inside the folder (a folder cannot be given an app to open with on Windows or Linux): `showArg`.
-- **Closing the main window quits** (asking about unsaved changes and sound still playing, as Quit does). The hidden audio window used to keep the app alive with nothing to click on, and `window-all-closed` never fired.
-- **Shortcut labels**: every tooltip and message that names a shortcut goes through `keys()`, which now also writes ⌥ and ⇧ as Alt+ and Shift+; key caps in Settings ▸ Keys are spelled out off the Mac.
+- **Closing the main window quits** (asking about unsaved changes and sound still playing, as Quit does), so the hidden audio window never keeps the app alive with nothing to click on.
+- **Shortcut labels**: every tooltip and message that names a shortcut goes through `keys()`, which also writes ⌥ and ⇧ as Alt+ and Shift+; key caps in Settings ▸ Keys are spelled out off the Mac.
 - **About** is under Help where there is no app menu.
-- **`npm install`**: the `postinstall` step (clearing a quarantine flag on macOS) was a shell line that `cmd.exe` cannot run; it is now a Node one-liner that does nothing off the Mac.
+- **`npm install`**: the `postinstall` step (clearing a quarantine flag on macOS) is a Node one-liner, which `cmd.exe` can run, and does nothing off the Mac.
 - The `ec://` handler refuses a path beside the renderer folder as well as above it (`RENDERER + path.sep`).
 
 Only a person at that computer can check:
@@ -62,10 +62,10 @@ Things to check on first contact with each platform (none verified):
 1. **The icon on every platform.** `build/mark.ts` writes `build/icon.png` (1024 px) and `build/icon.icns` (macOS, with heavier drawings at 16 and 32 px); `electron-builder` derives the Windows icon from the PNG. Not yet checked: how it reads at 16 px in a Windows taskbar, and the Linux icon set.
 2. **Signing and notarisation (macOS).** An Apple Developer ID certificate and notarisation credentials in CI. Unsigned, Gatekeeper refuses the app on anyone else's Mac, and macOS ties the Local Network permission to the signature (an app whose signature is broken shows the permission as granted and still cannot reach the network).
 3. **Signing (Windows).** A code-signing certificate, or SmartScreen warns on every install.
-4. **Auto-update.** `electron-updater` against GitHub Releases. A show computer must never update itself mid-run: updates are offered, never applied without being asked, and never while a show is open in Show mode.
+4. **Auto-update.** `electron-updater` against downloads.endlesscues.com ([`RELEASING.md`](../RELEASING.md)). A show computer must never update itself mid-run: updates are offered, never applied without being asked, and never while a show is open in Show mode.
 5. **File association.** A show is a folder. On macOS it is a package the app owns: `com.endlesscues.show`, an exported type conforming to `com.apple.package` (`mac.extendInfo.UTExportedTypeDeclarations`), and the `.ecshow` document type with `isPackage` (`LSTypeIsPackage`), so Finder shows a show as one file with the document icon and a double-click opens it. Checked on an unsigned `--dir` build registered with `lsregister`: `mdls` gives `kMDItemContentType = com.endlesscues.show` (tree: `com.apple.package`, `public.composite-content`, `public.directory`), Kind "Endless Cues Show", NSWorkspace names the build as the app to open it, and `open` delivered the open-documents event to it. File ▸ Open takes the package, a plain show folder or its `show.json` (`core/show/picked.ts`); the pickers for sounds, pictures and a folder to search look inside packages, so a show's `media/` is still reachable (as is Finder's Show Package Contents). Windows and Linux cannot make a folder one file. The cross-platform answer is a single-file export (`.ecshowz`, a zip of the folder) for sending a show to someone, with the folder remaining the working form.
-6. **A second name.** The app this grew from is also called "Endless Cues" and is installed on the original show's computers under a different bundle id. They do not share settings, but two apps with one name on one Mac is confusing; that install should be renamed when this one ships.
+6. **A second name.** The show app this grew from is also called "Endless Cues" and is installed on the original show's computers under a different bundle id. They do not share settings, but two apps with one name on one Mac is confusing; that install should be renamed when this one ships.
 
 ## Why Electron
 
-It is the only stack that gives one audio-capable, hardware-accelerated UI runtime on three platforms with no native code, today. The costs are known: ~300 MB installed, Chromium's memory, and an audio engine that tops out at what Web Audio can do. The architecture is arranged so those costs are contained: the engine is plain Node (it can run headless), and the audio backend is an interface (it can become a native sidecar). [ADR 0001](../adr/0001-electron-no-build.md).
+It is the only stack that gives one audio-capable, hardware-accelerated UI runtime on three platforms with no native code, today. The costs are known: ~300 MB installed, Chromium's memory, and Web Audio's ceiling. The architecture is arranged so those costs are contained: the engine is plain Node (it can run headless), and the audio backend is an interface, which the native engine also speaks ([18](18-native-audio.md)). [ADR 0001](../adr/0001-electron.md).

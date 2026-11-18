@@ -52,7 +52,7 @@ Only `DUCK_HOLD`, `PANIC_FADE` and `SYNC_LEAD` are exported, with `CueEngine`, `
 
 ## 2. The document the engine plays
 
-`load(doc)` takes `{ format: 'ec-cuelist', lists: [{ name, cues: [...] }] }` (the legacy `'ef-cuelist'` is also accepted). It throws on anything else, on two cues with one id, and on a truthy `target` that is not in the list. A reload keeps the playhead on the same cue if it is still a top-level cue of the current list, cancels waits and fades of cues that no longer exist, and leaves sounds playing (a sound whose cue has gone carries on until stopped). `armed: false` puts a cue in the disarmed set, unless the operator has flipped that cue by hand since launch (`armTouched`).
+`load(doc)` takes `{ format: 'ec-cuelist', lists: [{ name, cues: [...] }] }`. It throws on anything else, on two cues with one id, and on a truthy `target` that is not in the list. A reload keeps the playhead on the same cue if it is still a top-level cue of the current list, cancels waits and fades of cues that no longer exist, and leaves sounds playing (a sound whose cue has gone carries on until stopped). `armed: false` puts a cue in the disarmed set, unless the operator has flipped that cue by hand since launch (`armTouched`).
 
 `toEngineDoc(showDoc)` (`core/show/show.ts`) makes that document from a show file. Per cue it:
 
@@ -255,22 +255,11 @@ Per running sound the engine keeps `region` (the section looping now, or about t
 - **`seek(id, t)`**: moves a running or paused sound to `t` (clamped to the file). A seek out of the held region drops the region; past an armed hold promotes the next; back from a tail fade restores the level. Memo siblings in its group are re-timed from the new place (ones behind are dropped). Tails are rescheduled.
 - **`moveOnGrid(id, t, { grid = 'downbeats', secs = 0 })`**: a skip (or, with `secs`, a crossfade) that leaves on the track's OWN next bar line (`'beats'`: beat), for the Playing strip's markers "on the bar". The track plays on; `SYNC_LEAD` before the line the move is handed to `moveTrack` as a Jump on the bar is (a 30 ms cut, or a fade centred on the line). Going round a held section, the next of that section's own lines. With no grid on the track, paused, stretched or past its last line it goes now (`seek` / `fadeTo`). Asked again before it went, the last one asked for wins; a track stopped or paused while it waits is not moved. Returns `{ wait, at }`, `{ wait: 0 }` or null (not playing). Host: `seek` / `fadeto` with `on: 'bar' | 'beat'`.
 
-## 12. Inherited: what was decided
+## 12. Read by the engine, not yet by a show
 
-The engine came from the show it was first built for, and read fields no show file could carry. Each was either given a field in the cue-type table or taken out.
+A blended Jump's `landings` and `onBeat: 'best'`: precomputed scores of how well each bar leaves for each landing, so a jump could pick the bar that matches best. The cue-type table has no field for them, so no show reaches them: they are the consumer of match scores, which are still to be made (the tracker's beat-grid line). If they are not, they go.
 
-| Feature | What it was for | Decision |
-|---|---|---|
-| A Jump's `loopFrom` | Land, play on, and loop from a later point to `end`. | A field on the Jump cue ("Loop from"). |
-| Stanza chains (`stanza`, `ring`, `after`, `afterGap`, `afterVoice`, `gapHold` / `gapShift` / `gapNow` / `chainJump`, `poem()`) | Spoken stanzas that followed each other, each a gap after the last one's voice ended, the gaps held or stretched live by the operator. | Taken out. A "start first" group with auto-follow and post-waits plays such a sequence; nothing in the app showed or moved the gaps. |
-| `after` / `afterWait` on a group's child | Start a child when a sibling sound ended, rather than with the group. | Taken out with the chains. Auto-follow inside a "start first" group does it; a Devamp's `startNext` covers "when the loop ends". |
-| `preWait: 'audio'` | A duck's return, timed to the longest sound fired beside it. | Taken out. `duckOthers` on the cue that speaks does the whole duck. |
-| `withScene` on a Jump's hold | A hold armed by its scene's GO: skipped when the scene was loaded past it, re-armed when a Jump restarted a silent track. | Taken out. A track restarted by a Jump keeps the loop regions it goes round by itself (those with a count or `hold`), which is the same protection from the Audio cue's own regions. |
-| A Group with `lq: true` | A light cue, before there was a Light cue type. | Taken out. |
-| The `visuals` hook and `visuals` cues | An outside visuals timeline kept in step with a sound (start, pause, seek, stop). | Taken out. The host never passed a hook. |
-| A blended Jump's `landings` and `onBeat: 'best'` | Precomputed scores of how well each bar leaves for each landing, so a jump could pick the bar that matches best. | Kept, unreachable for now: it is the consumer of match scores, which are still to be made (tracker R9). If they are not, this goes too. |
-
-Still inherited and in use: **the `/mix` id convention.** `busOf(cue)` returns the cue's `bus` if it has one; otherwise `'music'` when the cue's id ends in `/mix` and `'effects'` if not. `toEngineDoc` always sets `bus`, so the convention only applies to documents loaded directly. `holdTarget()` still uses the `music` bus to pick the track Hold acts on.
+An audio cue with no `bus` plays on `effects` (`busOf`); `toEngineDoc` always sets one. `holdTarget()` uses the `music` bus to pick the track Hold acts on when no running track has sections.
 
 ## 13. What the UI reads
 

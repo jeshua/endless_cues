@@ -88,7 +88,7 @@ function aShow() {
  *  a sender with no passcode may not edit, and over UDP only a sender that has connected is answered) */
 type RemoteConfig = Parameters<ReturnType<typeof oscControl.create>['start']>[0];
 const ALL = { code: '7777', view: true, edit: true, control: true };
-const ownCodes = (config: RemoteConfig) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
+const ownCodes = (config: RemoteConfig) => Array.isArray(config.passcodes) && config.passcodes.length > 0;
 function remote(host: FakeHost, config: RemoteConfig = {}) {
   const m = oscControl.create({ log() {}, changed() {}, host: host as unknown as HostApi });
   const mine = ownCodes(config);
@@ -334,11 +334,11 @@ test('OSC control: passcodes grant view, edit and control apart; the no-passcode
   assert.equal(closed.say('/connect').reply.data, 'badpass');
   assert.equal(closed.from(6, true).say('/cue/1/name').reply.status, 'denied');
   assert.equal(closed.say('/version').reply.data, '5.0.0', '/version answers whoever asks');
-  // the older single passcode still grants everything; no passcode at all lets anyone view and run the show, never edit it
-  assert.equal(remote(fakeHost(s.doc), { passcode: 'abc' }).say('/connect abc').reply.data, 'ok:view|edit|control');
+  // a passcode with every level grants everything; no passcode at all lets anyone view and run the show, never edit it
+  assert.equal(remote(fakeHost(s.doc), { passcodes: [{ code: 'abc', view: true, edit: true, control: true }] }).say('/connect abc').reply.data, 'ok:view|edit|control');
   assert.deepEqual(oscControl.accessOf({}).none, { view: true, edit: false, control: true });
   assert.deepEqual(oscControl.accessOf({ noPasscode: { view: true, edit: true, control: true } }).none, { view: true, edit: false, control: true }, 'a row that says edit is not taken at its word');
-  assert.deepEqual(oscControl.accessOf({ passcode: 'x' }).none, { view: false, edit: false, control: false });
+  assert.deepEqual(oscControl.accessOf({ passcodes: [{ code: 'x', view: true, edit: true, control: true }] }).none, { view: false, edit: false, control: false });
 });
 
 test('OSC control: wrong passcodes make the next try wait, longer each time', () => {

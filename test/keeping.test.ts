@@ -90,15 +90,15 @@ test('settings travel as a file: imported as one checked edit, and the show keep
   from = applyOps(from, [
     { op: 'show.set', path: 'settings.audio.buses', value: [{ id: 'music', name: 'Band', db: -3, out: 3 }, { id: 'effects', name: 'FX', db: 0 }] },
     { op: 'show.set', path: 'settings.network.patches', value: [{ id: 'desk', name: 'Desk', host: '10.0.0.9', port: 8000 }] },
-    { op: 'show.set', path: 'modules.osc-control', value: { enabled: true, passcode: '1111' } },
+    { op: 'show.set', path: 'modules.osc-control', value: { enabled: true, passcodes: [{ code: '1111', view: true, edit: true, control: true }] } },
   ]).doc;
   const file = JSON.parse(JSON.stringify(templates.settingsOf(from)));
-  assert.equal(file.modules['osc-control'].passcode, '');
-  const mine = applyOps(sample(), [{ op: 'show.set', path: 'modules.osc-control.passcode', value: '9999' }]).doc;
+  assert.equal(file.modules['osc-control'].passcodes, '');
+  const mine = applyOps(sample(), [{ op: 'show.set', path: 'modules.osc-control.passcodes', value: [{ code: '9999', view: true, edit: true, control: true }] }]).doc;
   const r = applyOps(mine, templates.settingsOps(file, mine));
   assert.deepEqual(r.doc.settings.audio.buses.map((b) => [b.id, b.name, b.out]), [['music', 'Band', 3], ['effects', 'FX', undefined]]);
   assert.equal(r.doc.settings.network.patches[0].host, '10.0.0.9');
-  assert.deepEqual([r.doc.modules['osc-control'].enabled, r.doc.modules['osc-control'].passcode], [true, '9999']);
+  assert.deepEqual([r.doc.modules['osc-control'].enabled, (r.doc.modules['osc-control'].passcodes || [])[0].code], [true, '9999']);
   assert.equal(r.doc.lists[0].cues.length, 2, 'the cues are not touched');
   assert.throws(() => templates.settingsOps({ format: 'endless-cues-show' }, mine), /not an Endless Cues settings file/);
   // a file with a setting this app cannot hold is refused whole

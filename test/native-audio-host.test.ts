@@ -165,7 +165,7 @@ function routed() {
 }
 const level = (voices: number): AudioEvent => ({ type: 'level', channels: [], buses: {}, voices });
 
-test('the host on Web Audio: everything goes to the window, as before', () => {
+test('the host on Web Audio: everything goes to the window', () => {
   const r = routed();
   r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav' });
   assert.equal(r.toWindow.length, 0, 'nothing before the window is ready');

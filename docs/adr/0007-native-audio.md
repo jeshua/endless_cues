@@ -54,4 +54,4 @@ child when this computer chooses it (Settings ▸ Audio ▸ Audio engine, `audio
   milliseconds what the audio thread then does to the sample.
 - **Tauri (a Rust shell in place of Electron).** The whole app moved for the sake of one part of it: the window, the
   stage, the web remote and every page would change, and the system web views it uses differ per platform, which
-  Electron's one Chromium spares us ([0001](0001-electron-no-build.md)).
+  Electron's one Chromium spares us ([0001](0001-electron.md)).

@@ -5,7 +5,6 @@ import { html, useState, useEffect, useRef, cmd, edit, setCue, cx } from './lib.
 import type { State, Info, CueIndex } from './lib.js';
 import type { Bus, Settings } from '../../core/show/types';
 import type { DuckUnder } from '../../core/audio/kinds';
-import type { ComponentType } from 'preact';
 
 const set = (path: string, value: unknown, label?: string) => edit([{ op: 'show.set', path, value }], label || path.split('.').pop());
 
@@ -43,7 +42,7 @@ export function BusKinds({ s, info }: { s: State; info: Info }) {
       <div class="tr dim" style="grid-template-columns:minmax(60px,1fr) 112px 104px 112px 84px 112px;font-size:11.5px"><span>Bus</span><span>Kind</span><span>A stop fades over</span><span>One at a time, over</span><span>Never ducked</span><span></span></div>
       ${buses.map((b, i) => { const k = kinds[b.id] || 'effects'; return html`<div class="tr" style="grid-template-columns:minmax(60px,1fr) 112px 104px 112px 84px 112px" key=${b.id} data-bus-kind=${b.id}>
         <span>${b.name}</span>
-        <select data-kind=${b.id} style="width:100%" value=${k} title=${S.kinds[k].what} onChange=${(e: Event) => choose(i, (e.target as HTMLSelectElement).value)}>${S.kindOrder.map((x: string) => html`<option key=${x} value=${x}>${S.kinds[x].label}${!b.kind && x === k ? ' (from its name)' : ''}</option>`)}</select>
+        <select data-kind=${b.id} style="width:100%" value=${k} title=${S.kinds[k].what} onChange=${(e: Event) => choose(i, (e.target as HTMLSelectElement).value)}>${S.kindOrder.map((x: string) => html`<option key=${x} value=${x}>${S.kinds[x].label}</option>`)}</select>
         <span class="with-unit"><${Box} data-stopfade=${b.id} placeholder="off" value=${(b.stopFade ?? 0) > 0 ? String(b.stopFade) : ''} title="A stopped sound fades out over this. Empty: a cut" onCommit=${(t: string) => time(i, 'stopFade', t, `${b.name} stop fade`)} /><span class="dim">s</span></span>
         <span class="with-unit"><${Box} data-oneatatime=${b.id} placeholder="off" value=${(b.oneAtATime ?? 0) > 0 ? String(b.oneAtATime) : ''} title="A new sound crossfades with the one playing. Empty: they overlap" onCommit=${(t: string) => time(i, 'oneAtATime', t, `${b.name} one at a time`)} /><span class="dim">s</span></span>
         <span title="Not dipped by “Duck others while running”"><button class=${cx('switch', b.noDuck && 'on')} data-noduck=${b.id} onClick=${() => save(buses.map((x, j) => { if (j !== i) return x; const { noDuck, ...rest } = x; return noDuck ? rest : { ...rest, noDuck: true }; }), `${b.name} never ducked`)}></button></span>
@@ -55,15 +54,9 @@ export function BusKinds({ s, info }: { s: State; info: Info }) {
 type DuckingBy = NonNullable<Settings['audio']['ducking']>;
 
 const UNDER = [['music', 'Music'], ['ambience', 'Ambience'], ['effects', 'Effects']];
-/** Settings ▸ Audio: ducking. A show with ducking by kind: which kinds dip under voices, each by its own depth and
- *  times. A show from before kinds: its one pair (`Old`, the card it always had), and the offer to change over. */
-export function Ducking({ s, info, Old }: { s: State; info: Info; Old: ComponentType<{ s: State }> }) {
-  const S: SoundTables = info.sound, a = s.doc.settings.audio, d: DuckingBy | null = s.mixer.duckingBy;
-  if (!d) {
-    return html`<${Old} s=${s} />
-      <div class="setting" data-duck-convert><div class="txt"><b>Ducking by kind</b><span>Music and ambience dip under every voice and live bus.</span></div>
-        <div class="ctl"><button class="btn" onClick=${() => cmd({ op: 'ducking-by-kind' })}>Duck by kind instead</button></div></div>`;
-  }
+/** Settings ▸ Audio: ducking by kind: which kinds dip under voices, each by its own depth and times. */
+export function Ducking({ s, info }: { s: State; info: Info }) {
+  const S: SoundTables = info.sound, a = s.doc.settings.audio, d: DuckingBy = s.mixer.duckingBy;
   const up = (path: string, v: unknown) => set(`settings.audio.ducking.${path}`, v, 'ducking');
   const names = (kinds: string[]) => a.buses.filter((b) => kinds.includes(((s.mixer.kinds || {}) as Record<string, string>)[b.id])).map((b) => b.name);
   const num = (kind: string, k: keyof Under, text: string, lo: number, hi: number) => { const n = Number(String(text).trim().replace('−', '-')); if (String(text).trim() === '' || !Number.isFinite(n)) return; const cur = d.under[kind] || S.ducking.under[kind] || S.ducking.under.music; set('settings.audio.ducking.under', { ...d.under, [kind]: { ...cur, [k]: Math.max(lo, Math.min(hi, k === 'depth' ? -Math.abs(n) : n)) } }, 'ducking'); };

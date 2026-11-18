@@ -41,9 +41,8 @@
  *    counts down in Active Cues, which is what makes the sections of a track visible;
  *    Network sends one OSC message; Mix moves the mixer's buses (music, effects, vocals;
  *    voices = the live mics) over its `duration` (the host's `mix` hook does it).
- *  - Every audio cue plays on a bus: `music` (a scene's music track, the `/mix`
- *    cues) or `effects` (everything else), unless it names its own `bus` (`vocals`: a
- *    recorded vocal track, on a fader of its own).
+ *  - Every audio cue plays on the bus it names (`bus`), or on `effects` when it names
+ *    none.
  *  - A cue with `armed: false` starts disarmed; toggleArm() flips it live.
  *  - Panic (Esc) fades everything out over PANIC_FADE; again within PANIC_HARD_WINDOW
  *    it stops everything dead. Pause All / Resume All, pause one cue, Reset (stop
@@ -413,7 +412,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
   /** Load a cue list document (format 'ec-cuelist'; show.ts's toEngineDoc makes one). Keeps the playhead on the same
    *  cue when it is still there, so a regenerated list does not lose the place. */
   load(doc: EngineDoc) {
-    if (!doc || (doc.format !== 'ec-cuelist' && doc.format !== 'ef-cuelist') || !Array.isArray(doc.lists)) {
+    if (!doc || doc.format !== 'ec-cuelist' || !Array.isArray(doc.lists)) {
       throw new Error('not a cue list document');
     }
     this.lists = doc.lists;
@@ -873,7 +872,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
     this.changed();
   }
 
-  /** The track Hold acts on: the newest running one that has sections, else the newest music track (a `/mix` cue). */
+  /** The track Hold acts on: the newest running one that has sections, else the newest one on the music bus. */
   holdTarget() {
     let best = null;
     for (const [id, r] of this.running) {
@@ -2560,10 +2559,9 @@ class CueEngine extends EventEmitter<EngineEvents> {
 interface CueEngine extends Sequencing, SoundKinds {}
 Object.assign(CueEngine.prototype, sequencing({ SILENT_DB }), soundKinds({ SILENT_DB, busOf }));
 
-/** The bus an audio cue plays on: a scene's music, or everything else. */
+/** The bus an audio cue plays on: its own, or effects. */
 function busOf(cue: { id: string; bus?: string }) {
-  if (typeof cue.bus === 'string' && cue.bus) return cue.bus;
-  return /\/mix$/.test(cue.id) ? 'music' : 'effects';       // (the id convention of lists made before buses were named)
+  return typeof cue.bus === 'string' && cue.bus ? cue.bus : 'effects';
 }
 
 /** A cue the operator only calls (a lighting cue): skipped as a stop while light cues are off. */

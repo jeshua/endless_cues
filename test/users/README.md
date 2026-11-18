@@ -1,6 +1,6 @@
 # Virtual users
 
-*A development note: the harness that has coding agents play invented users. It tests nothing in `npm test`; its reports are in [`docs/internal/usability/`](../../docs/internal/usability).*
+*A development note: the harness that has coding agents play invented users. It tests nothing in `npm test`; its reports are collected into `docs/internal/usability/<run>/`.*
 
 Five invented people, each with a different kind of show, most coming from QLab. An agent stands in for each one, uses the app through its window the way that person would, and writes a usability report. The reports are gathered into one page under `docs/internal/usability/`.
 

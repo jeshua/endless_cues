@@ -64,7 +64,7 @@ import type { HostCommand, HostResult, ModuleContext, ModuleField, ViewDoc } fro
 type Level = 'view' | 'edit' | 'control';
 type Perms = Record<Level, boolean>;
 /** The module's settings (the show's modules['osc-control']). */
-interface Config { passcode?: string | number | null; passcodes?: Passcode[]; noPasscode?: Partial<Perms> | null; replyPort?: number | string | null }
+interface Config { passcodes?: Passcode[]; noPasscode?: Partial<Perms> | null; replyPort?: number | string | null }
 /** A sender, as the module remembers it. */
 interface Client {
   until: number; perms: Perms | null; connected: boolean; address: string; updates: boolean; keep: boolean; send: HubReply;
@@ -98,7 +98,7 @@ class Denied extends Error { level: Level; constructor(level: Level) { super(`th
 
 /**
  * Who may do what, from the module's settings:
- *   passcodes    [{ code, view, edit, control }]   (and the older single `passcode`, which grants everything)
+ *   passcodes    [{ code, view, edit, control }]
  *   noPasscode   { view, control }                 what a sender that gave no passcode may do (never edit)
  * With no passcode at all, everyone may view and run the show, and nobody may change it; once there is
  * one, a sender without it may do nothing unless the no-passcode row says so (QLab's default too).
@@ -106,7 +106,6 @@ class Denied extends Error { level: Level; constructor(level: Level) { super(`th
 function accessOf(cfg: Config = {}) {
   const row = (r: Partial<Perms> | null | undefined): Perms => ({ view: !!(r && r.view), edit: !!(r && r.edit), control: !!(r && r.control) });
   const codes = (Array.isArray(cfg.passcodes) ? cfg.passcodes : []).filter((p) => p && String(p.code ?? '').trim() !== '').map((p) => ({ code: String(p.code).trim(), ...row(p) }));
-  if (cfg.passcode != null && String(cfg.passcode).trim() !== '') codes.push({ code: String(cfg.passcode).trim(), view: true, edit: true, control: true });
   // (a sender with no passcode never edits: changing the show takes a passcode with edit access)
   const none = { ...(cfg.noPasscode && typeof cfg.noPasscode === 'object' ? row(cfg.noPasscode) : row(codes.length ? {} : { view: true, control: true })), edit: false };
   return { codes, none };
@@ -549,7 +548,7 @@ export function create({ log, changed, host, net, now = Date.now }: Pick<ModuleC
         if (access.codes.length && f && f.until > now()) { reply('error', 'error'); return true; }      // too soon after a wrong one
         const given = args.length ? text(args[0]).trim() : '';
         const code = given === '' ? null : access.codes.find((c) => sameCode(c.code, given));
-        // (with no passcode set at all, whatever is sent is welcome, as before)
+        // (with no passcode set at all, whatever is sent is welcome)
         const granted = code || (given === '' || !access.codes.length ? access.none : null);
         const good = !!granted && any(granted);
         if (good) { const c = client(from, send); c.perms = code ? { view: code.view, edit: code.edit, control: code.control } : null; c.connected = true; fails.delete(from.address); }

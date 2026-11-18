@@ -83,7 +83,7 @@ function LearnTrigger({ cue, s, midi }: { cue: Cue; s: State; midi: boolean }) {
 }
 
 /** A colour: the six (none, red, orange, yellow, green, blue), and "…" for any other, on the system's colour wheel.
- *  A colour from the wheel is kept as '#rrggbb'; one of the older names (teal, purple…) shows on "…" as it is. */
+ *  A colour from the wheel is kept as '#rrggbb'; one of the other names (teal, purple…) shows on "…" as it is. */
 function Colours({ f, cur, palette, set }: { f: FieldDef; cur: string; palette: readonly string[]; set: (v: string) => void }) {
   const other = !!cur && cur !== 'none' && !palette.includes(cur);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

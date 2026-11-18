@@ -84,6 +84,6 @@ Shipped: **OSC control** (QLab-compatible addresses), **Lighting desk** (Light c
 
 ## What is deliberately not here
 
-- **No framework runtime beyond Preact, and one build script.** The code is TypeScript; `build/compile.mjs` writes the `.js` beside each `.ts` and bundles the main window ([ADR 0006](../adr/0006-typescript.md), replacing the no-build half of [0001](../adr/0001-electron-no-build.md)). With `npm run watch`, a contributor edits a file and reloads.
+- **No framework runtime beyond Preact, and one build script.** The code is TypeScript; `build/compile.mjs` writes the `.js` beside each `.ts` and bundles the main window ([ADR 0006](../adr/0006-typescript.md)). With `npm run watch`, a contributor edits a file and reloads.
 - **No database.** The show is a file; versions are files. [ADR 0002](../adr/0002-versions-as-files.md).
 - **No server.** The app listens on a port only when a module that needs one is switched on.

@@ -20,7 +20,7 @@ test('QLab Light cues are imported as Light cues with their commands and fade ti
   // a level pulled from another cue is kept as text and said not to be read
   assert.equal(c.type, 'light');
   assert.match(report.issues.filter((i) => i.id === c.id).map((i) => i.why).join('|'), /pulled levels from another cue/);
-  // one with no commands to be found stays a Memo, as before
+  // one with no commands to be found stays a Memo
   assert.equal(d.type, 'memo');
   assert.match(report.issues.find((i) => i.id === d.id)!.why, /was a Light cue: kept as a Memo/);
   // the patch is not read: the report says which names the cues need

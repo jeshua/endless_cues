@@ -1,24 +1,17 @@
-// The kinds of sound: what a bus's kind is, what it asks of the engine, ducking by kind (and an older show's one
-// pair read as it was), where the speech is in a voice, and the guess at what a new sound is.
+// The kinds of sound: what a bus's kind is, what it asks of the engine, ducking by kind, where the speech is in a
+// voice, and the guess at what a new sound is.
 import test from 'node:test';
 import assert from 'node:assert';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as kinds from '../core/audio/kinds';
 import * as show from '../core/show/show';
 import { rig, build } from './helpers';
 import * as sig from '../app/main/test-signals';
 
-test('a bus’s kind is the one it says, else read from its id and name', () => {
+test('a bus’s kind is the one it says, else effects', () => {
   const k = (id: string, name: string, kind?: string) => kinds.kindOf({ id, name, ...(kind ? { kind } : {}) });
-  assert.strictEqual(k('music', 'Music'), 'music');
-  assert.strictEqual(k('effects', 'Effects'), 'effects');
-  assert.strictEqual(k('vocals', 'Vocals'), 'voice');
-  assert.strictEqual(k('bus4', 'Radio mics'), 'live');
-  assert.strictEqual(k('bus5', 'Atmos'), 'ambience');
-  assert.strictEqual(k('bus6', 'VO'), 'voice');
-  assert.strictEqual(k('bus7', 'Foldback'), 'effects');
-  assert.strictEqual(k('music', 'Music', 'ambience'), 'ambience', 'what it says wins');
+  assert.strictEqual(k('bus4', 'Radio mics', 'live'), 'live');
+  assert.strictEqual(k('music', 'Music', 'ambience'), 'ambience', 'what it says, whatever its name');
+  assert.strictEqual(k('vocals', 'Vocals'), 'effects', 'a name is not a kind');
   assert.strictEqual(k('x', 'y', 'nonsense'), 'effects');
 });
 
@@ -26,9 +19,9 @@ test('a bus’s kind is the one it says, else read from its id and name', () => 
 test('a new show plays as a plain cue list: its buses have kinds as labels, and every behaviour a kind could bring is off', () => {
   const doc = show.newShow('T'), a = doc.settings.audio;
   assert.deepStrictEqual(a.buses.map((b) => b.kind), ['music', 'effects', 'voice']);
-  assert.strictEqual(a.duck.on, false, 'the older pair: off, as it always was');
-  assert.strictEqual(a.ducking, undefined, 'ducking by kind: not there until asked for');
-  assert.strictEqual(kinds.DUCKING.on, false, '…and off when it is first written');
+  assert.strictEqual(a.ducking, undefined, 'ducking by kind: not written until asked for');
+  assert.strictEqual(kinds.duckingOf(a).on, false, '…and off, read as the defaults');
+  assert.strictEqual(kinds.DUCKING.on, false, '…which are off');
   assert.deepStrictEqual(kinds.duckRules(a), [], 'so nothing ducks, and no voice is read ahead (look-ahead is part of ducking)');
   assert.deepStrictEqual(kinds.rulesOf(a), {}, 'no stop fades, no bus plays one at a time, no bus is exempt from a cue’s duck');
   assert.ok(a.buses.every((b) => b.stopFade === undefined && b.oneAtATime === undefined && b.noDuck === undefined));
@@ -54,7 +47,7 @@ test('a new show plays as a plain cue list: its buses have kinds as labels, and 
 });
 
 test('ducking by kind: every bus of a kind that ducks, under every bus that is listened to, each kind at its own depth', () => {
-  const audio = { buses: [{ id: 'music', name: 'Music' }, { id: 'b2', name: 'Rain', kind: 'ambience' }, { id: 'effects', name: 'Effects' }, { id: 'vocals', name: 'Vocals' }, { id: 'mics', name: 'Mics', kind: 'live' }],
+  const audio = { buses: [{ id: 'music', name: 'Music', kind: 'music' }, { id: 'b2', name: 'Rain', kind: 'ambience' }, { id: 'effects', name: 'Effects', kind: 'effects' }, { id: 'vocals', name: 'Vocals', kind: 'voice' }, { id: 'mics', name: 'Mics', kind: 'live' }],
     ducking: { on: true, under: { music: { depth: -10 }, ambience: { depth: -3, range: 'all' } } } };
   assert.deepStrictEqual(kinds.duckRules({ ...audio, ducking: { under: audio.ducking.under } }), [], 'not on unless it says so');
   const rules = kinds.duckRules(audio);
@@ -67,39 +60,12 @@ test('ducking by kind: every bus of a kind that ducks, under every bus that is l
   assert.ok(kinds.duckRules({ ...audio, ducking: { on: true, under: { effects: { depth: -6 } } } }).some((r) => r.target === 'effects' && r.depth === -6));
 });
 
-test('a show from before kinds plays as it did: its one ducking pair is the one rule, its stops cut, nothing is inferred into behaviour', () => {
-  const doc = show.normalise(JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/before-kinds.ecshow/show.json'), 'utf8'))).doc;
-  const a = doc.settings.audio;
-  assert.strictEqual(a.ducking, undefined, 'opening it does not give it ducking by kind');
-  assert.ok(a.buses.every((b) => b.kind === undefined), 'nor write a kind on a bus');
-  assert.deepStrictEqual(kinds.duckRules(a), [{ target: 'music', keys: ['vocals'], threshold: -30, depth: -12, attack: 0.08, hold: 0.7, release: 2, range: 'all' }]);
-  assert.deepStrictEqual(kinds.rulesOf(a), {});
-  // switched off, as most were: no rule at all
-  assert.deepStrictEqual(kinds.duckRules({ ...a, duck: { ...a.duck, on: false } }), []);
-  // and its sounds reach the engine as they did: the three-band eq as written, no chain, a Stop cue that cuts
-  const e = show.toEngineDoc(doc);
-  const cues = e.lists[0].cues;
-  assert.deepStrictEqual(cues[0].eq, { low: -6, high: 2 });
-  assert.strictEqual(cues[0].chain, undefined);
-  const r = rig(doc);
-  r.engine.busRules = kinds.rulesOf(a);
-  r.engine.go(); r.advance(1);
-  r.engine.go();                                     // the Stop cue
-  assert.deepStrictEqual(r.audio.calls.filter((c) => c[0] === 'stop' || c[0] === 'fade').map((c) => c[0]), ['stop'], 'stopped dead, no fade');
-});
-
-test('the older pair, taken over as ducking by kind, keeps its depth and times', () => {
-  const d = kinds.duckingFromPair({ buses: [{ id: 'music', name: 'Music' }, { id: 'vocals', name: 'Vocals' }], duck: { on: true, key: 'vocals', target: 'music', threshold: -30, depth: -12, attack: 0.08, hold: 0.7, release: 2, range: 'all' } });
-  assert.strictEqual(d.on, true);
-  assert.strictEqual(d.threshold, -30);
-  assert.deepStrictEqual(d.under.music, { depth: -12, attack: 0.08, hold: 0.7, release: 2, range: 'all' });
-});
-
 test('a kind is a label: what suits it is written on the bus only when asked for', () => {
   assert.deepStrictEqual(kinds.rulesOf({ buses: [{ id: 'm', kind: 'music' }, { id: 'a', kind: 'ambience' }, { id: 'l', kind: 'live' }] }), {}, 'a kind alone asks nothing of the engine');
   assert.deepStrictEqual(kinds.withSuggested({ id: 'music', name: 'Music', db: -3, kind: 'music' }), { id: 'music', name: 'Music', db: -3, kind: 'music', stopFade: 1.5 });
   assert.deepStrictEqual(kinds.withSuggested({ id: 'a', name: 'A', db: 0, kind: 'ambience', stopFade: 4 }), { id: 'a', name: 'A', db: 0, kind: 'ambience', stopFade: 2, oneAtATime: 3 });
-  assert.deepStrictEqual(kinds.withSuggested({ id: 'l', name: 'Mics', db: 0 }), { id: 'l', name: 'Mics', db: 0, noDuck: true }, 'a bus read as live from its name');
+  assert.deepStrictEqual(kinds.withSuggested({ id: 'l', name: 'Mics', db: 0, kind: 'live' }), { id: 'l', name: 'Mics', db: 0, kind: 'live', noDuck: true });
+  assert.deepStrictEqual(kinds.withSuggested({ id: 'b', name: 'Bus 4', db: 0 }), { id: 'b', name: 'Bus 4', db: 0 }, 'a bus with no kind is effects: nothing suggested');
   assert.deepStrictEqual(kinds.withSuggested({ id: 'e', name: 'E', db: 0, kind: 'effects', stopFade: 2, oneAtATime: 3 }), { id: 'e', name: 'E', db: 0, kind: 'effects' });
   assert.deepStrictEqual(kinds.rulesOf({ buses: [{ id: 'm', stopFade: 1.5 }, { id: 'a', oneAtATime: 3 }, { id: 'l', noDuck: true }, { id: 'e' }] }),
     { m: { stopFade: 1.5, oneAtATime: 0, live: false }, a: { stopFade: 0, oneAtATime: 3, live: false }, l: { stopFade: 0, oneAtATime: 0, live: true } });
@@ -221,13 +187,13 @@ test('the kind of a sound is guessed from what it is: speech, music, an effect, 
   assert.strictEqual(g(sig.bed(45)).kind, 'ambience');
   assert.strictEqual(g(sig.bed(12)).kind, 'effects', 'a short steady sound is an effect');
   assert.strictEqual(g(new Float32Array(sig.RATE * 3)).kind, 'effects');
-  // a sound that is none of them and is long is music, as it was before kinds
+  // a sound that is none of them and is long is music
   const odd = sig.bed(40); for (let i = 0; i < odd.length; i++) odd[i] *= 0.05 + 0.95 * Math.abs(Math.sin(i / sig.RATE * 0.9));
   assert.strictEqual(g(odd).kind, 'music');
 });
 
 test('a guessed kind goes to the show’s first bus of that kind, or to none', () => {
-  const audio = { buses: [{ id: 'music', name: 'Music' }, { id: 'effects', name: 'Effects' }, { id: 'vocals', name: 'Vocals' }] };
+  const audio = { buses: [{ id: 'music', name: 'Music', kind: 'music' }, { id: 'effects', name: 'Effects', kind: 'effects' }, { id: 'vocals', name: 'Vocals', kind: 'voice' }] };
   assert.strictEqual(kinds.busFor(audio, 'voice'), 'vocals');
   assert.strictEqual(kinds.busFor(audio, 'music'), 'music');
   assert.strictEqual(kinds.busFor(audio, 'ambience'), null);

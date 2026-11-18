@@ -155,9 +155,9 @@ Everything but Esc and ⌘, is ignored while typing or while Settings is open. M
 
 ## 6. Module: OSC control
 
-`id: 'osc-control'`. Config: `{ enabled, replyPort: 53001, passcodes: [{ code, view, edit, control }], noPasscode: { view, edit, control }, passcode: '' }` (`passcodes` and `noPasscode` are absent until set; `passcode` is the older single one, which grants everything). It owns no socket: it handles what arrives on the hub's one input port (UDP and TCP, IPv4; `settings.network.inputPort`, default 53000). Every message of a bundle is read, in order.
+`id: 'osc-control'`. Config: `{ enabled, replyPort: 53001, passcodes: [{ code, view, edit, control }], noPasscode: { view, edit, control } }` (`passcodes` and `noPasscode` are absent until set). It owns no socket: it handles what arrives on the hub's one input port (UDP and TCP, IPv4; `settings.network.inputPort`, default 53000). Every message of a bundle is read, in order.
 
-The addresses are QLab 5's OSC dictionary, as far as the host has a command or a fact for what each names. Everything is done with `host.cmd` and read from `host.snapshot()`. Nothing here has been tried against a real remote (tracker O10; section 6.6 is the script for doing so).
+The addresses are QLab 5's OSC dictionary, as far as the host has a command or a fact for what each names. Everything is done with `host.cmd` and read from `host.snapshot()`. Nothing here has been tried against a real remote (section 6.6 is the script for doing so).
 
 A leading `/workspace/<id>` is stripped and ignored (there is one show). An address that is none of the below gets no reply and is left for a cue's `oscTrigger`.
 
@@ -317,7 +317,7 @@ A cue event is sent as `/qlab/event/workspace/<event> <number> <name> <uniqueID>
 
 Cue events are worked out after each push of the host's state, by comparing with the last; the "All" events come from `host.onCmd(fn)`, which tells a module each command once it is done. What was already so when a sender subscribes is not sent. QLab's recipe works as written: `/listen/go/number` then `/eventFormat "/eos/cue/#data#/fire"`.
 
-### 6.6 Trying it against real remotes (tracker O10, O12)
+### 6.6 Trying it against real remotes
 
 None of the three has been run. Each script below is what to set, what to press and what should happen; where the outcome differs, the monitor (Window ▸ Monitor) shows what the remote actually sent, which is the thing to write down. Use the demo show (File ▸ Open the Demo Show), in Edit mode, OSC control on (Settings ▸ Integrations ▸ Modules), input port 53000, and no copy of QLab running on any computer in the test (it would take port 53000 or answer the remote itself).
 
@@ -353,7 +353,7 @@ None of the three has been run. Each script below is what to set, what to press 
 4. If the list shows: tap GO (**expect** GO); swipe a cue to move the playhead; open a cue and change its name (**expect** the name to change in the window; Undo takes it back); Pause all / Resume all / Panic all; *Load to time*.
 5. Leave it connected for two minutes without touching it, then press GO. **Expect:** it still works (a TCP connection is not forgotten).
 
-**D. Device descriptions (tracker O12).** For each device in `core/net/devices.ts` that is on the bench: make a patch of that kind with the device's address, press Test and expect the patch to read "answering" within a second (for a device listed with `answers`); then make a Network cue for each command in its list with a harmless value, fire it, and tick the command off only when the device visibly did it. A command that does nothing is corrected in `devices.ts` from the monitor and the device's own OSC log.
+**D. Device descriptions.** For each device in `core/net/devices.ts` that is on the bench: make a patch of that kind with the device's address, press Test and expect the patch to read "answering" within a second (for a device listed with `answers`); then make a Network cue for each command in its list with a harmless value, fire it, and tick the command off only when the device visibly did it. A command that does nothing is corrected in `devices.ts` from the monitor and the device's own OSC log.
 
 **Not covered.** `/replyFormat`; `/live` values; the `/shallow` and `/uniqueIDs` forms of the list queries; `/panicInTime` on one cue, `/loadActionAt`, `/loadAndSetPlayhead`, `/soloCueInTime`; targets, levels and every type-specific property; a cart's row and column on `/new`; `/auditionGo`; `/settings/…`, `/overrides/…`, the light dashboard; per-list playheads (`/cue/<list>/playhead/…`); MSC broadcast; Bonjour, and the encrypted connection QLab Remote uses with QLab 5; QLab's "duplicate message interval" (here two identical messages within the double-GO time are one: a GO, or the same cue started the same way, the second ignored and said in the show log); the plain-text command port (53535).
 
@@ -565,7 +565,7 @@ Pushed with every state as `rig`: `{ summary: { ready, total, look, problems, un
 
 `fps` is 1 to 120 (default 30). A value is a float on the wire (at most six places; `1.0` for a whole one) unless `whole` is set, when it is rounded and sent as an integer. Tokens may be in the address. With a duration it is a fade to the engine: shown in Active Cues, paused and stopped like one. `format: 'text' | 'hex'` cues are sent once whatever their duration (a warning says so), and no token in them is filled in. Not done: a curve drawn by hand, a path drawn on a canvas, "smooth" paths, a background image, live preview while editing, OSC queries (`#/cue/1/number#`) inside a message, and device descriptions with faded parameters.
 
-**OSC control** no longer owns a socket: it handles messages from the hub's input port. **Show feedback** (module `show-feedback`) sends `<prefix>/go`, `/cue/<number>/start|stop`, `/playhead` and `/running` to a patch.
+**OSC control** owns no socket: it handles messages from the hub's input port. **Show feedback** (module `show-feedback`) sends `<prefix>/go`, `/cue/<number>/start|stop`, `/playhead` and `/running` to a patch.
 
 ## Timecode and MIDI files
 

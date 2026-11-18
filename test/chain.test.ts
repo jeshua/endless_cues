@@ -35,14 +35,14 @@ test('the cue-type table takes a chain, on Audio, Mic and Video cues', () => {
   }
 });
 
-test('the eq has four bands, and a three-band eq from an older show is kept exactly as it was written', () => {
+test('the eq has four bands, each a plain dB number at its usual place and { db, hz, q } once moved', () => {
   assert.deepStrictEqual(Chain.cleanEq({ low: -40, mid: 0, high: 3 }), { low: -40, high: 3 });
   assert.deepStrictEqual(Chain.cleanEq({ mid: { db: 4, hz: 1000, q: 0.8 } }), { mid: 4 }, 'a band at its usual place is a plain number');
   assert.deepStrictEqual(Chain.cleanEq({ mid: { db: 4, hz: 1800, q: 2 }, mid2: -3, low: { db: 2, hz: 90 } }), { low: { db: 2, hz: 90 }, mid: { db: 4, hz: 1800, q: 2 }, mid2: -3 });
   assert.strictEqual(Chain.cleanEq({ low: 0 }), null);
-  // what is built for the old three bands: the same three filters the sound window always made
-  const old = Chain.plan(null, { low: -6, mid: 2, high: 1 }).stages;
-  assert.deepStrictEqual(old, [{ tool: 'eq', bands: [{ key: 'low', type: 'lowshelf', db: -6, hz: 250, q: 0 }, { key: 'mid', type: 'peaking', db: 2, hz: 1000, q: 0.8 }, { key: 'high', type: 'highshelf', db: 1, hz: 4000, q: 0 }] }]);
+  // what is built for three bands at their usual places
+  const three = Chain.plan(null, { low: -6, mid: 2, high: 1 }).stages;
+  assert.deepStrictEqual(three, [{ tool: 'eq', bands: [{ key: 'low', type: 'lowshelf', db: -6, hz: 250, q: 0 }, { key: 'mid', type: 'peaking', db: 2, hz: 1000, q: 0.8 }, { key: 'high', type: 'highshelf', db: 1, hz: 4000, q: 0 }] }]);
 });
 
 test('a plan is the tools that are on, in the one order they run, and a sound with none is no stages at all', () => {

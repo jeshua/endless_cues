@@ -6,8 +6,7 @@
  * the bend of the line from it to the next point (`c`, −1 … 1; none or 0: straight). Before the first point and
  * after the last the line holds their values. A cue keeps:
  *
- *   envelope                      the Volume lane: dB on top of Level (and whatever fades it). Written before lanes
- *                                 had bends, so an old envelope ([[t, dB], …]) reads and plays exactly as it did.
+ *   envelope                      the Volume lane: dB on top of Level (and whatever fades it), [[t, dB, c?], …].
  *   pan                           the cue's own pan, −100 (left) … 0 … 100 (right): a field, not a lane
  *   automation                    every other lane, by id: { "pan": [[t, v, c?], …], "chain.lowpass.hz": [[t, Hz], …] }
  *                                 "pan" replaces the Pan field while it has points; "chain.<tool>.<setting>" replaces
@@ -167,7 +166,7 @@ function wrap(u: number, region: { start: number; end: number } | null | undefin
 }
 
 /** Each side's gain for a pan, −100 … 100: equal power (a sound in the middle is as loud as at either side), unity
- *  on both at 0, so a cue that is not panned plays exactly as it did. A stereo sound is balanced: each side by its gain. */
+ *  on both at 0, so a cue that is not panned is untouched. A stereo sound is balanced: each side by its gain. */
 function panGains(pan: unknown) {
   const x = clamp(Number(pan) || 0, -100, 100);
   if (!x) return [1, 1];

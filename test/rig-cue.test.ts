@@ -1,8 +1,7 @@
-// A cue that sends one of a device's named commands (docs/specs/15, section 3.4), and what did not change: an
-// old show, a raw Network cue, "the only patch".
+// A cue that sends one of a device's named commands (docs/specs/15, section 3.4), and beside it: a show with no
+// devices, a raw Network cue, "the only patch".
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -127,25 +126,24 @@ test('a raw Network cue may name a device; "the only patch" still counts patches
   hub.close();
 });
 
-test('an old show opens, plays and saves byte for byte as it did, with its patches untouched', () => {
-  const fixture = fs.readFileSync(path.join(__dirname, 'fixtures/before-kinds.ecshow/show.json'), 'utf8');
-  const raw = JSON.parse(fixture);
-  raw.settings = { ...(raw.settings || {}), network: { patches: [{ id: 'desk', name: 'Desk', host: '10.0.0.20', port: 8000, protocol: 'udp', device: 'etc-eos' }] } };
-  const { doc } = show.normalise(JSON.parse(fixture));
-  // what this app writes for it is, to the byte, what the app wrote before there was a rig (the hash is of that)
-  const text = show.stringify(doc);
-  assert.equal(crypto.createHash('sha256').update(text).digest('hex'), '6cc899b4ab09c9eb566a4b654e27119404a2c27e7098bca78f5d60a6b89ff9a1');
+test('a show with no devices writes no rig, and opens and saves unchanged with its patches untouched', () => {
+  const made = applyOps(show.newShow('Patches only'), [
+    { op: 'show.set', path: 'settings.network.patches', value: [{ id: 'desk', name: 'Desk', host: '10.0.0.20', port: 8000, protocol: 'udp', device: 'etc-eos' }] },
+    { op: 'cue.add', cue: { type: 'audio', number: '1', file: 'media/theme.wav', bus: 'music' } },
+  ]).doc;
+  const text = show.stringify(made);
   assert.ok(!text.includes('"rig"'), 'a rig with nothing in it is not written');
+  const { doc } = show.normalise(JSON.parse(text));
+  assert.equal(show.stringify(doc), text, 'it reads back the same');
   assert.deepEqual(doc.settings.rig, { devices: [], checks: [], script: '' }, '…though the open show has one');
   // opened from a folder and saved: the file is what it was, and a second save writes nothing
-  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-old-')), 'Old.ecshow');
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-patches-')), 'Patches.ecshow');
   fs.mkdirSync(dir, { recursive: true });
-  const withPatch = show.stringify(show.normalise(raw).doc);
-  fs.writeFileSync(path.join(dir, 'show.json'), withPatch);
+  fs.writeFileSync(path.join(dir, 'show.json'), text);
   const d = ShowDocument.open(dir);
   assert.equal(d.dirty, false);
   d.save();
-  assert.equal(fs.readFileSync(path.join(dir, 'show.json'), 'utf8'), withPatch);
+  assert.equal(fs.readFileSync(path.join(dir, 'show.json'), 'utf8'), text);
   assert.equal(d.save(), null);
   assert.deepEqual(d.doc.settings.network.patches, [{ id: 'desk', name: 'Desk', host: '10.0.0.20', port: 8000, protocol: 'udp', device: 'etc-eos' }]);
   assert.deepEqual(devices.list(d.doc), [], 'its patch stays a patch until someone asks');

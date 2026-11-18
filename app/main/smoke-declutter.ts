@@ -62,7 +62,7 @@ async function run({ host, win, check, until, page, sleep, shot, log }: Pick<Smo
     await page(`document.querySelector('[data-save]').textContent`));
   host.cmd({ op: 'save' });
   check('…and says Saved when everything is', await until(() => page(`document.querySelector('[data-save]').textContent.trim() === 'Saved'`), 2000));
-  check('Versions and Lights are not buttons on the title bar any more', !(await page(`[...document.querySelectorAll('.titlebar button')].some((b) => /^(Versions|Lights)$/.test(b.textContent.trim()))`)));
+  check('Versions and Lights are not buttons on the title bar', !(await page(`[...document.querySelectorAll('.titlebar button')].some((b) => /^(Versions|Lights)$/.test(b.textContent.trim()))`)));
   check('no module chip in the title bar while no module is on (OSC control among them)', !(await page(`[...document.querySelectorAll('.titlebar .chip')].some((b) => /OSC/i.test(b.textContent))`)));
   global.ecCueMenu = { items: [], picks: ['versions'] };
   await click('[data-more-menu]');

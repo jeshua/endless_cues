@@ -106,7 +106,7 @@ test('compose: defaults, ranges, whole numbers, enums, a faded value, and quotes
   const desk = devices.fromModel('etc-eos', { id: 'desk', name: 'Lighting desk', host: '10.0.0.20' });
   assert.equal((devices.compose(desk, 'fire', { cue: '12' }) as { message: string }).message, '/eos/cue/1/12/fire');
   assert.equal((devices.compose(desk, 'cmd', { command: 'Chan 1 At 50#' }) as { message: string }).message, '/eos/newcmd "Chan 1 At 50#"', 'a template that needs quotes has them');
-  // one function with the older device templates, which never refused a value
+  // one function with a patch's device templates, which do not refuse a value
   assert.equal(models.compose('etc-eos', 'fire', { cue: 12 }), '/eos/cue/1/12/fire');
   assert.equal(models.compose('x32', 'fader', {}, { fade: true }), '/ch/01/mix/fader #v#');
   assert.equal(models.compose('x32', 'mute', { on: 'yes' }), '/ch/01/mix/on yes');

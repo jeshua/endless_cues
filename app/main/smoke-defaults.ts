@@ -16,8 +16,8 @@ async function plain({ host, check, page }: Pick<Smoke, 'host' | 'check' | 'page
   const d = snap().doc.settings, mods = snap().doc.modules || {};
   const log = (await page<{ lines?: string[] }>(`window.ec.app({ op: 'log' })`)).lines || [];
   check('nothing has looked for a tempo in any sound', !log.some((l) => /^\[tempo\]/.test(l) || /\[tempo\]/.test(l)), log.filter((l) => /\[tempo\]/.test(l)).slice(0, 3));
-  check('a show starts with ducking, lighting output, timecode and every module off', d.audio.duck.on === false && d.light.on === false && d.timecode.source === 'off' && d.network.listen === false
-    && !d.midi.mscIn && !d.audio.monitor.on && !d.editing.longSoundsToMusic && Object.values(mods).every((m) => !m.enabled) && !snap().modules.some((m) => m.running), [d.audio.duck, mods]);
+  check('a show starts with ducking, lighting output, timecode and every module off', !(d.audio.ducking && d.audio.ducking.on) && d.light.on === false && d.timecode.source === 'off' && d.network.listen === false
+    && !d.midi.mscIn && !d.audio.monitor.on && !d.editing.longSoundsToMusic && Object.values(mods).every((m) => !m.enabled) && !snap().modules.some((m) => m.running), [d.audio.ducking, mods]);
 }
 
 async function after({ host, check, until, page, sleep }: Pick<Smoke, 'host' | 'check' | 'until' | 'page' | 'sleep'>) {

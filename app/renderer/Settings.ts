@@ -85,23 +85,6 @@ function UnusedMedia({ s, info }: { s: State; info: Info }) {
     <button class="btn" onClick=${async () => { await window.ec.cmd({ op: 'media-clean' }); look(); }}>Move to the ${bin}</button><//>`;
 }
 
-/** Ducking: one bus dips while another is sounding. */
-function Duck({ s }: { s: State }) {
-  const a = s.doc.settings.audio, d: Partial<ShowSettings['audio']['duck']> = a.duck || {}, buses = a.buses;
-  const up = (k: string, v: unknown) => set(`settings.audio.duck.${k}`, v, 'ducking');
-  const num = (k: 'threshold' | 'depth' | 'attack' | 'hold' | 'release', unit: string, lo: number, hi: number) => html`<div><label>${{ threshold: 'When it is above', depth: 'Dip by', attack: 'Down in', hold: 'Wait', release: 'Back in' }[k]}</label><${Num} value=${d[k]} unit=${unit} width=${54} onCommit=${(v: number) => up(k, Math.max(lo, Math.min(hi, v)))} /></div>`;
-  return html`<div class="card"><div class="ch"><${Switch} on=${!!d.on} onChange=${(on: boolean) => up('on', on)} /><b>Ducking</b>
-      <span class="st">${d.on ? html`<span class=${cx('dot', s.mixer.ducking && 'standby')}></span>${s.mixer.ducking ? 'ducking now' : 'waiting'}` : 'off'}</span></div>
-    <p>One bus dips while another sounds. Faders and Fade cues are untouched.</p>
-    ${d.on ? html`<div class="cfg">
-      <div><label>Dip this bus</label><select value=${d.target} onChange=${(e: On<HTMLSelectElement>) => up('target', e.target.value)}>${buses.map((b) => html`<option value=${b.id}>${b.name}</option>`)}</select></div>
-      <div><label>while this one sounds</label><select value=${d.key} onChange=${(e: On<HTMLSelectElement>) => up('key', e.target.value)}>${buses.map((b) => html`<option value=${b.id}>${b.name}</option>`)}</select></div>
-      ${num('threshold', 'dB', -60, 0)}${num('depth', 'dB', -40, 0)}${num('attack', 's', 0.01, 5)}${num('hold', 's', 0, 10)}${num('release', 's', 0.05, 20)}
-      <div title="The voice band keeps the music’s bass and air"><label>Dip</label><div class="seg">${[['voice', 'the voice band'], ['all', 'everything']].map(([x, l]) => html`<button class=${cx((d.range || 'voice') === x && 'on')} onClick=${() => up('range', x)}>${l}</button>`)}</div></div>
-    </div>${d.key === d.target ? html`<div class="problem warning">A bus cannot duck under itself.</div>` : null}` : null}
-  </div>`;
-}
-
 function GoPane({ s }: { s: State }) {
   const g = s.doc.settings.go;
   return html`<h3 class="subhead">GO and safety</h3>
@@ -132,7 +115,7 @@ function AudioPane({ s, info }: { s: State; info: Info }) {
   const a = s.doc.settings.audio, m = s.mixer;
   const buses = a.buses;
   const save = (next: Bus[], label: string) => set('settings.audio.buses', next, label);
-  const addBus = () => { let n = buses.length + 1, id: string; do { id = `bus${n++}`; } while (buses.some((b) => b.id === id)); save([...buses, { id, name: `Bus ${buses.length + 1}`, db: 0 }], 'add bus'); };
+  const addBus = () => { let n = buses.length + 1, id: string; do { id = `bus${n++}`; } while (buses.some((b) => b.id === id)); save([...buses, { id, name: `Bus ${buses.length + 1}`, db: 0, kind: 'effects' }], 'add bus'); };
   const pairs = (b: Bus) => { const n = Math.max(1, Math.floor(m.outputs / 2), Math.ceil(((b.out || 1) + 1) / 2)); return Array.from({ length: n }, (_, k) => 2 * k + 1); };
   const lost: MixerBus[] = m.buses.filter((b: MixerBus) => b.noOutput);
   const mon = m.monitor || { on: false, out: 3, db: -12 };
@@ -169,7 +152,7 @@ function AudioPane({ s, info }: { s: State; info: Info }) {
     <${BusKinds} s=${s} info=${info} />
     <${Row} title="Sort new sounds by kind" help="New sounds are listened to and put on a bus; you confirm.">
       <button class=${cx('switch', a.sortNew === true && 'on')} data-sort-new onClick=${() => set('settings.audio.sortNew', a.sortNew !== true, 'sort new sounds by kind')}></button><//>
-    <${Ducking} s=${s} info=${info} Old=${Duck} />
+    <${Ducking} s=${s} info=${info} />
     <${OutputsSettings} s=${s} />
     <${EffectsSettings} s=${s} />`;
 }
@@ -352,15 +335,13 @@ function OscCommand({ k, label, s }: { k: keyof ShowCommands; label: string; s: 
 type Access = { view?: boolean; edit?: boolean; control?: boolean };
 
 function OscAccess({ cfg }: { cfg: Partial<Modules['osc-control']> }) {
-  const legacy = String(cfg.passcode || '').trim();
-  const codes: Passcode[] = [...(Array.isArray(cfg.passcodes) ? cfg.passcodes : []), ...(legacy ? [{ code: legacy, view: true, edit: true, control: true }] : [])];
+  const codes: Passcode[] = Array.isArray(cfg.passcodes) ? cfg.passcodes : [];
   // (as the module reads it: with no passcode at all everyone may view and run the show; once there is one, a sender without it may do
   // nothing unless this row says so. Editing always takes a passcode.)
   const none: Access = { ...(cfg.noPasscode && typeof cfg.noPasscode === 'object' ? cfg.noPasscode : codes.length ? {} : { view: true, control: true }), edit: false };
-  // (one edit, so one undo step and one restart of the module; the older single passcode becomes a row like the others)
+  // (one edit, so one undo step and one restart of the module)
   const save = (nextCodes: Passcode[], nextNone: Access) => edit([{ op: 'show.set', path: 'modules.osc-control.passcodes', value: nextCodes },
-    { op: 'show.set', path: 'modules.osc-control.noPasscode', value: { view: !!nextNone.view, edit: false, control: !!nextNone.control } },
-    ...(legacy ? [{ op: 'show.set' as const, path: 'modules.osc-control.passcode', value: '' }] : [])], 'OSC access');
+    { op: 'show.set', path: 'modules.osc-control.noPasscode', value: { view: !!nextNone.view, edit: false, control: !!nextNone.control } }], 'OSC access');
   const fresh = () => { let c: string; do { c = String(Math.floor(1000 + Math.random() * 9000)); } while (codes.some((x) => x.code === c)); return c; };
   // (`open`: the no-passcode row, which can never edit)
   const boxes = <R extends Access>(row: R, change: (row: R) => void, open = false) => (['view', 'edit', 'control'] as const).map((l) => { const off = open && l === 'edit'; return html`<label class="row-flex" style="gap:5px;margin:0" title=${off ? 'Changing the show takes a passcode' : { view: 'Read the show', edit: 'Change the show', control: 'Run the show: GO, stop, the playhead' }[l]}><input type="checkbox" style="accent-color:var(--accent)" data-level=${l} disabled=${off} checked=${!!row[l] && !off} onChange=${(e: On<HTMLInputElement>) => change({ ...row, [l]: e.target.checked })} />${l}</label>`; });

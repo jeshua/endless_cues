@@ -47,7 +47,7 @@ export interface AppConfig extends UpdateConfig {
   overrides?: Record<string, boolean>;
   remoteSalt?: string;
   /** which show folders are this computer's own (core/show/trust.ts) */
-  shows?: Record<string, string | true>;
+  shows?: Record<string, string>;
   assistant?: AssistantSettings;
   keys?: KeyOver;
   theme?: string;

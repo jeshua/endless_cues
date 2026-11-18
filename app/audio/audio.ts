@@ -140,8 +140,8 @@ function ensureBus(name: string) {
   const b = buses[name] = { to: outPair(0).inp, want: 0, out: 1, fader, stereo, duck, band, tap } as Omit<Bus, 'ctl' | 'idle'> as Bus;
   ride(b);
   // A bus is never without an input. MEASURED (Chromium): a node with nothing playing into it stops its automation
-  // where it was, so a fader or a duck moved while its bus was silent had not arrived when the next sound started,
-  // which began at the old gain and glided; and its gains read stale. A steady nothing into the fader keeps the
+  // where it was, so a fader or a duck moved while its bus is silent has not arrived when the next sound starts,
+  // which begins at the old gain and glides; and its gains read stale. A steady nothing into the fader keeps the
   // whole path running.
   b.idle = ctx.createConstantSource();
   b.idle.offset.value = 0;
@@ -864,7 +864,7 @@ function play({ key, url, gainDb, from, loop, exact, bus, mic, own, rate, preser
     el.play().catch((err) => {
       // The stream's play() is rejected when the voice moved over to its decoded buffer before the stream had
       // started (`upgrade` pauses the element): the sound is playing, from the buffer, and this is not an error.
-      // Reporting it made the engine forget a sound that was still sounding, which Panic then could not stop.
+      // Reported, it would make the engine forget a sound that is still sounding, which Panic then could not stop.
       if (voices.get(key) !== v || v.buf) return;
       drop(key);
       window.cueAudio.report({ type: 'error', key, url: url!, detail: String(err) });
@@ -1261,20 +1261,19 @@ function setDuck({ bus, db, secs, range }: Cmd<'duck'>) {
 // Ducking: while a key bus is sounding above the threshold, the target bus dips (its duck stage, so its fader
 // and a Fade cue's work are untouched); when the keys have been quiet for `hold`, it comes back over `release`.
 // Read here, where the sound is, 30 times a second: the host only says how it is set. There is a rule per bus
-// that ducks (`rules`: [{ target, keys: [bus], threshold, depth, attack, hold, release, range }]); a show from
-// before kinds sends its one pair ({ on, key, target, … }) and is one rule.
+// that ducks (`rules`: [{ target, keys: [bus], threshold, depth, attack, hold, release, range }]: core/audio/kinds.ts).
 //
 // Look-ahead: a recorded voice whose speech is known (`speech` on its `play`: [[from, to], …] in its file's
 // seconds, found by the host from its waveform) is not waited for. Where it is in its file is known, so the dip
 // starts an attack time BEFORE each stretch of speech and the music comes back as its last word ends (after
 // SPEECH_HOLD, not the rule's hold, which is there to ride out the gaps a level cannot see past). When every
 // sound on a key bus is such a voice, the bus's level is not read at all; a live mic, or a sound with no map, is
-// keyed by level as before.
+// keyed by its level.
 const SPEECH_HOLD = 0.15;
 let duckRules: { target: string; keys: string[]; threshold: number; depth: number; attack: number; hold: number; release: number; range: 'all' | 'voice'; ducked: boolean; lastLoud: number; holdNow: number }[] = [];
 const duckBuf = new Float32Array(1024);
 function setDucker(cfg: Cmd<'ducker'>) {
-  const list = Array.isArray(cfg.rules) ? cfg.rules : cfg.on ? [{ ...cfg, keys: [cfg.key], target: cfg.target || 'music' }] : [];
+  const list = Array.isArray(cfg.rules) ? cfg.rules : [];
   const next = list.map((r: import('./preload').DuckerRule): (typeof duckRules)[number] => ({ target: r.target!, keys: (r.keys || []).filter((k): k is string => !!k && k !== r.target), threshold: Number(r.threshold), depth: Math.min(0, Number(r.depth) || 0), attack: Math.max(0.005, Number(r.attack) || 0.05), hold: Math.max(0, Number(r.hold) || 0), release: Math.max(0.02, Number(r.release) || 1), range: r.range === 'all' ? 'all' : 'voice', ducked: false, lastLoud: 0, holdNow: 0 }))
     .filter((r) => r.target && r.keys.length);
   for (const was of duckRules) {

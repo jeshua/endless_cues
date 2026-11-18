@@ -314,11 +314,11 @@ function byNumberAlone(doc: ShowDoc) {
 }
 
 /** Settings as `path=value`, every one there is (so a new setting is in the outline the day it exists). A passcode is never sent: only whether one is set. */
-const secret = (k: string, prefix: string) => /pass|token|secret/i.test(k) || (/key/i.test(k) && !/duck\.$/.test(prefix));      // (a duck's key is the bus that ducks: not a secret)
+const secret = (k: string) => /pass|token|secret|key/i.test(k);
 function flatSettings(node: object | null | undefined, prefix = '', out: string[] = []) {
   for (const [k, v] of Object.entries(node || {})) {
     if (v && typeof v === 'object' && !Array.isArray(v)) flatSettings(v, `${prefix}${k}.`, out);
-    else out.push(`${prefix}${k}=${secret(k, prefix) ? (v ? '(set)' : '(none)') : JSON.stringify(v)}`);
+    else out.push(`${prefix}${k}=${secret(k) ? (v ? '(set)' : '(none)') : JSON.stringify(v)}`);
   }
   return out;
 }
@@ -616,7 +616,7 @@ How cues work here:
 - A Light cue's "levels" fades the app's own lights over its duration, one command a line ("front = 80", "wash = 50", "all = 0", "cyc.colour = #ff8800"), naming only instruments and groups in settings.light; lights it does not name stay unless "block" is true. Its "lightCue" is a desk cue number: called by the operator, and fired on the desk when the lighting desk module is on.
 - A Network cue sends one message to a patch or a device; with "#v#" and a duration it fades a value. Any cue can also be fired from outside the list, without moving the playhead, by a trigger of its own.
 - A sound is shaped on its own cue with "chain" and "eq" ("on the phone", "next room", "under water"); a Fade's "chainTo" moves a setting over time. You cannot hear it: say what you set and that it should be listened to.
-- A bus's "kind" (music, voice, effects, ambience, live) is a label. Ducking (settings.audio.duck; settings.audio.ducking, by kind, once the show has it), a bus's stopFade, oneAtATime and noDuck are off unless asked: the default is a plain cue list.
+- A bus's "kind" (music, voice, effects, ambience, live) is a label. Ducking by kind (settings.audio.ducking), a bus's stopFade, oneAtATime and noDuck are off unless asked: the default is a plain cue list.
 - Settings are part of the show, changed with show.set: buses and the outputs each plays on (routing is a bus's, not a cue's), patches, GO behaviour, MIDI, and each module's options.
 
 Equipment:

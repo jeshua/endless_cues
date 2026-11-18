@@ -187,7 +187,6 @@ interface Commands {
   'prop-files': { device: string; options?: Record<string, unknown> };
   'agent-guide': {};
   'import-seen': {}; 'added-seen': {};
-  'ducking-by-kind': {};
   state: {};
 }
 /** A command of the host's own, by its op. */
@@ -468,7 +467,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     speechOf.set(file, spans);
     return spans;
   }
-  let duckKeys = new Set<string>();         // the buses ducking by kind listens to (empty with it off, and for the older pair)
+  let duckKeys = new Set<string>();         // the buses ducking by kind listens to (empty with it off)
   /** The waveforms of the recorded voices, read ahead of their GO (a WAV is read here; anything else by the audio window). */
   function readVoices() {
     if (!duckKeys.size) return;
@@ -846,10 +845,9 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     audioCmd({ op: 'buses', list: a.buses.map((b) => (mixLevels.has(b.id) ? { ...b, db: mixLevels.get(b.id) } : b)) });
     audioCmd({ op: 'masterDb', db: state.muted ? -60 : Number(a.masterDb) || 0 });
     audioCmd({ op: 'limiter', on: a.limiter !== false });
-    // ducking: by kind (music and ambience under voices), or an older show's one pair, as rules (core/audio/kinds.ts)
+    // ducking by kind (music and ambience under voices), as rules (core/audio/kinds.ts)
     const rules = kinds.duckRules(a);
-    // (only ducking by kind reads a voice ahead: an older show's pair listens to levels, as it always did)
-    duckKeys = new Set(kinds.duckingOf(a) ? rules.flatMap((r) => r.keys) : []);
+    duckKeys = new Set(rules.flatMap((r) => r.keys));
     state.duckOn = rules.length > 0;
     audioCmd({ op: 'ducker', rules });
     // the monitor feed: a mono copy of outputs 1–2 on one more output (the audio window counts outputs from 0)
@@ -1241,7 +1239,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
 
   // ── commands ──────────────────────────────────────────────────────────
   // What Show mode locks. Riding the mixer and saving are part of running a show, so they are not here.
-  const EDITS = new Set<string>(['fade-from-target', 'ducking-by-kind', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
+  const EDITS = new Set<string>(['fade-from-target', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
   const cmdListeners = new Set<CmdListener>();   // told each command once it is done (a module reporting "pause all", "panic")
   function cmd<C extends HostCommand>(c: C): ResultOf<C> {
     const before: Playhead = { playhead: engine.playhead };
@@ -1634,8 +1632,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       }
       case 'import-seen': state.imported = null; break;
       case 'added-seen': state.added = null; break;
-      // an older show's one ducking pair, made ducking by kind: the same depth and times, on the kind its target is
-      case 'ducking-by-kind': return document.edit([{ op: 'show.set', path: 'settings.audio.ducking', value: kinds.duckingFromPair(document.doc.settings.audio) }], { label: 'ducking by kind' });
       case 'state': sentRev.clear(); break;       // a page that has just loaded: everything, once
       default: return { error: `unknown command ${c.op}` };
     }
@@ -1768,8 +1764,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   function record() {
     if (shows) return shows;
     const c = getConfig() || {};
-    if (c.shows && typeof c.shows === 'object') shows = { ...c.shows };
-    else { shows = trust.firstRecord(c); saveConfig({ shows }); }      // (the first time: the recent shows are this computer's)
+    shows = c.shows && typeof c.shows === 'object' ? { ...c.shows } : {};
     return shows;
   }
   function keepMine(dir: string | null, id: string) { if (!dir) return; shows = trust.remember(record(), dir, id); saveConfig({ shows }); }

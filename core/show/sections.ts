@@ -1,9 +1,9 @@
 /**
  * Sections: headings in a cue list that organise it and never play.
  *
- * A section is an ordinary entry in a list (`{ type: 'section', name, color, notes }`), so the show file stays flat
- * and an older show is unchanged. It holds the top-level rows after it, up to the next section or the end of the
- * list. Sections are flat (never one inside a group, never one in a cart) and may hold groups.
+ * A section is an ordinary entry in a list (`{ type: 'section', name, color, notes }`), so the show file stays
+ * flat. It holds the top-level rows after it, up to the next section or the end of the list. Sections are flat
+ * (never one inside a group, never one in a cart) and may hold groups.
  *
  * The engine never sees one: show.ts toEngineDoc leaves sections out, so GO, the playhead, continues and
  * auto-follows go from the cue before a section to the cue after it. What can still name a section (the

@@ -39,7 +39,7 @@ test('OSC control through the hub: over UDP, with a reply once connected; a pass
   const hub = createHub();
   hub.configure({ patches: [], inputPort: port, listen: true });
   const m = oscControl.create({ log() {}, changed() {}, net: hub, host: { cmd: (c: HostCommand) => { cmds.push(c.op); return c.op === 'jump' ? { error: 'no cue numbered 99' } : { ok: true }; } } as unknown as HostApi });
-  m.start({ passcode: '1234', replyPort: 0 });
+  m.start({ passcodes: [{ code: '1234', view: true, edit: true, control: true }], replyPort: 0 });
   const c = udpClient();
   await sleep(40);
   await c.send(port, '/go'); await sleep(40);

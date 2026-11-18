@@ -215,7 +215,7 @@ function clean(raw: unknown, { taken = [] as Iterable<string> } = {}): { device:
  * The message a command makes. Each {key} in its template becomes that argument's value, or the param's
  * default; a number is checked against `min` and `max` and rounded when `whole`; an enum against its options.
  * With `fade`, the command's `fade` param becomes "#v#" (a Network cue's faded value). `strict: false` is for
- * the older device templates, which never checked a value: what is given is put in as written.
+ * a patch's device templates (core/net/devices.ts), which do not check a value: what is given is put in as written.
  */
 function compose(device: { name?: string; commands?: DeviceCommand[] } | null | undefined, commandId: string | null | undefined, args: unknown = {}, { fade = false, strict = true } = {}): { ok: true; message: string } | { ok: false; why: string } {
   const commands = (device && device.commands) || [];

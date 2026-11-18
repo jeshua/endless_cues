@@ -87,7 +87,7 @@ Times are seconds. Levels are dB (0 is the file's own level; −60 is silence). 
 
 ### Versioning the format
 
-`version` is an integer. A change that an older app would misread bumps it and adds a migration to `normalise`. A new optional field, cue type or module does not: older apps keep unknown cues as Memos and ignore unknown settings (they are preserved on disk only if untouched; this needs hardening before 1.0: unknown fields should round-trip).
+`version` is an integer. A change that an older app would misread bumps it and adds a migration to `normalise`. A new optional field, cue type or module does not: an app keeps what it does not know as it was written (a cue's unknown fields and the show's unknown settings round-trip, not played; a cue of an unknown type is kept as a Memo, its type in its notes). A newer `version` than the app's is refused with a reason.
 
 ## Edit operations
 
@@ -132,7 +132,7 @@ Devices are reported as an operator reads them and not as a settings path: `devi
 
 ## Saving
 
-Nothing is kept until the show is saved. An edit changes the working document: it is heard and seen at once and can be undone, but `show.json` is untouched. This is deliberate. The app this grew from saved every move as it was made, and a knob brushed by accident during a run became the show.
+Nothing is kept until the show is saved. An edit changes the working document: it is heard and seen at once and can be undone, but `show.json` is untouched. This is deliberate: a knob brushed by accident during a run must not become the show.
 
 - `document.unsaved()` is the diff from the saved document to the working one: the list of pending changes. The app counts them ("3 unsaved"), marks each changed control in yellow with its saved value in the tooltip, and offers ↺ beside it to put that one control back (a `cue.set` to the saved value, or the host's `unset` for a setting).
 - `document.save({ note })` writes `show.json` and records a version. With no note, one is written from the pending changes.
@@ -147,7 +147,7 @@ A show is a folder that is meant to travel, so a show can arrive from anywhere: 
 
 One quiet line in the title bar says so: *This show came from another computer. Its network features are off until you turn them on.* and **Turn on**, which gives it all back at once, without stopping anything that is playing, and is remembered for that show on this computer. Only this computer's window can turn it on (`turn-on`; a command that came in from anywhere else is refused).
 
-Nothing about this is in the show file, which stays the same whichever computer saved it. This computer keeps a record in its own `config.json` (`shows`: each show folder, by its real path, with the id of the show in it, the last 400): a show is this computer's when its folder is there with its id. A show is put in the record when it is made here (a new folder, New Show, an import or a template once saved, Start from a Folder), saved here, saved somewhere else with Save As, or turned on. A save does not turn on a show that came from elsewhere. The demo, which lives in this computer's settings folder, is its own. So a show moved or copied to another folder asks once more, and a show put in place of one of yours (another id) is not taken for yours. The first time the record is made, the recent shows (File ▸ Open Recent) are taken as this computer's, so an update holds back nothing that already worked here. A show written by the `ec` command line is not in the record and asks once. `core/show/trust.ts`, tested by `test/trust.test.ts`.
+Nothing about this is in the show file, which stays the same whichever computer saved it. This computer keeps a record in its own `config.json` (`shows`: each show folder, by its real path, with the id of the show in it, the last 400): a show is this computer's when its folder is there with its id. A show is put in the record when it is made here (a new folder, New Show, an import or a template once saved, Start from a Folder), saved here, saved somewhere else with Save As, or turned on. A save does not turn on a show that came from elsewhere. The demo, which lives in this computer's settings folder, is its own. So a show moved or copied to another folder asks once more, and a show put in place of one of yours (another id) is not taken for yours. A show written by the `ec` command line is not in the record and asks once. `core/show/trust.ts`, tested by `test/trust.test.ts`.
 
 ## Versions
 

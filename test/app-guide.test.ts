@@ -175,7 +175,7 @@ test('the built-in helper answers where things are and what their keys are, from
   r = await ask('where is Panic', fakeUi({ locked: true }));
   assert.match(r.said.text, /Panic/);
   assert.ok(!/ringed/.test(r.said.text));
-  // a question it has no place for: its list, as before
+  // a question it has no place for: its list
   r = await ask('where is the moon');
   assert.match(r.said.text, /built-in helper/);
   // the one-line jobs are not taken for questions

@@ -161,8 +161,7 @@ function factory() {
   }
 
   // ── a cue's eq: four bands ──────────────────────────────────────────────────
-  // A band is a level in dB at its usual place (the three-band eq every show before this had: { low, mid, high }),
-  // or { db, hz, q } to move it. `mid2` is the second bell.
+  // A band is a level in dB at its usual place, or { db, hz, q } to move it. `mid2` is the second bell.
   const EQ_BANDS: EqBandSpec[] = [
     { key: 'low', label: 'Low shelf', type: 'lowshelf', hz: 250 },
     { key: 'mid', label: 'Bell 1', type: 'peaking', hz: 1000, q: 0.8 },
@@ -179,7 +178,7 @@ function factory() {
       q: b.type === 'peaking' ? (Number.isFinite(q) && o.q != null && o.q !== '' ? Math.round(clamp(q, 0.1, 18) * 100) / 100 : b.q) : 0 };
   }
   /** A cue's eq as the show keeps it: only the bands doing something, each a plain dB number while it sits at its
-   *  usual place (so a show written before the eq had four bands reads, and is written, exactly as it was). */
+   *  usual place and { db, hz, q } once moved. */
   function cleanEq(value: unknown): EqValue | null {
     if (value == null || value === '') return null;
     if (typeof value !== 'object' || Array.isArray(value)) throw new Error('eq: { low, mid, mid2, high }, each a level in dB or { db, hz, q }');

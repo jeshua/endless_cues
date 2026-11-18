@@ -91,7 +91,7 @@ test('sections are flat: never inside a group, never in a cart; a cue cannot tar
   assert.deepEqual(n.lists[0].cues.map((c) => c.number), ['10', undefined, '2', '11']);
 });
 
-test('the show file: a section is one ordinary entry; it reads back the same; an old show has none', () => {
+test('the show file: a section is one ordinary entry; it reads back the same', () => {
   const s = build([sec('s', 'Scene 1 — Rebirth', { color: 'teal', notes: 'Lamps low' }), memo('a', '1')]);
   const text = show.stringify(s.doc);
   const entry = JSON.parse(text).lists[0].cues[0];

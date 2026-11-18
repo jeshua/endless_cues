@@ -101,7 +101,7 @@ const setupOf = (first: First | null) => (first && first.setup && Array.isArray(
 
 export function AssistantDrawer({ s, info, close, openSettings, say, refreshInfo }: { s: State; info: Info; close: () => void; openSettings: (section: string) => void; say: Say; refreshInfo?: () => unknown }) {
   const a = s.assistant;
-  const first: First | null = a.first && typeof a.first === 'object' ? a.first : null;      // what the host says of THIS show (absent in an older build)
+  const first: First | null = a.first && typeof a.first === 'object' ? a.first : null;      // what the host says of THIS show (absent: nothing to say)
   const [text, setText] = useState('');
   const [handed, setHanded] = useState<Wrote | null>(null);       // files just accepted ({ guide, props, dir }): the next step is outside this window, and is said here
   const body = useRef<HTMLDivElement>(null);

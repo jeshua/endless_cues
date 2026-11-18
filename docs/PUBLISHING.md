@@ -10,15 +10,15 @@ SECURITY.md, the issue forms, the firmware templates, the internal notes under `
    public, removing it from the tree is not enough: it stays in the history (`git filter-repo` on a fresh clone, or a
    squashed snapshot, is then the way).
 2. **Run a secret scanner over the whole history**, from a fresh clone: `gitleaks detect --log-opts=--all` and
-   `trufflehog git file://. --only-verified=false`. Both found nothing on 2026-11-17. Anything found is fixed
+   `trufflehog git file://. --only-verified=false`. Anything found is fixed
    before step 4.
 3. **Check the tree for what should not be there:** `git ls-files | grep -iE 'secrets\.h$|\.env$|\.p8$|\.pem$'`
    prints nothing (the firmware templates are `secrets.example.h`); `reference/` is not tracked.
 4. **Set the repository public** (GitHub ▸ Settings ▸ General ▸ Danger Zone ▸ Change visibility).
 5. **Turn on secret scanning and push protection** (Settings ▸ Code security), and protect `main` (require CI to
    pass; no force pushes).
-6. **Put the GitHub link back on the website.** In the service repository (`endless_cues_service`), the links were
-   taken off while the code is private. `site/site.js` `REPO_URL` already holds `https://github.com/jeshua/endless_cues`
+6. **Put the GitHub link back on the website.** In the service repository (`endless_cues_service`), the site has no
+   link to the code while it is private. `site/site.js` `REPO_URL` already holds `https://github.com/jeshua/endless_cues`
    (check it is still the URL). Add `<a data-link="repo" href="…">GitHub</a>` back to the header nav and the footer
    of `site/index.html` and `site/docs/index.html`, then deploy the site.
 7. **Post the first release** on GitHub (the steps are in [`RELEASING.md`](RELEASING.md)), with the changelog's

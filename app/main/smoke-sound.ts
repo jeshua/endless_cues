@@ -64,8 +64,8 @@ async function soundChecks({ host, check, timed = check, until, sleep, page, sho
     const phone = host.snapshot() && require('../../core/audio/chain').PRESETS.Phone;
     const p100 = await lvl({ chain: { highpass: phone.chain.highpass, lowpass: phone.chain.lowpass }, signal: sine(100) }), p1k = await lvl({ chain: { highpass: phone.chain.highpass, lowpass: phone.chain.lowpass }, signal: sine(1000) }), p8k = await lvl({ chain: { highpass: phone.chain.highpass, lowpass: phone.chain.lowpass }, signal: sine(8000) });
     check('the Phone preset’s band: 1 kHz through, 100 Hz and 8 kHz over 25 dB down', Math.abs(p1k + 12) < 1.5 && p100 < -12 - 25 && p8k < -12 - 25, [p100, p1k, p8k]);
-    const eqOld = await lvl({ eq: { mid: -12 }, signal: sine(1000) }), eqOldSide = await lvl({ eq: { mid: -12 }, signal: sine(60) });
-    check('the eq: an older show’s { mid: -12 } is 12 dB out at 1 kHz and nothing at 60 Hz', Math.abs(eqOld + 24) < 0.3 && Math.abs(eqOldSide + 12) < 0.5, [eqOld, eqOldSide]);
+    const eqAt = await lvl({ eq: { mid: -12 }, signal: sine(1000) }), eqSide = await lvl({ eq: { mid: -12 }, signal: sine(60) });
+    check('the eq: a bell at its usual place, { mid: -12 }, is 12 dB out at 1 kHz and nothing at 60 Hz', Math.abs(eqAt + 24) < 0.3 && Math.abs(eqSide + 12) < 0.5, [eqAt, eqSide]);
     const eqNew = await lvl({ eq: { mid: { db: 6, hz: 3000, q: 4 } }, signal: sine(3000) }), eqNewSide = await lvl({ eq: { mid: { db: 6, hz: 3000, q: 4 } }, signal: sine(1000) });
     check('…and a bell moved to 3 kHz with a Q of 4 lifts 3 kHz by 6 dB and leaves 1 kHz alone', Math.abs(eqNew + 6) < 0.3 && Math.abs(eqNewSide + 12) < 0.5, [eqNew, eqNewSide]);
     const comp = await measure({ chain: { comp: { threshold: -18, ratio: 4, attack: 30, release: 100, makeup: 0 } }, signal: { kind: 'step', hz: 1000, db: -40, to: -6, at: 0.5 } });

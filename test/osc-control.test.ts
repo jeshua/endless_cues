@@ -86,7 +86,7 @@ function aShow() {
  *  a sender with no passcode may not edit, and over UDP only a sender that has connected is answered) */
 type RemoteConfig = Parameters<ReturnType<typeof oscControl.create>['start']>[0];
 const ALL = { code: '7777', view: true, edit: true, control: true };
-const ownCodes = (config: RemoteConfig) => (Array.isArray(config.passcodes) && config.passcodes.length) || (config.passcode != null && String(config.passcode) !== '');
+const ownCodes = (config: RemoteConfig) => Array.isArray(config.passcodes) && config.passcodes.length > 0;
 function remote(host: FakeHost, config: RemoteConfig = {}, opts: { now?: () => number; always?: boolean } = {}) {
   const m = oscControl.create({ log() {}, changed() {}, host: host as unknown as HostApi, ...opts });
   const mine = ownCodes(config);
@@ -344,7 +344,7 @@ test('OSC control: an answer too big for one UDP message is an error, not a data
 
 test('OSC control: one passcode; a client is forgotten after 61 s of silence; wrong tries are made to wait', () => {
   let t = 1e6;
-  const s = aShow(), host = fakeHost(s.doc), r = remote(host, { passcode: '4321' }, { now: () => t });
+  const s = aShow(), host = fakeHost(s.doc), r = remote(host, { passcodes: [{ code: '4321', view: true, edit: true, control: true }] }, { now: () => t });
   // (over UDP a sender that has not connected is not answered at all: its address could be anyone's)
   assert.equal(r.say('/cue/1/name').reply, null);
   assert.equal(r.say('/cueLists').reply, null);

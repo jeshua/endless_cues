@@ -148,11 +148,10 @@ export interface Settings {
     masterDb: number;
     limiter: boolean;
     buses: Bus[];
-    duck: { on: boolean; key: string; target: string; threshold: number; depth: number; attack: number; hold: number; release: number; range: 'voice' | 'all' };
     levels: { min: number; max: number };
     monitor: { on: boolean; out: number; db: number };
     sortNew: boolean;
-    /** ducking by kind, once a person has asked for it */
+    /** ducking by kind, once a person has set it (absent: off, core/audio/kinds.ts DUCKING) */
     ducking?: { on: boolean; threshold: number; by: string[]; under: Record<string, DuckUnder> };
     /** the outputs' names and trims: { "3": { name, trim } } */
     outs?: Record<string, { name?: string; trim?: number }>;
@@ -180,7 +179,7 @@ export interface Passcode { code: string; view?: boolean; edit?: boolean; contro
 
 /** The show's modules (show.json `modules`): `defaultModules()` in show.ts. */
 export interface Modules {
-  'osc-control': { enabled: boolean; passcode: string; replyPort: number; passcodes?: Passcode[]; noPasscode?: { view?: boolean; edit?: boolean; control?: boolean } };
+  'osc-control': { enabled: boolean; replyPort: number; passcodes?: Passcode[]; noPasscode?: { view?: boolean; edit?: boolean; control?: boolean } };
   'show-feedback': { enabled: boolean; patch: string; prefix: string };
   'lighting-desk': { enabled: boolean; kind: string; host: string; port: number; listenPort: number; list: number };
   'web-remote': { enabled: boolean; port: number; control: boolean; key: string };

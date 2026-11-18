@@ -80,7 +80,7 @@ test('the grid of a tempo with sections: each section its own beats and bar line
 test('a tempo is cleaned with its sections: in order, each bar line inside its first bar, nonsense dropped', () => {
   const t = cleanTempo({ bpm: 120, first: 4.1, bar: 4, sections: [{ from: 30, bpm: 100, first: 33.1, bar: 3 }, { from: 10, bpm: 90 }, { from: 20, bpm: 5 }, { from: -3, bpm: 100 }] });
   assert.deepStrictEqual(t, { bpm: 120, first: 0.1, bar: 4, sections: [{ from: 10, bpm: 90, first: 10, bar: 4 }, { from: 30, bpm: 100, first: 31.3, bar: 3 }] });
-  // a tempo with no sections reads as it always did
+  // a tempo with no sections is one tempo throughout
   assert.deepStrictEqual(cleanTempo({ bpm: 120, first: 2.1, bar: 4 }), { bpm: 120, first: 0.1, bar: 4 });
 });
 

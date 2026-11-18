@@ -47,7 +47,7 @@ audition (V) ─▶ the audition pair ──────────────
 reverb / delay return ─▶ its pair ─────────────────┘
 ```
 
-**A bus** plays on one pair of the device's outputs (`out` on the bus: 1, 3, 5…). **Each pair in use has its own master gain and limiter**, and the master fader moves all of them. That much was there before; the rest of this section is what a cue, an audition, an effect and an output can do on top of it.
+**A bus** plays on one pair of the device's outputs (`out` on the bus: 1, 3, 5…). **Each pair in use has its own master gain and limiter**, and the master fader moves all of them. The rest of this section is what a cue, an audition, an effect and an output can do on top of it.
 
 **The rule that holds for all of it:** an output the device does not have is silent, and said (on the bus, on the cue, in Settings ▸ Audio and in the mixer). Nothing is ever moved to outputs 1–2 by itself: a click that fell back into the house would be worse than a click that is missing. An output counts as there when its whole pair is.
 
@@ -130,7 +130,7 @@ An Audio cue, a Mic cue and a Video cue (its sound) have two fields, both edited
 
 **The tab.** A rack of devices, as a channel strip or a DAW draws one: only the tools in use, left to right in the order they run, the eq after the filters. "+" lists every tool, lightly grouped, and adds the one chosen with its defaults written out; a tool already in the chain is not offered twice (the chain holds one of each). Since the order is fixed, a device is placed where it runs, wherever it was added, and there is nothing to drag. Each device has a power button (off: `"on": false`, settings kept; a knob turned on a device that is off leaves it off), up to four knobs on its face and the rest behind ‹ ›, its choices (a slope, ping-pong, invert) as small buttons, and × to remove it from the cue. A filter and the eq draw their response curve. The eq device shows one band at a time (Low, 1, 2, High: gain, frequency and, on a bell, Q); it has no power button, since the eq has no switch in the file: a band at 0 dB is out of the path, and × takes the eq off the cue. Presets, Bypass and Tail are in the tab's header. A knob's turn is one edit when the button is let go (the wheel's, once it rests), so a drag is one undo step and a playing sound hears the result, not the drag.
 
-**The eq grew from three bands to four** and old shows are untouched: a band that sits at its usual place is still written as a plain dB number (`{ "low": -6, "high": 2 }` reads, plays and is written back exactly as before), and becomes `{ db, hz, q }` only when it is moved. `mid2` is the second bell. It used to sit after the level; it now sits in the chain before it, which for an eq alone is the same sound (both are linear).
+**The eq has four bands** (`low`, `mid`, `mid2`, `high`). A band that sits at its usual place is written as a plain dB number (`{ "low": -6, "high": 2 }`), and as `{ db, hz, q }` once it is moved. It sits in the chain before the level.
 
 **Why the compressor is a worklet.** Web Audio's `DynamicsCompressorNode` only compresses, has no make-up control, and applies an automatic make-up gain of its own that cannot be switched off (a sound under the threshold comes out louder). So the gate and the compressor are one small kernel (`Dynamics`) run in an AudioWorklet, and the same class is run by the unit tests in Node. The crusher and the pitch shifter are worklets for the same reason: the tests measure the code that plays. The worklet module is added to the context once as the audio window starts; a sound that asks for one before it has loaded plays without that tool and says so in the log.
 
@@ -144,7 +144,7 @@ With `tail` on (it can be switched on only while a reverb or a delay is), what t
 
 | The sound… | With `tail` |
 |---|---|
-| reaches its end, or its **End at** (`cutAt`) | The source ends; the tail rings out. `cutAt` shuts the chain's door (its first gain) instead of the level, so the cut is as exact as before and the reverb is not cut with it. |
+| reaches its end, or its **End at** (`cutAt`) | The source ends; the tail rings out. `cutAt` shuts the chain's door (its first gain) instead of the level, so the cut is as exact as without a chain and the reverb is not cut with it. |
 | is stopped (a Stop cue, the ■ beside it, a restart of the same cue) | The door shuts over 5 ms, the source is stopped, the tail rings out. To the engine the cue has stopped at once: it is not running, a follow-on is not delayed, and the cue can be started again over its own tail. |
 | is on a bus that fades its stops, or is faded out and stopped (a Fade with "stop target", fade & stop others, the first Panic) | **The tail fades with the sound.** The level is after the chain, so the fade takes down source and tail together; when the stop comes there is nothing left to ring. |
 | is caught by the second Panic, or Reset | Everything stops dead, tails included (`stopAll`). |
@@ -181,8 +181,8 @@ A bus has a **kind**: `music`, `voice` (recorded dialogue and voice-over), `effe
 
 | Behaviour | Off by default; turned on by | Lives on | What is suggested | What it does |
 |---|---|---|---|---|
-| Ducking by kind | Settings ▸ Audio ▸ **Duck by kind instead** (writes `ducking`), then the **Ducking** switch (`ducking.on`) | the show: `settings.audio.ducking` `{ on, threshold, by, under }` | `by: [voice, live]`; `under.music` −8 dB, 0.05 s down, 0.5 s wait, 1 s back, voice band only; `under.ambience` −4 dB, 0.1 / 0.5 / 1.5 s; effects not ducked | Every bus of a kind in `under` dips while any bus of a kind in `by` sounds. |
-| Look-ahead for a recorded voice | the same switch (it is how ducking by kind treats a sound whose speech is known; the older pair never reads ahead, and with ducking off nothing is read) | nowhere | | The dip starts an attack time **before** each stretch of speech and is let go 0.15 s after its last word. See below. |
+| Ducking by kind | Settings ▸ Audio ▸ the **Ducking** switch (`ducking.on`) | the show: `settings.audio.ducking` `{ on, threshold, by, under }` | `by: [voice, live]`; `under.music` −8 dB, 0.05 s down, 0.5 s wait, 1 s back, voice band only; `under.ambience` −4 dB, 0.1 / 0.5 / 1.5 s; effects not ducked | Every bus of a kind in `under` dips while any bus of a kind in `by` sounds. |
+| Look-ahead for a recorded voice | the same switch (it is how ducking by kind treats a sound whose speech is known; with ducking off nothing is read) | nowhere | | The dip starts an attack time **before** each stretch of speech and is let go 0.15 s after its last word. See below. |
 | A stop that fades | a time typed in the bus's **A stop fades over** box, or **Use suggested** | the bus: `stopFade` (s) | music 1.5, ambience 2 | A Stop cue or the operator's stop of a sound on the bus fades it out over this and then stops it. Panic keeps its own fade; the second Panic, Reset, and a second trigger of "Stops it" still cut. |
 | One at a time | a time typed in the bus's **One at a time, over** box, or **Use suggested** | the bus: `oneAtATime` (s) | ambience 3 | A sound starting on the bus fades out whatever else is playing on it over this long (and stops it), and comes in over the same time unless it has a fade-in of its own. With nothing playing there it starts as it is. |
 | Left alone by "Duck others while running" | the bus's **Never ducked** switch, or **Use suggested** | the bus: `noDuck` | live | A sound on the bus is not one of "the others" a cue ducks. |
@@ -192,11 +192,11 @@ A bus has a **kind**: `music`, `voice` (recorded dialogue and voice-over), `effe
 
 **Use suggested** (one button per bus) writes what the table suggests for the bus's kind onto the bus (`withSuggested`), where the three settings can then be changed or switched off again. Choosing a kind does not press it.
 
-One behaviour that was already in the app is untouched and not part of this: with no bus chosen, a sound of half a minute or more is added on the Music bus, and the notice says so.
+Separate from kinds: Settings ▸ Show ▸ **Long sounds go on the Music bus** (`settings.editing.longSoundsToMusic`, off) puts a sound of half a minute or more, added with no bus chosen, on the Music bus, and the notice says so.
 
 **Cue, bus or show?** Ducking is the show's (it is a relation between kinds, and one place to see it is better than a setting per bus). A stop that fades, one-at-a-time and never-ducked are the bus's (they are about what else is on that bus, and a designer with two music buses may want them different). Loop, the transcript, the chain and the speech map are the cue's (they are about that one sound).
 
-**A show from before kinds plays exactly as it did**, and so does a new one. Neither has `ducking`, `stopFade`, `oneAtATime` or `noDuck` until a person writes them; opening a show adds none (`defaultSettings` has none), and a new show differs from an old one only in its buses carrying `kind`. A bus with no `kind` is read from its id and name (`kindOf`: "Vocals" is a voice bus, "Mics" live, "Atmos" ambience), which is used only for what it is called and, once ducking by kind is on, for which side of it the bus is on. Ducking is the one pair it always was (`settings.audio.duck`: one bus under one other, off by default), sent to the audio window as one rule with the same numbers; **Duck by kind instead** writes `ducking` with the pair's depth, times and on/off (`duckingFromPair`), and from then on `ducking` is what is read. `test/fixtures/before-kinds.ecshow` and its test hold the old show (the one rule, no bus rules, the three-band eq as written, a Stop cue that cuts); "a new show plays as a plain cue list" in `test/kinds.test.ts` holds the new one (every behaviour above off, a Stop that cuts, two sounds on a bus overlapping).
+**A new show has none of it.** It has no `ducking`, `stopFade`, `oneAtATime` or `noDuck` until a person writes them; opening a show adds none (`defaultSettings` has none). A show with no `ducking` reads as the defaults above, off (`duckingOf`). A bus with no `kind` is effects (`kindOf`); a bus added in Settings ▸ Audio is made with `kind: 'effects'`. "A new show plays as a plain cue list" in `test/kinds.test.ts` holds it (every behaviour above off, a Stop that cuts, two sounds on a bus overlapping).
 
 ### Ducking by kind, and look-ahead
 
@@ -217,7 +217,7 @@ With **Sort new sounds by kind** on (`settings.audio.sortNew`; off by default, a
 3. Pauses like speech (six or more a minute), a level that swings (5 dB or more), almost nothing under 150 Hz and most of it above 250 Hz: **voice**.
 4. Under 15 s: **effects**.
 5. Twenty seconds or more, sounding nearly all the time, steady in level (under 4 dB of swing): **ambience**.
-6. Half a minute or more: **music** (the whole of the rule before kinds); otherwise effects.
+6. Half a minute or more: **music**; otherwise effects.
 
 It goes on the show's first bus of that kind, or on the cue's usual bus if the show has none. **The guess is always shown.** One sound: the notice says which bus and why ("it sounds like music (a steady pulse, 120 bpm)"). A guessed ambience on an ambience bus is added as a loop. Several: a chooser lists each file, what it was taken for and why, and its bus as a menu to change, with a loop switch (`state.added`; `AddedChooser`). A template that names a bus for new Audio cues is kept over the guess, and the chooser says so. A sound that cannot be read within fifteen seconds is added with no guess.
 
@@ -286,9 +286,9 @@ That third row is the honest limit of this design, and the reason for the next s
 
 ## Where this has to go
 
-Web Audio in a hidden window was the right first engine: it shipped a real show, and it gives decoding, mixing, device selection and metering on three platforms with no native code. It cannot do the following, each of which a serious sound show eventually needs:
+Web Audio in a hidden window has played a real show, and it gives decoding, mixing, device selection and metering on three platforms with no native code. It cannot do the following, each of which a serious sound show eventually needs:
 
-1. **More than stereo, properly.** The web engine now has a per-cue matrix (file channel × output), named and trimmed outputs and bus sends to two effects (see "Where sound goes"), none of it yet heard on a real interface. Still missing: output patches as a layer between cue outputs and device outputs, per-output delay or EQ, gangs, more than one device, and any control of the device itself.
+1. **More than stereo, properly.** The web engine has a per-cue matrix (file channel × output), named and trimmed outputs and bus sends to two effects (see "Where sound goes"), none of it yet heard on a real interface. Still missing: output patches as a layer between cue outputs and device outputs, per-output delay or EQ, gangs, more than one device, and any control of the device itself.
 2. **Sample-synchronous starts** across cues, and scheduling against timecode.
 3. **Plugins** (VST3 / AU / LV2).
 4. **Device control**: sample rate, buffer size, ASIO on Windows, JACK/PipeWire on Linux, surviving a device change without a glitch.
@@ -322,7 +322,7 @@ A point is `[t, value]` or `[t, value, bend]`: the bend (−1 … 1, none = stra
 
 A `pan` lane replaces the Pan field while it has points; a `chain.<tool>.<setting>` lane replaces that knob. Only a setting that glides can have a line (`SWEEPABLE` in `core/audio/chain.ts`: a filter's frequency, a mix, a time…); one whose change rebuilds the chain (a slope, a reverb's size and decay, a drive's amount) cannot, and nor can the cue's eq bands. A lane for a tool the chain does not have does nothing; removing a device in the window removes its lanes in the same edit. Between points a setting moves along its knob's scale (`app/renderer/dial.ts`: a frequency along a ratio, so a straight line from 200 Hz to 2 kHz passes 632 Hz half way); Volume moves in dB and Pan in its own units.
 
-**Pan** is equal power: each side's gain is √2·cos θ and √2·sin θ for θ = (pan/100 + 1)·π/4, so at 0 both are exactly 1 (an unpanned sound plays exactly as before, and has no pan stage at all) and a sound at either side has the power it had in the middle. A stereo sound is balanced (each side by its gain), as a DAW's stereo pan is. A sound sent to outputs of its own is not panned: its matrix already says where each channel goes. A QLab Audio cue whose crosspoints only share its sound between outputs 1 and 2 (a mono file to both, or a stereo file's left to 1 and right to 2, each at a level of its own) is imported as a pan on its bus, with what is left over on its level (`panOfMatrix`, `core/import/qlab.ts`).
+**Pan** is equal power: each side's gain is √2·cos θ and √2·sin θ for θ = (pan/100 + 1)·π/4, so at 0 both are exactly 1 (an unpanned sound is untouched, and has no pan stage at all) and a sound at either side has the power it had in the middle. A stereo sound is balanced (each side by its gain), as a DAW's stereo pan is. A sound sent to outputs of its own is not panned: its matrix already says where each channel goes. A QLab Audio cue whose crosspoints only share its sound between outputs 1 and 2 (a mono file to both, or a stereo file's left to 1 and right to 2, each at a level of its own) is imported as a pan on its bus, with what is left over on its level (`panOfMatrix`, `core/import/qlab.ts`).
 
 **Playing.** In the voice, the Volume line is a gain after the level (`env`) and the pan a stage after that (two gains on a splitter and a merger); a setting's line moves its tool. Every line is read at a place **in the file**, never at a time since the GO. Thirty times a second each is scheduled for the next 60 ms as straight ramps 10 ms apart, each ramp ending at the value drawn where the sound will be at that moment (a buffer's place from its own clock, through any ramp of its rate; a stream's from its element). So:
 
@@ -389,9 +389,9 @@ The copy costs the file's size again in temporary storage and is made when the s
 
 ## Memory
 
-A decoded track is large (about 170 MB for eight minutes of stereo at 44.1 kHz). The host has only what is playing and what the next GO plays decoded, and the audio window drops the rest (`keep`). Two things defeated that, both measured with five eight-minute tracks each played from its buffer, drawn and analysed for tempo, then stopped:
+A decoded track is large (about 170 MB for eight minutes of stereo at 44.1 kHz). The host has only what is playing and what the next GO plays decoded, and the audio window drops the rest (`keep`). Two more things hold memory down, measured with five eight-minute tracks each played from its buffer, drawn and analysed for tempo, then stopped (36 MB held with nothing playing):
 
-- A voice that began as a stream and moved over to its buffer was kept alive, with the buffer, by the listeners on the stream's element. A dropped voice now holds no sound (`drop` clears its buffer). Before: 843 MB held with nothing playing. After: 426 MB.
-- The rest was garbage waiting for a collection that an idle audio window has no reason to run. The window is started with the collector exposed and asks for a collection a moment after it lets sound go (`tidy`). With both: 36 MB.
+- A dropped voice holds no sound (`drop` clears its buffer), even one that began as a stream and moved over to its buffer, whose stream element's listeners would otherwise keep it alive.
+- The window is started with the garbage collector exposed and asks for a collection a moment after it lets sound go (`tidy`): an idle audio window has no other reason to run one.
 
-Also: a track whose bytes finished reading after it had stopped being wanted is no longer sent to be decoded (it was decoded after the `keep` that dropped it, and held until the next one), and a track already decoded is not read and sent again each time the list of wanted tracks changes.
+A track whose bytes finish reading after it has stopped being wanted is not sent to be decoded, and a track already decoded is not read and sent again each time the list of wanted tracks changes.

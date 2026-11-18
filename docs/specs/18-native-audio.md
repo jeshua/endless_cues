@@ -44,7 +44,7 @@ error is a log line (`[native]`).
   `{ "type": "operror", "op", "key", "detail": "not in the native engine yet" }` once for that op and key, and plays
   the sound without it. Nothing is silently dropped.
 
-## What it does (the first version)
+## What it does
 
 | Part | Commands | Notes |
 |---|---|---|
@@ -55,7 +55,7 @@ error is a log line (`[native]`).
 | Where things are | `where`, events `where`, `ended`, `level` | `level` about 30 times a second: the same fields the audio window sends. |
 | Measuring itself | `ec-audio measure` | GO-to-output latency and its spread, by the program's own clock and the device's reported output latency; with `--loopback <input>` (a cable from an output back to an input) by ear, as it were. |
 
-Not in the first version (each says so by `operror`, and the sound plays without it): sound design (`design`,
+Not done yet (each says so by `operror`, and the sound plays without it): sound design (`design`,
 `sweep`, `ir`, a `play`'s `own.chain`/`own.eq`), a sound's outputs of its own (`own.outputs`), the ducker (`ducker`,
 `duck`), sends (`fx`), the monitor feed, lines over a sound other than Volume and Pan
 (`automation`), microphones, recording, LTC in and out, keep-pitch rate. While the native engine is chosen, the audio
