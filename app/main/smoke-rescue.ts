@@ -1,13 +1,12 @@
 /**
- * The smoke run's checks of the tools a show needs when it leaves the script, in the cue list's own window with
- * the Live view HIDDEN (called from smoke.ts after smoke-defaults.ts has switched that view off again):
+ * The smoke run's checks of the tools a show needs when it leaves the script, in the cue list's own window
+ * (called from smoke.ts after smoke-defaults.ts):
  *
  *   the Playing strip   go round the next seconds or bars from here with no region drawn, and let go (the button, L);
  *                       bar lines and the bar.beat count once the sound has a tempo; "+ here"; a marker's button,
  *                       at once and on the bar
- *   Time & Loops        a found tempo corrected where it is found (half, double, beats in a bar, "1 is here")
+ *   Time & Loops        a found tempo corrected where it is found (half, double, beats in a bar, "1 is here", a change of tempo)
  *   a group's Quantise  a GO lands on the playing track's bar line
- *   the MUTED chip      with no Live view to go to, a click unmutes
  *
  * Positions and what the engine says it is doing: nobody hears a test run.
  */
@@ -29,15 +28,6 @@ async function rescue({ host, win, check, until, page, sleep, shot }: Pick<Smoke
   host.cmd({ op: 'mode', mode: 'edit' });
   host.openUntitled();
   await until(() => snap().show.untitled && snap().rows.length === 0 && snap().mixer.audioReady, 4000);
-  check('the Live view is hidden for the checks of the cue list’s own tools', await until(() => page(`!document.querySelector('.desk') && !document.querySelector('.titlebar [data-tab="live"]')`), 3000));
-
-  // the MUTED chip: there is no desk to send the person to, so a click on it unmutes
-  host.cmd({ op: 'strip', name: 'music', key: 'mute', value: true, commit: true });
-  check('a muted bus has its red MUTED chip in the title bar with the Live view hidden', await until(() => page(`/MUTED: Music/.test((document.querySelector('.titlebar [data-muted]') || {}).textContent || '')`), 3000));
-  await click('.titlebar [data-muted]');
-  check('…and a click on it unmutes (no view opens)', await until(async () => !snap().mixer.buses.find((b) => b.id === 'music')!.mute && !(await has('.desk')) && !(await has('.titlebar [data-muted]')), 3000),
-    [snap().mixer.buses.map((b) => [b.id, b.mute]), await has('.desk'), await has('.titlebar [data-muted]')]);
-
   // a click at 120 (a beat every 0.5 s from 0.25 s), a tone under it so the waveform has a body; and a short hit
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-rescue-'));
   const clickFile = path.join(tmp, 'steady120.wav'), hitFile = path.join(tmp, 'hit.wav');
@@ -127,7 +117,7 @@ async function rescue({ host, win, check, until, page, sleep, shot }: Pick<Smoke
   // (the hit's own clock against the track's: when the hit was at 0 the track was at `at`, which is to be a bar line)
   const h = act(hit)!, k = act(id)!;
   const at = k.elapsed - h.elapsed, phase = ((at - first) % 2 + 2) % 2, miss = Math.min(phase, 2 - phase);
-  check('a GO on a group quantised to the bar waits, and starts its sound on the playing track’s bar line (within 60 ms), with the Live view hidden', waited && began && miss < 0.06 && at > 13, { at, miss, waited });
+  check('a GO on a group quantised to the bar waits, and starts its sound on the playing track’s bar line (within 60 ms)', waited && began && miss < 0.06 && at > 13, { at, miss, waited });
 
   // 5. the tempo corrected where it was found: Time & Loops ▸ Tempo
   host.cmd({ op: 'stop', id: hit });
@@ -148,6 +138,12 @@ async function rescue({ host, win, check, until, page, sleep, shot }: Pick<Smoke
   await sleep(250);
   await click('.inspector [data-tempofix] [data-one]');
   check('“1 is here” puts beat one of a bar on the beat the sound is at', await until(() => { const ph = ((cueOf(id).tempo!.first % 2) + 2) % 2; return Math.abs(ph - 1.25) < 0.03 || Math.abs(ph - 1.75) < 0.03; }, 2000), cueOf(id).tempo);
+  // a change of tempo, added where the sound is and taken away again (its sections are the cue list's own)
+  await click('.inspector [data-tempofix] [data-split]');
+  check('“+ Change here” adds a change of tempo where the sound is', await until(() => (cueOf(id).tempo!.sections || []).length === 1, 2000), cueOf(id).tempo);
+  check('…and “Remove change” is offered there', await until(() => page(`!!document.querySelector('.inspector [data-tempofix] [data-join]')`), 2000));
+  await click('.inspector [data-tempofix] [data-join]');
+  check('…which takes it away', await until(() => !(cueOf(id).tempo!.sections || []).length, 2000), cueOf(id).tempo);
   await shot('21-rescue-tempo-fix');
 
   // the strip in a narrow window: nothing runs off its edge

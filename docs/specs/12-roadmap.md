@@ -6,10 +6,9 @@ The order things are meant to happen in, and what "done" means for each. [09 · 
 
 ## What it is for (decided 2026-11-15)
 
-Endless Cues is **a free, QLab-compatible cue list for running a show**: a puppet show, a play, a comedy night, a piece of digital art. Its **assistant** helps build the show and connect its equipment. Three things follow:
+Endless Cues is **a free, QLab-compatible cue list for running a show**: a puppet show, a play, a comedy night, a piece of digital art. Its **assistant** helps build the show and connect its equipment. Two things follow:
 
 - **Simple until asked.** Out of the box it is a plain cue list; everything that analyses, decides or acts by itself is off until switched on ([00](00-defaults.md)).
-- **The Ableton-like Live view was premature.** It is built, and hidden until Settings ▸ General ▸ Show the Live view; a show made with it plays the same with it hidden. No further work is planned on it ahead of the cue list.
 - **Music tools are for designing a sound and for rescuing a show that goes off script, not for performing it**: a cue's sound-design chain ([05](05-audio.md)); and, in the cue list's own Playing strip, going round from here, bar lines, markers, moves on the bar, and a tempo found and corrected where it is asked for.
 
 ## 0.1 — the public alpha (this)
@@ -20,7 +19,7 @@ What the app does today. "Checked" means a unit test or a check in the end-to-en
 - **Cue types**: Group (all together, playlist, start first, start first and enter, random), Audio, Mic, Fade (of a cue or a group), Stop, Start, Pause, Devamp, Load, GoTo, Arm, Disarm, Wait, Memo, Network (OSC, with a faded value), MIDI (notes, program changes, controllers, MSC, SysEx), Light (called, and fired on a desk), Mix, Jump, and Script (a list of show commands, not code).
 - **Cue carts**, and a list, a cart or the inspector in a window of its own.
 - **Triggers**: hotkey, OSC, MIDI and time of day on any cue; show commands from MIDI and MSC.
-- **Sound**: buses with level, pan, mute, solo, a three-band eq and a filter; each bus to a pair of the device's outputs; ducking; loop regions held, counted and let go; play counts; a tempo found in a track when asked, and GOs that land on the beat or bar; a sound-design chain on a cue (measured, not heard); the rescue tools in the Playing strip (a loop from here, markers, moves on the bar); recording the show; the Live view (hidden until switched on).
+- **Sound**: buses with a level; each bus to a pair of the device's outputs; ducking; loop regions held, counted and let go; play counts; a tempo found in a track when asked, and GOs that land on the beat or bar; a sound-design chain on a cue (measured, not heard); the rescue tools in the Playing strip (a loop from here, markers, moves on the bar); recording the show.
 - **Editing**: cut, copy, paste, duplicate, group, ungroup, renumber, find, a right-click menu, QLab's single keys (remappable), drag and drop, undo through everything.
 - **The show file**: a folder of plain JSON; nothing kept until Save; a version for every save, compared and restored; timed backups of the working show; templates; settings exported and imported; a playback log as CSV; a command line (`ec validate`, `diff`, `simulate`, `apply`).
 - **From QLab**: QLab 5 and QLab 4 workspaces read directly, carts included, with a report of what did not come across.

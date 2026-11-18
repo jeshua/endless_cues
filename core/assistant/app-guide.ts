@@ -25,7 +25,6 @@ const SCREENS: [string, GuideItem[]][] = [
     { at: 'tab:edit', ask: /\bedit (tab|mode)\b/, text: 'Edit [tab:edit]: the cue list, editable.' },
     { at: 'tab:rig', ask: /\brig\b|pre-?show check|equipment|devices?\b/, keys: ['rig'], text: 'Rig [tab:rig]: what the show depends on (devices, files, its script, the checklist) and whether each part is ready, worst first; Try on a device sends it one command; Look for props finds the kit’s props on the network.' },
     { at: 'tab:show', ask: /show mode|lock(ed)? (the )?(show|editing)|perform/, keys: ['showMode'], text: 'Show [tab:show]: the same list with editing locked, for the performance. The assistant sleeps there and points at nothing.' },
-    { at: 'tab:live', ask: /live (view|mixer|tab)|clip slots?|crossfader/, keys: ['live'], text: 'Live [tab:live]: a mixing desk with clip slots; hidden until Settings ▸ General ▸ Show the Live view. Hiding it never changes what the show plays.' },
     { at: 'list-picker', ask: /(another|other|second|switch) (cue )?lists?/, text: 'With more than one list, a menu beside the tabs [list-picker] chooses the list on screen; a cart (a grid of buttons) is a kind of list.' },
     { at: 'undo', ask: /\b(undo|redo)\b/, keys: ['undo'], text: '↶ ↷ [undo]: undo and redo every edit, the assistant’s too.' },
     { at: 'save', ask: /\bsave\b|keep (my |the )?(changes|show|edits)|unsaved|not saved/, keys: ['save', 'saveNote'], text: 'Save · N [save]: nothing is kept until it is pressed; N counts what is not saved yet and hovering lists it. Each save is a version; Save with a Note names it.' },
@@ -80,7 +79,7 @@ const SCREENS: [string, GuideItem[]][] = [
     { at: 'output-device', ask: /output( device)?|sound card|(audio )?interface|speakers?/, text: 'The sound output [output-device]: opens Settings ▸ Audio.' },
   ]],
   ['Settings (⚙): its panes', [
-    { at: 'settings:general', ask: /general settings|double[- ]go|panic (fade|time)|theme|row size|dark|appearance/, text: 'General [settings:general]: GO and safety (the double-GO guard, the panic fade), updates, the look (theme, row size, showing the Live view).' },
+    { at: 'settings:general', ask: /general settings|double[- ]go|panic (fade|time)|theme|row size|dark|appearance/, text: 'General [settings:general]: GO and safety (the double-GO guard, the panic fade), updates, the look (theme, row size).' },
     { at: 'settings:show', ask: /show settings|numbering|templates?|timed backups?/, text: 'Show [settings:show]: the show’s own settings: numbering, templates, timed backups.' },
     { at: 'settings:audio', ask: /audio settings|routing|outputs?\b.*bus|ducking|monitor feed/, text: 'Audio [settings:audio]: the output device, the buses and the outputs each plays on, ducking, the monitor feed.' },
     { at: 'settings:network', ask: /network settings|osc (patch|control|in)|patch(es)?/, text: 'Integrations, along its top: Network [settings:network] (OSC patches, control from outside, passcodes), Video [settings:video] (the stage display), Light [settings:light] (the app’s own DMX), Triggers [settings:triggers] (every trigger in the show), Modules [settings:modules] (a lighting desk, MIDI, timecode…).' },

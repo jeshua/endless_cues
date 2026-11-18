@@ -1,9 +1,8 @@
 /**
- * The title bar's tabs (Edit · Rig · Show, and Live once that view is on) and the window's room for the list; run by
+ * The title bar's tabs (Edit · Rig · Show) and the window's room for the list; run by
  * smoke.ts after the rig's pages. Checked here: each tab shows its page; the Show tab IS Show mode, with everything
  * Show mode locks (the host refuses an edit, the toolbar and inspector are gone, the assistant is not there at all);
- * the Rig from Show stays in Show mode, and only Edit unlocks; ⇧⌘M goes between Edit and Show; Live is a tab only
- * while that view is switched on; a brand-new show has no dot on its Rig tab; the add-cue bar is one row of the common
+ * the Rig from Show stays in Show mode, and only Edit unlocks; ⇧⌘M goes between Edit and Show; a brand-new show has no dot on its Rig tab; the add-cue bar is one row of the common
  * types until More; and at 1000 by 700, with the Playing strip folded out and the inspector showing, the cue list
  * keeps its header and four rows.
  */
@@ -17,7 +16,6 @@ async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Sm
 
   host.cmd({ op: 'panic', hard: true });
   host.cmd({ op: 'mode', mode: 'edit' });
-  await page(`window.ec.app({ op: 'view', view: { live: false } })`);
   win.webContents.send('ec-menu', 'info');
   host.openUntitled();
   await until(() => snap().show.untitled && snap().rows.length === 0, 4000);
@@ -27,7 +25,7 @@ async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Sm
   await until(() => has('.list, .welcome'), 3000);
 
   // ── the tabs as they come ──
-  check('the title bar has three tabs, Edit · Rig · Show, and no Live', (await page(`[...document.querySelectorAll('.titlebar [data-tabs] [data-tab]')].map((b) => b.dataset.tab + ':' + b.textContent.trim()).join()`)) === 'edit:Edit,rig:Rig,show:Show',
+  check('the title bar has three tabs, Edit · Rig · Show', (await page(`[...document.querySelectorAll('.titlebar [data-tabs] [data-tab]')].map((b) => b.dataset.tab + ':' + b.textContent.trim()).join()`)) === 'edit:Edit,rig:Rig,show:Show',
     await page(`[...document.querySelectorAll('.titlebar [data-tabs] [data-tab]')].map((b) => b.textContent.trim())`));
   check('…and the old switches are gone', !(await has('.titlebar .seg.mode')) && !(await has('.titlebar .seg.views')));
   check('a brand-new show has no dot on its Rig tab (Save already says it is not saved)', !(await has('[data-rig-dot]')), snap().rig.items.filter((it) => it.state !== 'ready').map((it) => it.id));
@@ -79,16 +77,6 @@ async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Sm
   check('⇧⌘M from the Rig goes to the Show tab', await until(async () => snap().mode === 'show' && (await tabOn()) === 'show' && (await has('.centre .list')), 2000));
   win.webContents.send('ec-menu', 'toggle-mode');
   check('…and again to the Edit tab', await until(async () => snap().mode === 'edit' && (await tabOn()) === 'edit', 2000));
-
-  // ── Live: a tab only while that view is switched on ──
-  await page(`window.ec.app({ op: 'view', view: { live: true } })`);
-  win.webContents.send('ec-menu', 'info');
-  check('switched on, the Live view is a fourth tab', await until(() => has('[data-tabs] [data-tab="live"]'), 3000));
-  await click('[data-tab="live"]');
-  check('…which shows the desk', await until(async () => (await has('.desk')) && (await tabOn()) === 'live', 3000));
-  await page(`window.ec.app({ op: 'view', view: { live: false } })`);
-  win.webContents.send('ec-menu', 'info');
-  check('switched off, the tab is gone and the list is back', await until(async () => !(await has('[data-tabs] [data-tab="live"]')) && !(await has('.desk')) && (await has('.centre .list')), 3000));
 
   // ── the list keeps its room at 1000 by 700: the Playing strip folded out and the inspector showing ──
   win.setContentSize(1000, 700); await sleep(300);

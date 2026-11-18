@@ -40,7 +40,7 @@ function mirror(c: MirroredCmd | null | undefined, { before = {}, after = {}, re
     case 'toggle': if (id) out.push(cueAddr(id, 'togglePause')); break;
     case 'stop': if (id) out.push(cueAddr(id, c.fade ? 'panic' : 'stop')); break;
     case 'start': if (id) out.push(cueAddr(id, 'start')); break;
-    case 'fire': case 'launch': if (id) out.push(cueAddr(id, 'preview')); break;
+    case 'fire': if (id) out.push(cueAddr(id, 'preview')); break;
     case 'load': if (after.playhead && result && result.loaded) out.push(`${cueAddr(after.playhead, 'loadAt')} ${Number(result.loaded.at) || 0}`); else if (after.playhead) out.push(`${cueAddr(after.playhead, 'loadAt')} 0`); break;
     case 'playhead': case 'move': case 'jump': case 'list': break;   // (only where the playhead ends up matters: below)
     default: return [];
@@ -50,6 +50,6 @@ function mirror(c: MirroredCmd | null | undefined, { before = {}, after = {}, re
 }
 
 /** The commands that are transport (the rest are never looked at). */
-const MIRRORED = new Set(['go', 'panic', 'fadeall', 'reset', 'pause', 'resume', 'toggle', 'stop', 'start', 'fire', 'launch', 'load', 'playhead', 'move', 'jump', 'list']);
+const MIRRORED = new Set(['go', 'panic', 'fadeall', 'reset', 'pause', 'resume', 'toggle', 'stop', 'start', 'fire', 'load', 'playhead', 'move', 'jump', 'list']);
 
 export { mirror, MIRRORED };

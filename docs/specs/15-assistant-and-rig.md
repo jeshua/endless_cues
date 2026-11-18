@@ -695,7 +695,7 @@ Devices are edited with the existing `edit` command and the operations of 3.5.
 A view beside the cue list: the middle of the title bar's tabs, **Edit · Rig · Show** (and **· Live** when that is
 on; the tabs replaced the old Cues | Rig switch and Edit / Show toggle, docs/specs/07-design-system.md). The Rig keeps
 the mode the app is in: from Show it opens under Show mode's locks. *View ▸ Rig* is ⇧⌘R (`CmdOrCtrl+Shift+R`). Space is
-still GO and Esc is still Panic; the list's own keys do nothing here, as in the Live view. The sidebar (active
+still GO and Esc is still Panic; the list's own keys do nothing here. The sidebar (active
 cues, sent, mixer) stays, and any drawer may be open beside it: the assistant and the Rig are meant to be
 looked at together.
 
@@ -1286,7 +1286,7 @@ In `CLAUDE.md`'s list since the merge (as corrected there):
    show" keep the checklist's words. Changing the word later is one string in three places.
 2. **Is the Rig tab always visible, even on a plain show?** Recommended: yes. It is one word, it acts on
    nothing, and its red dot is how a newcomer finds a missing file. The alternative is hiding it until the
-   show has a device, as the Live view is hidden.
+   show has a device.
 3. **Devices inside `show.json`, not files of their own.** Recommended as written (3.1): one undo, one
    version history, one review. A device file for sharing between shows can follow.
 4. **May the assistant send an "are you there?" by itself?** Recommended: yes, and only that (4.1). Without it

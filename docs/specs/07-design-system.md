@@ -80,8 +80,7 @@ size is a bug, with the few exceptions listed under each scale.
 | `--fs-xl` | 25 px | the cue standing by (its number in mono, its name in `--display`) |
 
 Outside the scale, on purpose: GO (34 px, weight 750, `--display`), the welcome title (38 px), the imported title
-(28 px), the show clock's mono (18 px is `--fs-h`), and the tiny marks drawn as text (fader ticks, the Live view's
-device chips, a glyph's size inside a row: 8–9.5 px, and a large row's glyph at 16 px).
+(28 px), the show clock's mono (18 px is `--fs-h`), and the tiny marks drawn as text (fader ticks, a glyph's size inside a row: 8–9.5 px, and a large row's glyph at 16 px).
 
 `--font` is Jost in LAB and OCEAN and the system UI font in GRAPHITE; `--display` is Bricolage Grotesque (the show
 title, GO, the standby name, headings); `--mono` for anything counted. Both families are bundled as woff2 with
@@ -113,7 +112,7 @@ control. Rows inside a sheet have a 16 px side gutter (the Rig) or 8 px cell pad
 
 | Token | Radius | For |
 |---|---|---|
-| `--radius-xs` | 3 px | tags, marks, the Live view's small buttons |
+| `--radius-xs` | 3 px | tags, marks, small buttons |
 | `--radius-s` | 5 px | controls, inputs, boxes inside a card |
 | `--radius` | 7 px | cards, the review card, a version |
 | `--radius-l` | 12 px | anything floating or framed: Settings, a sheet, a popover, a toast, the checks list, the GO button |
@@ -181,7 +180,7 @@ Live when that view is switched on (`.tabs-main`, `[data-tabs]`, each `[data-tab
 - The tab on is raised (`--bg-1` with a ring). The Show tab is drawn in standby colours: filled with `--standby-wash`
   when it is the page, and its word stays yellow while Show mode holds on another tab. In Show mode a 2 px
   `--standby` rule runs under the whole title bar. Colour still means one thing: yellow is standby.
-- Keys: ⇧⌘M goes between Edit and Show (from any tab), ⇧⌘R between the Rig and the list, ⌘L the Live view.
+- Keys: ⇧⌘M goes between Edit and Show (from any tab), ⇧⌘R between the Rig and the list.
 - The Rig tab carries a 7 px dot: `--danger` while the show has a problem, `--standby` while something is to be
   looked at, else none. Unsaved changes are not counted (Save says so), so a brand-new show wears no dot.
 

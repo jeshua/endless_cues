@@ -143,7 +143,6 @@ export interface Running {
   fade: { to: number; until: number; shape?: Shape } | null;
   loop: boolean;
   rate?: number;
-  warp?: number;
   stretched?: boolean;
   /** a live input, or a picture with no sound: no file, no end */
   live?: boolean;
@@ -230,8 +229,6 @@ export interface EngineStage {
   seek?(key: string, t: number): void;
   hide?(key: string): void;
 }
-/** How a warped sound plays (the Live view): `rate` times its own, keeping its pitch or not. */
-export interface Warp { rate: number; keepPitch?: boolean }
 export type DmxAction = 'run' | 'fade' | 'done';
 export interface EngineOptions {
   audio: EngineAudio;
@@ -245,7 +242,6 @@ export interface EngineOptions {
   panicFade?: number;
   random?: () => number;
   video?: EngineStage;
-  warp?: (cue: EngineCue, from: number) => Warp | null;
   limits?: { min: number; max: number } | null;
 }
 /** What the engine emits: 'change', whenever anything an operator could see has. */
@@ -283,7 +279,6 @@ const REVERT_FADE = 0.5;        // s: "revert fade" puts the levels back over th
 const clampRate = (v: unknown) => (Number(v) > 0 ? Math.max(RATE_MIN, Math.min(RATE_MAX, Number(v))) : 1);
 
 class CueEngine extends EventEmitter<EngineEvents> {
-  warpHook: (cue: EngineCue, from: number) => Warp | null;
   video: EngineStage;
   limits: { min: number; max: number } | null;
   reverts: Map<string, { id: string; db: number; band: number; rate: number }[]>;
@@ -344,10 +339,8 @@ class CueEngine extends EventEmitter<EngineEvents> {
   fadeInOnce?: number;
   startDepth?: number;
 
-  constructor({ audio, send, mix, lights, midi, run, clock, log, panicFade, random, video, warp, limits }: EngineOptions) {
+  constructor({ audio, send, mix, lights, midi, run, clock, log, panicFade, random, video, limits }: EngineOptions) {
     super();
-    // a warped sound (the Live view): `warp(cue, from)` says how fast it plays, { rate, keepPitch }, or null for as it is
-    this.warpHook = warp || (() => null);
     this.video = video || {};       // the stage: where a cue with a picture is drawn
     // The show's level limits ({ min, max } dB, Settings ▸ Audio): every level a cue or a fade asks for goes through
     // them on its way to the sound. None: levels are played as written.
@@ -901,7 +894,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
     const r = this.running.get(id);
     const c = this.byId.get(id);
     if (!r || !c) return;
-    if (this.warped(r, c, 'held in a section')) return;
+    if (this.cannotWhileStretched(r, c, 'held in a section')) return;
     const p = this.positionOf(r);
     const loops = (r.exact && c.loops) || [];
     let g: Span | null | undefined = Number.isInteger(which) ? loops[which as number] : null;
@@ -1049,7 +1042,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
    *     the track's armed holds go with the track);
    *   - not armed, still ahead of the track or the track inside it: armed (inside it, it loops at its end);
    *   - behind the track: refused (going back to one is a skip on the waveform).
-   *  `free` (the Live view's loop buttons): any stretch of the track is taken, cleanly looping or not.
+   *  `free` (the Playing strip's loops, drawn or from here): any stretch of the track is taken, cleanly looping or not.
    *  Returns what it did: 'let go' | 'disarmed' | 'armed' | null. */
   toggleHold(id: string, loop: { start: number; end: number } | null | undefined, free = false, alone = false): 'let go' | 'disarmed' | 'armed' | null {
     // a click runs with its track: the sounds its group started with it, as long as it is, go round with it
@@ -1057,7 +1050,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
     const r = this.running.get(id);
     const c = this.byId.get(id);
     if (!r || !c || !loop) return null;
-    if (this.warped(r, c, 'looped')) return null;
+    if (this.cannotWhileStretched(r, c, 'looped')) return null;
     const near = (l: Span | null | undefined) => !!l && Math.abs(l.start - loop.start) < 0.02 && Math.abs(l.end - loop.end) < 0.02;
     const known = free && loop.end > loop.start ? loop : [...this.holdsOf(id), ...(c.loops || []), ...(c.loopOptions || [])].find(near);
     if (!known) { this.log(`loop ${this.regionText(loop)} on ${c.name}: not a place it loops cleanly`); return null; }
@@ -1154,7 +1147,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
   /** A sound played at another speed with its pitch kept is a stream (only a stream can be stretched): it cannot be
    *  held in a section or moved inside itself, which are timed to the sample on a decoded sound. Said in the log,
    *  once asked. A sound re-pitched by its rate is decoded like any other and can be. */
-  warped(r: Running, c: EngineCue, what: string) {
+  cannotWhileStretched(r: Running, c: EngineCue, what: string) {
     if (!r.stretched || this.rateOf(r) === 1) return false;
     this.log(`${c.name || c.id} is playing at ×${this.rateOf(r).toFixed(3)} with its pitch kept: it cannot be ${what}`);
     return true;
@@ -1427,7 +1420,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
    *  a beat is playing. A loop's grid wraps; past a one-shot's last downbeat there is none. */
   toNextDownbeat(atLeast = BEAT_LEAD, grid: 'beats' | 'downbeats' = 'downbeats') {
     const w = this.nextOnGrid(atLeast, grid);
-    // (in the file's seconds; a warped track reaches it sooner or later than that)
+    // (in the file's seconds; a track at another rate reaches it sooner or later than that)
     return w ? w.secs / this.rateOf(w.r) : null;
   }
   nextOnGrid(atLeast: number, grid: 'beats' | 'downbeats') {
@@ -1598,18 +1591,15 @@ class CueEngine extends EventEmitter<EngineEvents> {
         this.loadAt.delete(cue.id);
         const db = this.lim(Number(cue.gainDb) || 0);
         const whole = !!cue.loop && !(Number(cue.cutAt) > 0);            // with an end, it loops from its start to its end (armVamp)
-        // How fast it plays: its own `rate`, times the desk's tempo over its own when it is warped (the Live view).
-        // Keeping its pitch (the cue's `preservePitch`, or a 'keep' warp) is the stretcher of a streamed sound, which a
-        // decoded one does not have: such a sound is never decoded, so it has no sample-exact loops.
-        const warp = this.warpHook(cue, from);
-        const warpRate = warp && warp.rate > 0 ? warp.rate : 1;
-        const rate = clampRate(clampRate(cue.rate) * warpRate);
-        const keepPitch = rate !== 1 && ((!!cue.preservePitch && clampRate(cue.rate) !== 1) || (!!(warp && warp.keepPitch) && warpRate !== 1));
+        // How fast it plays: its own `rate`. Keeping its pitch (the cue's `preservePitch`) is the stretcher of a
+        // streamed sound, which a decoded one does not have: such a sound is never decoded, so it has no sample-exact loops.
+        const rate = clampRate(cue.rate);
+        const keepPitch = rate !== 1 && !!cue.preservePitch;
         const exact = this.loopsExactly(cue) && !keepPitch;
         // `fadeIn`: from silence up to its level (a scene's mix as its GO starts it); the level itself stays db
         const over = this.takeOver(cue);                                  // (a bus that plays one sound at a time: sound-kinds.ts)
         const fadeIn = Number(cue.fadeIn) || this.fadeInOnce || over || 0;       // (fadeInOnce: a playlist crossfading into it)
-        this.running.set(cue.id, { startedAt: this.clock.now(), from, file: cue.file, db: fadeIn > 0 ? SILENT_DB : db, fade: null, loop: whole, ...(rate !== 1 ? { rate } : {}), ...(warpRate !== 1 ? { warp: warpRate } : {}), ...(keepPitch ? { stretched: true } : {}) });
+        this.running.set(cue.id, { startedAt: this.clock.now(), from, file: cue.file, db: fadeIn > 0 ? SILENT_DB : db, fade: null, loop: whole, ...(rate !== 1 ? { rate } : {}), ...(keepPitch ? { stretched: true } : {}) });
         this.audio.play(cue.id, { file: cue.file, gainDb: fadeIn > 0 ? SILENT_DB : db, from, loop: whole, exact, bus: busOf(cue),
                                   ...(rate !== 1 ? { rate, preservePitch: keepPitch } : {}),
                                   ...(Array.isArray(cue.envelope) && cue.envelope.length ? { envelope: cue.envelope } : {}),
@@ -1983,7 +1973,7 @@ class CueEngine extends EventEmitter<EngineEvents> {
       if (r) { this.fadeAudio(id, SILENT_DB, 0.03, true, `stop:${id}`); this.log(`  ↳ ${track.name} stops`); }
       return;
     }
-    if (r && !cue.stay && this.warped(r, track, 'moved inside itself')) return;
+    if (r && !cue.stay && this.cannotWhileStretched(r, track, 'moved inside itself')) return;
     if (cue.stay) {
       // the track stays where it is, looping as it was: only its level moves
       const group: Partial<EngineCue> = this.byId.get(this.parentOf.get(cue.id)) || {};
@@ -2349,19 +2339,6 @@ class CueEngine extends EventEmitter<EngineEvents> {
       this.releaseThen.delete(key);
       for (const id of then) if (this.byId.has(id)) this.chain(this.byId.get(id)!, 0, `after ${key}'s last pass:`);
     }
-    this.changed();
-  }
-
-  /** A warped sound's desk tempo changed while it plays: `warp` is the new ratio of the desk's tempo to its own.
-   *  Its rate is its own rate (as a Fade may have left it) times that; it carries on from where it is. */
-  rewarp(id: string, warp: number) {
-    const r = this.running.get(id);
-    if (!r || r.live || !(warp > 0)) return;
-    const was = r.warp && r.warp > 0 ? r.warp : 1;
-    if (Math.abs(was - warp) < 1e-4) return;
-    const to = clampRate(this.rateOf(r) / was * warp);
-    r.warp = warp;
-    this.fadeRate(id, to, 0, `rate:warp:${id}`);
     this.changed();
   }
 

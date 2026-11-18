@@ -1,7 +1,7 @@
 // The waveform a sound is edited on (the inspector's Time & Loops): zoomed and scrolled, with handles for Start and
 // End, a drag that draws a loop region, and the sound's lines drawn over it (its volume, its pan, the settings of its
 // sound design: core/audio/lanes.ts), edited as in a DAW. Above it, the loop lane and the marker strip, whose
-// regions and markers are dragged where they go. The strip under the list and the Live view's decks draw the plainer
+// regions and markers are dragged where they go. The strip under the list draws the plainer
 // one (Sidebar.ts); this one asks for finer peaks, so it can be zoomed into.
 //
 // Everything that changes the show is one edit through its ops (undo, the unsaved marks); a drag is drawn as it is

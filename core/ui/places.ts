@@ -12,7 +12,7 @@
  *   resolve(target, { doc })   a name → { ok, place } (what the window is sent) or { ok: false, why }
  *   names()                    every fixed name and every family, for the tool's description and the guide's test
  *
- * Fixed names are below. Families take what follows the colon: tab:<edit|rig|show|live>, add-type:<cue type>,
+ * Fixed names are below. Families take what follows the colon: tab:<edit|rig|show>, add-type:<cue type>,
  * inspector-tab:<basics|type|time|design|triggers>, inspector-field:<field key>, cue:<number or id>,
  * settings:<pane>. A few plain words are kept as other names for one of these (`rig` is `tab:rig`).
  */
@@ -90,10 +90,10 @@ const FIXED: Record<string, PlaceDef | undefined> = {
 };
 
 /** Other names for a place (a word a model or a person might use first). */
-const ALIASES: Record<string, string | undefined> = { rig: 'tab:rig', edit: 'tab:edit', 'show-mode': 'tab:show', live: 'tab:live', keys: 'settings:keys', settings: 'settings-button',
+const ALIASES: Record<string, string | undefined> = { rig: 'tab:rig', edit: 'tab:edit', 'show-mode': 'tab:show', keys: 'settings:keys', settings: 'settings-button',
   colour: 'inspector-field:color', color: 'inspector-field:color', triggers: 'inspector-tab:triggers', 'sound-design': 'inspector-tab:design', 'time-and-loops': 'inspector-tab:time' };
 
-const TABS: Record<string, string | undefined> = { edit: 'Edit', rig: 'Rig', show: 'Show', live: 'Live' };
+const TABS: Record<string, string | undefined> = { edit: 'Edit', rig: 'Rig', show: 'Show' };
 const INSPECTOR_TABS: Record<string, string | undefined> = { basics: 'Basics', type: 'the cue type’s own tab', time: 'Time & Loops', design: 'Sound design', triggers: 'Triggers' };
 // Settings: [pane, label, what it is in] — a pane under Integrations is a tab along its top
 const PANES: [pane: string, label: string, within?: string][] = [['general', 'General'], ['show', 'Show'], ['audio', 'Audio'], ['integrations', 'Integrations'], ['network', 'Network', 'integrations'], ['video', 'Video', 'integrations'],
@@ -162,7 +162,7 @@ function resolve(target: unknown, { doc = null, cue = null }: { doc?: ShowDoc | 
   switch (fam) {
     case 'tab':
       if (!TABS[a]) break;
-      return place({ label: `The ${TABS[a]} tab`, sel: `.tabs-main [data-tab="${a}"]`, ...(a === 'live' ? { absent: 'The Live view is hidden: Settings ▸ General ▸ Show the Live view.' } : {}) });
+      return place({ label: `The ${TABS[a]} tab`, sel: `.tabs-main [data-tab="${a}"]` });
     case 'add-type': {
       const t = TYPES[a] ? a : TYPE_ORDER.find((x) => TYPES[x].label.toLowerCase() === a);
       if (!t || TYPES[t].heading) break;

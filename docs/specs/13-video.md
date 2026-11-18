@@ -24,7 +24,7 @@ Video is built the way sound is. The engine decides; the stage window only does 
 
 ## Why a video is a sound with a picture
 
-A video file's sound has to go through the cue's bus: its fader, its strip, the ducker, the limiter, the recording. All of that lives in the audio window. So the audio window plays the file's sound exactly as it plays an Audio cue (an `HTMLAudioElement` streams the sound track of an mp4 or a webm), and the stage window plays the same file muted.
+A video file's sound has to go through the cue's bus: its fader, the ducker, the limiter, the recording. All of that lives in the audio window. So the audio window plays the file's sound exactly as it plays an Audio cue (an `HTMLAudioElement` streams the sound track of an mp4 or a webm), and the stage window plays the same file muted.
 
 That makes a Video cue with a video file **an audio cue to the engine** (`show.toEngineDoc` gives it `type: 'audio'` and `picture: 'video'`). Level, fade in, fade out, Start and End, Loop, pause, resume, skip, Load to Time, Stop, panic, "fade and stop others", Fade cues, playlists, auto-follow: none of it was written again, and none of it can behave differently for a video than for a sound. The engine adds a call to the stage beside each call to the audio backend.
 

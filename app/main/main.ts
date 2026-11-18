@@ -58,8 +58,8 @@ export interface AppConfig extends UpdateConfig {
   stage?: { open?: boolean; display?: string | null; label?: string };
   clientId?: string;
 }
-/** How the window is drawn on this computer: the row size, the Live view, the assistant's face and its hint. */
-export interface ViewSettings { rowSize?: string; live?: boolean; qirx?: boolean; qirxHint?: boolean; [key: string]: unknown }
+/** How the window is drawn on this computer: the row size, the assistant's face and its hint. */
+export interface ViewSettings { rowSize?: string; qirx?: boolean; qirxHint?: boolean; [key: string]: unknown }
 /** The assistant as this computer has it set up; its keys sealed by the keychain, under the provider they belong to. */
 interface AssistantSettings {
   provider?: string; endpoint?: string; baseURL?: string; model?: string; cloudEmail?: string; autoApply?: boolean; agents?: boolean;
@@ -102,7 +102,7 @@ export type KeyOver = Record<string, string[] | undefined>;
 export interface AppInfo {
   version: string; build: { commit?: string; date?: string; [key: string]: unknown } | null; platform: NodeJS.Platform; smoke: boolean;
   keys: KeyOver;
-  view: { rowSize: string; live: boolean; qirx: boolean; qirxHint: boolean };
+  view: { rowSize: string; qirx: boolean; qirxHint: boolean };
   types: typeof cueTypes.TYPES; typeOrder: typeof cueTypes.TYPE_ORDER; common: typeof cueTypes.COMMON; colors: typeof cueTypes.COLORS; palette: typeof cueTypes.PALETTE;
   devices: ReturnType<typeof import('../../core/net/devices').list>;
   sound: {
@@ -498,9 +498,7 @@ async function exportPlaylog(given?: string) {
 }
 const failed = (title: string) => (r: HostResult | undefined) => { if (r && r.error && !TEST) dialog.showErrorBox(title, r.error); };
 
-// How the window is drawn on this computer (config.json's `view`): the row size, and whether the Live view is shown.
-// The Live view (the mixing desk, tempo finding, warp) is off until it is asked for: docs/specs/00-defaults.md.
-const liveView = () => !!(config.view || {}).live;
+// How the window is drawn on this computer (config.json's `view`): the row size, the assistant's face.
 function setView(change: Partial<ViewSettings> | null | undefined) {
   const v = { ...(config.view || {}), ...(change && typeof change === 'object' ? change : {}) };
   if (SMOKE || TEST) config.view = v; else saveConfig({ view: v });
@@ -552,9 +550,6 @@ function buildMenu() {
       { role: 'selectAll' }] },
     { label: 'View', submenu: [
       { label: 'Show Mode', accelerator: KEY('showMode'), click: send('toggle-mode') },
-      // the Live view is there only once it is switched on (this computer's choice; off, ⌘L is nobody's)
-      ...(liveView() ? [{ label: 'Live Mixer', accelerator: KEY('live'), click: send('view-live') }] : []),
-      { label: 'Show the Live View', type: 'checkbox', checked: liveView(), click: () => setView({ live: !liveView() }) },
       // (the list's own keys fold the groups: < and >; ⌥-click on a caret folds every one like it)
       { label: 'Fold All Groups (<)', click: send('fold-groups') },
       { label: 'Unfold All Groups (>)', click: send('unfold-groups') },
@@ -627,7 +622,7 @@ app.whenReady().then(async () => {
   ipcMain.on('ec-ui-tables', (e) => { e.returnValue = { keys: uiKeys.forPage() }; });
   ipcMain.handle('ec-init', (): AppInfo => ({ version: VERSION, build: BUILD, platform: process.platform, smoke: SMOKE,
     keys: config.keys || {},
-    view: { rowSize: ['compact', 'normal', 'large'].includes((config.view || {}).rowSize!) ? config.view!.rowSize! : 'normal', live: liveView(),
+    view: { rowSize: ['compact', 'normal', 'large'].includes((config.view || {}).rowSize!) ? config.view!.rowSize! : 'normal',
       // the assistant's face in the side panel (docs/brand-assistant.md): there unless it has been hidden; its one hint, until it has been clicked
       qirx: (config.view || {}).qirx !== false, qirxHint: (config.view || {}).qirxHint !== false },
     types: cueTypes.TYPES, typeOrder: cueTypes.TYPE_ORDER, common: cueTypes.COMMON, colors: cueTypes.COLORS, palette: cueTypes.PALETTE, devices: (require('../../core/net/devices') as typeof import('../../core/net/devices')).list(),

@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as show from '../core/show/show';
 import { TYPES, COMMON } from '../core/show/cue-types';
 import { importQlab } from '../core/import/qlab';
-import { usesLive } from '../core/show/uses-live';
+import { rig } from './helpers';
 import type { ShowDoc } from '../core/show/types';
 import type { CueEngine } from '../core/engine/cue-engine';
 import type { ShowDocument } from '../core/show/document';
@@ -24,7 +24,6 @@ function clever(doc: ShowDoc) {
   if (s.midi.mscIn) on.push('MIDI Show Control in');
   if (Object.values(s.midi.commands).some(Boolean)) on.push('MIDI show commands');
   if (s.editing.longSoundsToMusic) on.push('long sounds to the Music bus');
-  if (s.live.overlap || s.live.tempo || s.live.map.length) on.push('a Live setting');
   if (Object.keys(s.templates).length) on.push('a cue template');
   if (s.rig.devices.length) on.push('a device');
   if (s.rig.checks.length || s.rig.script) on.push('a checklist or a script');
@@ -35,7 +34,6 @@ function clever(doc: ShowDoc) {
 test('a new show is a plain cue list: nothing that analyses, decides or acts by itself is on', () => {
   const doc = show.newShow('x');
   assert.deepEqual(clever(doc), []);
-  assert.deepEqual(usesLive(doc), []);
   // the same through a save and a load, and for a file that names no settings at all
   assert.deepEqual(clever(show.normalise(JSON.parse(show.stringify(doc))).doc), []);
   assert.deepEqual(clever(show.normalise({ format: 'endless-cues-show', version: 1, lists: [] }).doc), []);
@@ -43,15 +41,13 @@ test('a new show is a plain cue list: nothing that analyses, decides or acts by 
   assert.deepEqual(Object.keys(doc.modules).sort(), ['backup-link', 'lighting-desk', 'osc-control', 'show-feedback', 'web-remote']);
 });
 
-test('a new cue of any type starts plain: no quantise, warp, ducking, fading of others or auto-load', () => {
-  const quiet: Record<string, unknown> = { onBeat: 'now', warp: '', fadeOthers: 0, duckOthers: 0, autoLoad: false, beatLead: 0, blend: '' };
+test('a new cue of any type starts plain: no quantise, ducking, fading of others or auto-load', () => {
+  const quiet: Record<string, unknown> = { onBeat: 'now', fadeOthers: 0, duckOthers: 0, autoLoad: false, beatLead: 0, blend: '' };
   for (const [type, def] of Object.entries(TYPES)) {
     for (const f of [...COMMON, ...def.fields]) if (f.key in quiet) assert.equal(f.default ?? quiet[f.key], quiet[f.key], `${type}.${f.key}`);
   }
   assert.equal(TYPES.audio.fields.find((f) => f.key === 'bus')!.default, 'effects');
   assert.equal(TYPES.audio.fields.find((f) => f.key === 'tempo')!.default, undefined, 'no sound starts with a tempo');
-  // what belongs to the Live view is marked, so the inspector can keep it out of a plain cue list
-  assert.deepEqual(Object.values(TYPES).flatMap((d) => d.fields.filter((f) => f.live).map((f) => f.key)).sort(), ['desk']);
 });
 
 test('a show that has something switched on keeps it', () => {
@@ -68,35 +64,11 @@ test('an imported QLab workspace is as plain as a new show', () => {
     const file = path.join(__dirname, 'fixtures', name);
     const { doc } = importQlab(fs.readFileSync(file), { file });
     assert.deepEqual(clever(doc), [], name);
-    assert.deepEqual(usesLive(doc), [], name);
     show.walk(doc, (c) => {
       assert.equal(c.tempo, undefined, `${name}: ${c.name} was given no tempo`);
-      assert.ok(!c.warp && (!c.onBeat || c.onBeat === 'now'), `${name}: ${c.name} is not warped or quantised`);
+      assert.ok(!c.onBeat || c.onBeat === 'now', `${name}: ${c.name} is not quantised`);
     });
   }
-});
-
-test('a show says what in it came from the Live view', () => {
-  const doc = show.newShow('x');
-  assert.deepEqual(usesLive(doc), []);
-  assert.deepEqual(usesLive(null), []);
-  doc.lists[0].cues.push(
-    { id: 'a', type: 'audio', file: 'a.wav', tempo: { bpm: 120, first: 0, bar: 4 } },               // a tempo alone changes nothing heard
-    { id: 'b', type: 'audio', file: 'b.wav', tempo: { bpm: 120, first: 0, bar: 4 }, warp: 'repitch' },
-    { id: 'g', type: 'group', onBeat: 'bar', children: [{ id: 'c', type: 'audio', file: 'c.wav', tempo: { bpm: 90, first: 0, bar: 4 }, warp: 'keep' }] },
-    { id: 'm', type: 'mix', levels: { music: -6 } },
-    { id: 'n', type: 'mix', desk: { crossfader: 0.5 } },
-  );
-  assert.deepEqual(usesLive(doc), ['2 warped sounds', 'a Mix cue that recalls the desk']);
-  doc.settings.live.map = [{ on: 'key q', to: 'clip:a' }];
-  doc.settings.live.tempo = 124;
-  doc.settings.audio.buses[0].pan = -0.5;
-  assert.deepEqual(usesLive(doc).slice(2), ['a key or control mapped to the desk', 'a desk tempo', 'a desk moved from rest']);
-  // a bus level is the cue list's own mixer, not the desk's; so are a tempo and a group that waits for the bar
-  const plain = show.newShow('y');
-  plain.settings.audio.buses[0].db = -12;
-  plain.lists[0].cues.push({ id: 'g', type: 'group', onBeat: 'bar', children: [{ id: 'a', type: 'audio', file: 'a.wav', tempo: { bpm: 120, first: 0, bar: 4 } }] });
-  assert.deepEqual(usesLive(plain), []);
 });
 
 // ── the rig (docs/specs/15-assistant-and-rig.md, section 7) ──

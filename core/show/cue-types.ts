@@ -7,7 +7,7 @@
  * (core/assistant), and docs/specs/03-show-file.md.
  *
  * A field's `kind` says how it is typed in, checked and shown:
- *   text | longtext | number | seconds | db | bool | enum | cue | file | patch | bus | color | markers | regions | tempo | camera | desk | cell
+ *   text | longtext | number | seconds | db | bool | enum | cue | file | patch | bus | color | markers | regions | tempo | camera | cell
  *   | matrix (a sound's own outputs): core/audio/routing.ts
  *   | eq (four bands on one sound) | chain (the tools one sound is played through) | sweep (what of a chain a Fade moves): core/audio/chain.ts
  *   | shape (a fade's curve: 'linear', 's-curve' or custom points) | envelope (a level drawn over a sound's length)
@@ -22,8 +22,6 @@
  * be a whole cue list as well as a cue.
  * `whenTarget: [types]` shows a field only while the cue's target is one of those types (what a Fade moves on a picture).
  *
- * `live: true` marks a field that belongs to the Live view (a Mix cue's kept desk): the inspector shows
- * it only while that view is switched on, or on a cue that has it set (docs/specs/00-defaults.md).
  * `advanced: true` folds a field under "More" in the inspector; `tab: 'triggers'` puts it on the inspector's
  * Triggers tab instead of Basics, `tab: 'design'` on its Sound design tab. `engine` names
  * the engine's field when it differs from the show file's.
@@ -54,7 +52,6 @@ export interface Field {
   mono?: boolean;
   placeholder?: string;
   tab?: string;
-  live?: boolean;
   accept?: string;
   /** a file field: what kind of file it takes ('picture': a video or an image) */
   media?: string;
@@ -225,9 +222,7 @@ const TYPES: Record<string, TypeDef> = {
       EQ, CHAIN,
       { key: 'markers', kind: 'markers', label: 'Markers', advanced: true, help: 'Named places on the waveform: [{at, name}].' },
       { key: 'loops', kind: 'regions', label: 'Loop regions', advanced: true, help: 'Sections that loop cleanly ([{start, end, name, count}]). With a count the track goes round one that many times by itself and plays on; with `hold: true` it goes round until it is let go (L, or a Devamp); with neither the operator starts it too (L).' },
-      { key: 'tempo', kind: 'tempo', label: 'Tempo', advanced: true, hidden: true, help: '{ bpm, first, bar, sections }: a track’s tempo, the time of a downbeat, and the beats in a bar; `sections` ([{ from, bpm, first, bar }]) where it changes tempo or time signature. Found by the app when asked (the sound’s Time & Loops tab, or the Live view) or set by hand.' },
-      { key: 'warp', kind: 'enum', label: 'Warp', options: ['', 'repitch', 'keep'], default: '', advanced: true, hidden: true,
-        help: 'Plays at the desk’s tempo (the Live view) instead of its own: needs a tempo. repitch: faster is higher, as a record is; keep: its pitch stays (it then streams, and cannot loop a section). While warped it cannot be held in a section or jumped inside itself.' },
+      { key: 'tempo', kind: 'tempo', label: 'Tempo', advanced: true, hidden: true, help: '{ bpm, first, bar, sections }: a track’s tempo, the time of a downbeat, and the beats in a bar; `sections` ([{ from, bpm, first, bar }]) where it changes tempo or time signature. Found by the app when asked (the sound’s Time & Loops tab) or set by hand.' },
       { key: 'beats', kind: 'numbers', label: 'Beat grid', advanced: true, hidden: true },
       { key: 'downbeats', kind: 'numbers', label: 'Bar grid', advanced: true, hidden: true },
     ],
@@ -431,7 +426,6 @@ const TYPES: Record<string, TypeDef> = {
     summary: 'Moves the bus faders over a time.',
     fields: [
       { key: 'levels', kind: 'levels', label: 'Bus levels', help: '{ busId: dB }. Buses not named stay.' },
-      { key: 'desk', kind: 'desk', label: 'Desk', live: true, help: '{ crossfader, buses: { busId: { eq, filter, pan, mute, xf } } }: the Live desk, recalled whole.' },
       { key: 'duration', kind: 'seconds', label: 'Duration', default: 2 },
     ],
   },
@@ -485,7 +479,6 @@ const TIPS: Record<string, string> = {
   'goto.target': 'Moves the playhead here. Nothing plays.',
   'disarm.target': 'The cue to switch off: GO will skip it.',
   'devamp.target': 'The looping sound to let go of: it plays on past its loop.',
-  'mix.desk': 'The whole Live desk as it was when kept.',
   'music.loop': 'Loops there until let go.',
   'music.letGo': 'Lets a held loop play on.',
 };
@@ -580,11 +573,6 @@ function coerce(field: Field, value: unknown): Coerced {
     case 'numbers':
       if (!Array.isArray(value) || value.some((n) => !Number.isFinite(Number(n)))) return { ok: false, why: `${field.label}: a list of numbers` };
       return { ok: true, value: value.map(Number) };
-    case 'desk': {
-      const d = require('../audio/strip').cleanDesk(value);
-      if (!d) return { ok: false, why: 'desk: { crossfader, buses: { bus: { eq, filter, pan, mute, xf } } }' };
-      return { ok: true, value: d };
-    }
     case 'levels': {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, why: 'levels: { bus: dB }' };
       const out: Record<string, number> = {};

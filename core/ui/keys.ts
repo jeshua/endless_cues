@@ -47,7 +47,6 @@ const MENU: MenuRow[] = [
   ['paste', 'CmdOrCtrl+V', 'Paste', 'Edit ▸ Paste'],
   ['pasteProps', 'Alt+CmdOrCtrl+V', 'Paste cue properties', 'Edit ▸ Paste Cue Properties…'],
   ['showMode', 'CmdOrCtrl+Shift+M', 'Show mode, or back to Edit', 'View ▸ Show Mode'],
-  ['live', 'CmdOrCtrl+L', 'Live mixer', 'View ▸ Live Mixer (once the Live view is shown)'],
   ['rig', 'CmdOrCtrl+Shift+R', 'The Rig', 'View ▸ Rig'],
   ['assistant', 'CmdOrCtrl+K', 'Assistant', 'View ▸ Assistant'],
   ['versions', 'CmdOrCtrl+Shift+V', 'Versions', 'View ▸ Versions'],
@@ -76,7 +75,7 @@ const PAGE: PageRow[] = [
 // Settings ▸ Keys, "Fixed": [label, menu ids separated by spaces, or a page id]
 const SHOWN: [label: string, ref: string][] = [['Find', 'find'], ['Load to time', 'loadToTime'], ['Jump to cue', 'jump'], ['Renumber the selection', 'renumber'], ['Undo / redo', 'undo'], ['Select all', 'selectAll'], ['Duplicate', 'duplicate'],
   ['Cut · Copy · Paste cues', 'cut copy paste'], ['Paste cue properties', 'pasteProps'], ['Go to the target', 'target'], ['Check the show', 'checks'], ['Group · Ungroup', 'group'], ['Move cue up / down', 'move'], ['Extend the selection', 'extend'], ['Add a cue (toolbar order)', 'addCue'], ['Zoom the cue list', 'zoom'],
-  ['Save a version', 'save'], ['Save with a note', 'saveNote'], ['Add sounds', 'addSounds'], ['Versions', 'versions'], ['Live mixer', 'live'], ['Assistant', 'assistant'], ['Monitor', 'monitor'], ['Show log', 'log'], ['The Rig', 'rig'],
+  ['Save a version', 'save'], ['Save with a note', 'saveNote'], ['Add sounds', 'addSounds'], ['Versions', 'versions'], ['Assistant', 'assistant'], ['Monitor', 'monitor'], ['Show log', 'log'], ['The Rig', 'rig'],
   ['Lights dashboard', 'lights'], ['Stage blackout, or back', 'blackout'], ['This list in a window', 'ownList'], ['Inspector in a window', 'ownInspector'], ['Show mode', 'showMode'], ['Settings', 'settings'], ['New show · Open', 'newShow open']];
 
 const byId = <R extends string[]>(rows: R[]): Record<string, R | undefined> => Object.fromEntries(rows.map((r) => [r[0], r]));

@@ -444,14 +444,4 @@ function editTempo(tempo: TempoIn | null | undefined, e: TempoEdit) {
   return cleanTempo({ ...all[0], ...(tempo!.confidence != null && !typed ? { confidence: tempo!.confidence } : {}), sections: all.slice(1) });
 }
 
-/** How fast a sound with a tempo plays to be at the desk's tempo: 1 when it has none, the desk has none, or the
- *  answer is beyond what stays music (half speed to double). `at`: where in its file it starts (its section). */
-const WARP_MIN = 0.5, WARP_MAX = 2;
-function warpRate(tempo: TempoIn | null | undefined, deskBpm: unknown, at = 0) {
-  const sec = sectionAt(tempo, at);
-  if (!sec || !okBpm(deskBpm)) return 1;
-  const rate = Number(deskBpm) / sec.bpm;
-  return rate >= WARP_MIN && rate <= WARP_MAX ? Math.round(rate * 1e4) / 1e4 : 1;
-}
-
-export { warpRate, tempoOf, tempoMap, gridOf, cleanTempo, editTempo, sectionsOf, sectionAt, onsetEnvelope, MIN_CONFIDENCE };
+export { tempoOf, tempoMap, gridOf, cleanTempo, editTempo, sectionsOf, sectionAt, onsetEnvelope, MIN_CONFIDENCE };

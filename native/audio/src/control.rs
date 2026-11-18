@@ -435,10 +435,9 @@ impl Control {
                     self.not_yet("record", "", "recording");
                 }
             }
-            "design" | "sweep" | "ir" | "strips" | "fx" | "midi" | "ltc" | "ltc-in" | "peaks" | "pcm" => {
+            "design" | "sweep" | "ir" | "fx" | "midi" | "ltc" | "ltc-in" | "peaks" | "pcm" => {
                 let what = match op {
                     "design" | "sweep" | "ir" => "sound design",
-                    "strips" => "the Live desk",
                     "fx" => "the reverb and delay sends",
                     "midi" => "MIDI (the audio window sends it)",
                     "ltc" | "ltc-in" => "LTC",

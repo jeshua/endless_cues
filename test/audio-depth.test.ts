@@ -310,34 +310,26 @@ test('a new show has the limits and the monitor feed in its settings, off and ha
   assert.deepEqual(old.levels, { min: -60, max: 12 }, 'a show saved before they existed gets the defaults');
 });
 
-// ── one rate: a cue's own rate, the Live view's warp, a Fade's "rate to", and what waits on a place in the file ──
-import { warpRate } from '../core/audio/tempo';
+// ── one rate: a cue's own rate, a Fade's "rate to", and what waits on a place in the file ──
 const A = (ref: string, more = {}): Op => ({ op: 'cue.add', ref, cue: { type: 'audio', file: `${ref}.wav`, ...more } });
 
-test('a sound’s rate is its own rate times its warp, in one number; pitch is kept if either asks for it', () => {
-  const s = build([
-    A('both', { rate: 0.5, warp: 'repitch', tempo: { bpm: 100, first: 0, bar: 4 } }),
-    A('kept', { rate: 2, preservePitch: true, warp: 'repitch', tempo: { bpm: 100, first: 0, bar: 4 } }),
-    A('warpkeep', { warp: 'keep', tempo: { bpm: 100, first: 0, bar: 4 } }),
-    A('plain', { warp: 'keep', tempo: { bpm: 120, first: 0, bar: 4 } }),
-  ]);
-  let desk = 120;
-  const r = rigAll(s.doc, { warp: (cue, from) => (cue.warp ? { rate: warpRate(cue.tempo, desk, from), keepPitch: cue.warp === 'keep' } : null) });
-  for (const k of ['both', 'kept', 'warpkeep', 'plain']) { r.engine.setDuration(`${k}.wav`, 60); r.engine.fire(s.id(k)); }
+test('a sound’s rate is its own, and a tempo changes neither its rate nor its pitch', () => {
+  const s = build([A('both', { rate: 0.5 }), A('kept', { rate: 2, preservePitch: true }), A('tempo'), A('plain')]);
+  for (const c of s.doc.lists[0].cues) if (c.id !== s.id('plain')) Object.assign(c, { tempo: { bpm: 100, first: 0, bar: 4 } });
+  const r = rigAll(s.doc);
+  for (const k of ['both', 'kept', 'tempo', 'plain']) { r.engine.setDuration(`${k}.wav`, 60); r.engine.fire(s.id(k)); }
   const played = (k: string) => r.audio.calls.filter((c) => c[0] === 'play' && c[1] === s.id(k)).pop()![2];
-  near(played('both').rate!, 0.6); assert.equal(played('both').preservePitch, false);
-  near(played('kept').rate!, 2.4); assert.equal(played('kept').preservePitch, true);
-  near(played('warpkeep').rate!, 1.2); assert.equal(played('warpkeep').preservePitch, true);
-  assert.equal(played('plain').rate, undefined, 'at the desk’s tempo already: told nothing of rates');
+  near(played('both').rate!, 0.5); assert.equal(played('both').preservePitch, false);
+  near(played('kept').rate!, 2); assert.equal(played('kept').preservePitch, true);
+  assert.equal(played('tempo').rate, undefined, 'a tempo alone: at its own speed, told nothing of rates');
+  assert.equal(played('plain').rate, undefined);
   r.advance(10);
-  near(r.engine.positionOf(r.engine.running.get(s.id('both'))!), 6, 1e-6);
-  // a Fade moves its rate; the desk's tempo then moves: the warp is taken out and put back, the Fade's rate stays
+  near(r.engine.positionOf(r.engine.running.get(s.id('both'))!), 5, 1e-6);
+  // a Fade moves its rate: one rate op, with no time
   r.engine.fadeRate(s.id('both'), 1, 0, 'rate:test');
   near(r.engine.running.get(s.id('both'))!.rate!, 1);
-  desk = 100; r.engine.rewarp(s.id('both'), warpRate({ bpm: 100, first: 0, bar: 4 }, desk));
-  near(r.engine.running.get(s.id('both'))!.rate!, 1 / 1.2);
   assert.deepEqual(r.rates.at(-1)!.slice(0, 1).concat(r.rates.at(-1)![2]), [s.id('both'), 0], 'one rate op, with no time');
-  near(r.rates.at(-1)![1], 1 / 1.2);
+  near(r.rates.at(-1)![1], 1);
 });
 
 test('a re-pitched sound at a rate can be held in a section; one that keeps its pitch cannot', () => {

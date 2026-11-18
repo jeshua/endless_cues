@@ -6,7 +6,6 @@ import { Inspector } from './Inspector.js';
 import { Sidebar, Playing } from './Sidebar.js';
 import { AssistantDrawer, VersionsDrawer, MonitorDrawer } from './Drawers.js';
 import { Settings } from './Settings.js';
-import { Live } from './Live.js';
 import { PasteProps, Checks } from './EditTools.js';
 import { LightsDrawer } from './Lights.js';
 import { Cart, cellsOf } from './Cart.js';
@@ -93,17 +92,16 @@ function NotesBox({ value, done }: { value: string; done: (v: string | null) => 
     onBlur=${(ev: FocusEvent) => end((ev.target as HTMLTextAreaElement).value)}></textarea>`;
 }
 
-/** The title bar's tabs: Edit · Rig · Show, and Live once that view is switched on. Show is the cue list in Show mode,
+/** The title bar's tabs: Edit · Rig · Show. Show is the cue list in Show mode,
  *  drawn in standby colours; while the app is in Show mode on another tab, the Show tab keeps its yellow words, so
  *  whoever looks up knows the show is locked. */
-function Tabs({ tab, editMode, liveOn, rig, goTab }: { tab: string; editMode: boolean; liveOn: boolean; rig: ReturnType<typeof rigDot>; goTab: (t: string) => void }) {
+function Tabs({ tab, editMode, rig, goTab }: { tab: string; editMode: boolean; rig: ReturnType<typeof rigDot>; goTab: (t: string) => void }) {
   const T = (id: string, label: string, title: string, extra: VNode | null = null, attrs: Record<string, unknown> = {}) => html`<button role="tab" aria-selected=${tab === id ? 'true' : 'false'} data-tab=${id} ...${attrs}
     class=${cx(tab === id && 'on', id === 'show' && !editMode && 'show')} onClick=${() => goTab(id)} title=${title}>${label}${extra}</button>`;
   return html`<div class="tabs-main" role="tablist" data-tabs>
     ${T('edit', 'Edit', keys('Edit the cue list (⇧⌘M)'))}
     ${T('rig', 'Rig', RIG_TITLE, rig ? html`<span class=${cx('dot', rig)} data-rig-dot=${rig}></span>` : null, { 'data-view-rig': true })}
     ${T('show', 'Show', keys('Run the show: editing is locked (⇧⌘M)'))}
-    ${liveOn ? T('live', 'Live', keys('The mixing desk (⌘L)'), null, { 'data-view-live': true }) : null}
   </div>`;
 }
 
@@ -233,7 +231,7 @@ const locked = (s: State | null) => !s || !s.doc || (s.doc.settings.editing || {
 /** What the window's handlers read when they run (each the latest, kept on a ref). */
 interface Now {
   s: State; sel: string[]; drawer: string | null; settings: string | null | undefined; tool: string | null; view: string; checks: boolean;
-  pasteProps: Clip | null; liveOn: boolean; report: boolean; goTab: (t: string) => void;
+  pasteProps: Clip | null; report: boolean; goTab: (t: string) => void;
   byId: CueIndex; list: List | null; cart: CartLayout | null; spot: string | null; rows: Row[];
   shut: Set<string>; setFolded: (next: Set<string>) => void; secs: ReturnType<typeof sectionsIn>;
   keymap: Map<string, string>; hotkeys: Map<string, string>;
@@ -265,7 +263,7 @@ function App() {
   const [flash, setFlash] = useState(false);
   const [blocked, setBlocked] = useState(false);     // a GO that double-GO protection ignored
   const [tool, setTool] = useState<string | null>(null);             // 'load' | 'jump' | 'renumber': in the toolbar's place
-  const [view, setView] = useState('cues');           // 'cues' | 'rig' | 'live': the cue list, the Rig (⇧⌘R), or the mixing desk (⌘L)
+  const [view, setView] = useState('cues');           // 'cues' | 'rig': the cue list or the Rig (⇧⌘R)
   const [focus, setFocus] = useState<{ key: string; n: number; pick?: boolean } | null>(null);           // { key, n }: a field the inspector is asked to bring forward
   // something went wrong (core/report/issues.ts): the status bar offers to report it; in Show mode only a mark until Edit
   const [issue, setIssue] = useState<{ line: string } | null>(null);
@@ -286,27 +284,21 @@ function App() {
   const [spot, setSpot] = useState<string | null>(null);             // the cart button the keyboard is on: "row,column"
   const [inspectorOut, setInspectorOut] = useState(false);   // the inspector is in a window of its own
   const ref = useRef<Now>({} as Now);
-  // The Live view (the mixing desk, tempo finding, warp) is hidden until it is switched on, on this computer
-  // (Settings ▸ General, or the View menu): out of the box the window is a cue list and nothing else.
-  const liveOn = !!(info && info.view && info.view.live);
   // (the handlers that read it run once a state has come: the keys and the menus of a window that is drawn)
-  ref.current = { ...ref.current, s: s as State, sel, drawer, settings, tool, view, checks, pasteProps, liveOn };
-  useEffect(() => { if (!liveOn) setView((v) => (v === 'live' ? 'cues' : v)); }, [liveOn]);
-  const showLive = async () => { await ec.app({ op: 'view', view: { live: true } }); setView('live'); };
-  // The tabs. Edit and Show are the cue list in each mode, so choosing one sets the mode; the Rig and Live are pages
-  // that keep whichever mode the app is in (from Show they open under Show mode's locks: only Edit unlocks).
+  ref.current = { ...ref.current, s: s as State, sel, drawer, settings, tool, view, checks, pasteProps };
+  // The tabs. Edit and Show are the cue list in each mode, so choosing one sets the mode; the Rig is a page
+  // that keeps whichever mode the app is in (from Show they open under Show mode's locks: only Edit unlocks).
   const goTab = (t: string) => {
     const mode = ref.current.s && ref.current.s.mode;
     if (t === 'edit' || t === 'show') { const want = t === 'show' ? 'show' : 'edit'; if (mode !== want) cmd({ op: 'mode', mode: want }); setView('cues'); }
     else if (t === 'rig') setView('rig');
-    else if (t === 'live' && ref.current.liveOn) setView('live');
   };
   ref.current.goTab = goTab;
   // Report a problem (Help, or Settings ▸ About): the window is pictured as it is, then the form opens (Report.ts).
   // What was on screen goes with it: the tab (or the Settings page), the drawer, and the one selected cue's number and type.
   const report = useReport(() => {
     const st = ref.current, one = st.sel.length === 1 && st.byId && st.byId.get(st.sel[0]);
-    const where = st.settings ? `settings: ${st.settings}` : st.view === 'rig' ? 'rig' : st.view === 'live' ? 'live' : 'cue list';
+    const where = st.settings ? `settings: ${st.settings}` : st.view === 'rig' ? 'rig' : 'cue list';
     return { view: `${where}${st.drawer ? ` + ${st.drawer} drawer` : ''}`, selected: one ? { number: one.cue.number || '', type: one.cue.type } : null, closeSettings: () => setSettings(null) };
   });
   ref.current.report = !!report.taken;
@@ -326,7 +318,6 @@ function App() {
       else if (action === 'assistant') { if (modeRef.current !== 'show') setDrawer((d) => (d === 'assistant' ? null : 'assistant')); }
       else if (action === 'assistant-open') { if (modeRef.current !== 'show') setDrawer('assistant'); }
       else if (action === 'view-rig') setView((v) => (v === 'rig' ? 'cues' : 'rig'));
-      else if (action === 'view-live') { if (ref.current.liveOn) setView((v) => (v === 'live' ? 'cues' : 'live')); }
       else if (action === 'info') ec.init().then((i) => { document.documentElement.dataset.theme = i.theme; setInfo(i); });
       else if (action === 'own-list') { const l = ref.current.list; if (l) ec.app({ op: 'own-window', list: l.id, name: l.name }); }
       else if (action === 'edit-cut' || action === 'edit-copy' || action === 'edit-paste') {
@@ -385,7 +376,7 @@ function App() {
   ref.current.byId = byId;
   // the list being run (the engine's), and the list on screen: the same, unless a cart (or, in a window of its own, any list) is being shown
   const engineList = s && s.doc ? (s.doc.lists.find((l) => l.name === s.engine.listName) || s.doc.lists[0]) : null;
-  const list = s && s.doc ? ((OWN_LIST ? s.doc.lists.find((l) => l.id === OWN_LIST) : cartId && view !== 'live' ? s.doc.lists.find((l) => l.id === cartId && l.cart) : null) || (OWN_LIST ? null : engineList)) : null;
+  const list = s && s.doc ? ((OWN_LIST ? s.doc.lists.find((l) => l.id === OWN_LIST) : cartId ? s.doc.lists.find((l) => l.id === cartId && l.cart) : null) || (OWN_LIST ? null : engineList)) : null;
   const cart = list && list.cart && s!.carts ? s!.carts[list.id] || null : null;
   // What is folded is this computer's way of looking at this show (kept per show folder in config.json, never in the
   // show): read when a show is opened, written when it changes.
@@ -732,7 +723,7 @@ function App() {
       const one = st.sel.length === 1 ? st.sel[0] : null;
       const k = e.key;
       if (k === ' ') { e.preventDefault(); if (!e.repeat) go(); return; }
-      // the Live view and the Rig: the list is not on screen, so its keys (arrows, Delete, the single letters) do nothing here
+      // the Rig: the list is not on screen, so its keys (arrows, Delete, the single letters) do nothing here
       if (st.view !== 'cues') {
         if (mod(e) && k.toLowerCase() === 'z') { e.preventDefault(); if (edits) cmd({ op: e.shiftKey ? 'redo' : 'undo' }); }
         else if (k === '[') cmd({ op: 'pause' });
@@ -867,10 +858,10 @@ function App() {
   const hostLast = s.notice && !(toast && toast.at > (s.noticeAt || 0));
   const notice = hostLast ? s.notice : (toast && toast.text) || s.notice;
   // the assistant's face, standing in the side panel (unless it has been hidden on this computer)
-  // the tab on screen: the Rig and Live are pages; the cue list is Edit or Show, as the mode is (the mode is the host's)
+  // the tab on screen: the Rig is a page; the cue list is Edit or Show, as the mode is (the mode is the host's)
   // the Lights button is there once the show has lights of its own (Settings ▸ Integrations ▸ Light); ⇧⌘D opens the dashboard anyway
   const lightsSetUp = !!(s.light && (s.light.on || (s.light.instruments || []).length || s.light.blackout));
-  const tab = view === 'rig' ? 'rig' : view === 'live' && liveOn ? 'live' : editMode ? 'edit' : 'show';
+  const tab = view === 'rig' ? 'rig' : editMode ? 'edit' : 'show';
   const resident = (info.view || {}).qirx !== false && s.mode !== 'show' ?html`<${Resident} s=${s} info=${info} isOpen=${drawer === 'assistant'} open=${() => setDrawer((d) => (d === 'assistant' ? null : 'assistant'))} refreshInfo=${() => ec.init().then((i) => setInfo(i))} />` : null;
 
   // a window of its own: one list or cart, or the inspector, and nothing else of the main window around it
@@ -900,9 +891,7 @@ function App() {
     <div class="titlebar">
       <div class="title"><span class="name">${s.show.title}</span>
         ${s.show.untitled ? html`<span class="chip">not saved to a folder</span>` : null}</div>
-      <${Tabs} tab=${tab} editMode=${editMode} liveOn=${liveOn} rig=${rigDot(s)} goTab=${goTab} />
-      ${liveOn ? null : s.live && s.live.used && s.live.used.length ? html`<button class="chip" data-uses-live onClick=${showLive}
-        title=${`Made with the Live view: ${s.live.used.join(', ')}. It plays as made.`}>Uses the Live view</button>` : null}
+      <${Tabs} tab=${tab} editMode=${editMode} rig=${rigDot(s)} goTab=${goTab} />
       ${s.doc.lists.length > 1 && html`<select class="listpick" style="width:auto;height:24px" value=${list ? list.name : s.engine.listName} title="The list on screen"
         onChange=${(e: Event) => { const l = s.doc.lists.find((x) => x.name === (e.target as HTMLSelectElement).value); setView('cues'); setSel([]); setSpot(null); if (l && l.cart) setCartId(l.id); else { setCartId(null); cmd({ op: 'list', name: (e.target as HTMLSelectElement).value }); } }}>${s.doc.lists.map((l) => html`<option value=${l.name}>${l.cart ? `▦ ${l.name}` : l.name}${(s.engine.lists.find((x) => x.name === l.name) || {}).live && l.name !== s.engine.listName ? ' ▶' : ''}</option>`)}</select>`}
       ${cart && engineList && !engineList.cart && html`<button class="chip" onClick=${() => { setCartId(null); setSel([]); }} title="Back to the list GO runs">GO runs ${engineList.name}</button>`}
@@ -912,8 +901,6 @@ function App() {
         <button class="btn small" data-turn-on onMouseDown=${(ev: MouseEvent) => ev.preventDefault()} onClick=${() => cmd({ op: 'turn-on' }).then((r) => { if (r && r.error) say(r.error, true); })}>Turn on</button></span>`}
       ${running.map((m) => html`<button class=${cx('chip', m.status && !m.status.ok && 'bad')} onClick=${() => setSettings('modules')} title=${m.status ? m.status.text : ''}><span class=${cx('dot', m.status && m.status.ok ? 'go' : 'danger')}></span>${m.name}</button>`)}
       ${s.light.blackout && html`<button class="chip bad loud" onClick=${() => setDrawer('lights')} title="The lights are blacked out">LIGHTS BLACKOUT</button>`}
-      ${s.mixer.solo.length > 0 && html`<button class="chip warn" onClick=${() => cmd({ op: 'solo', name: null })} title="Only these are heard. Click to hear all.">SOLO: ${s.mixer.buses.filter((b) => s.mixer.solo.includes(b.id)).map((b) => b.name).join(', ')}</button>`}
-      ${s.mixer.buses.some((b) => b.mute) && html`<button class="chip warn" data-muted onClick=${() => (liveOn ? setView('live') : s.mixer.buses.filter((b) => b.mute).forEach((b) => cmd({ op: 'mute', name: b.id })))} title=${liveOn ? 'Muted in the Live view' : 'Muted. Click to unmute.'}>MUTED: ${s.mixer.buses.filter((b) => b.mute).map((b) => b.name).join(', ')}</button>`}
       ${(() => {
         // outputs held back for a rehearsal: one red chip that names them all (a chip each would push the bar out of the window)
         const held = (s.overrides || []).filter((o) => o.on);
@@ -938,8 +925,8 @@ function App() {
 
     <${Masthead} s=${s} byId=${byId} onGo=${go} flash=${flash} blocked=${blocked} editMode=${editMode} />
 
-    <div class=${cx('work', drawer && 'drawer', view === 'live' && liveOn && 'live-view')}>
-      ${view === 'live' && liveOn ? html`<${Live} s=${s} list=${engineList} byId=${byId} pending=${pending} editMode=${editMode} say=${say} />` : view === 'rig' ? html`<div class="centre rig-centre">
+    <div class=${cx('work', drawer && 'drawer')}>
+      ${view === 'rig' ? html`<div class="centre rig-centre">
         <${Rig} s=${s} info=${info} byId=${byId} sel=${sel} list=${engineList} editMode=${editMode} say=${say} reveal=${reveal} saveVersion=${saveVersion} openSettings=${setSettings} openDrawer=${(d: string) => setDrawer(d)} openCheck=${() => { setView('cues'); setChecks(true); }} />
         ${s.imported && html`<${Imported} r=${s.imported} close=${() => cmd({ op: 'import-seen' })} />`}
       </div>

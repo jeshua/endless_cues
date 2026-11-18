@@ -124,25 +124,14 @@ test('the engine quantises to the section the track is in', () => {
   assert.ok(near(engine.toNextDownbeat(0.03)!, 2.5, 0.01), String(engine.toNextDownbeat(0.03)));
 });
 
-// ── warp: a clip at the desk's tempo ──────────────────────────────────────────────────────────────────────
-import { warpRate } from '../core/audio/tempo';
+// ── a sound at another rate: places in its file, its bars and its end ─────────────────────────────────────
 
-test('warp: how fast a sound plays to be at the desk’s tempo, by the section it starts in', () => {
-  const tempo = { bpm: 100, first: 0, bar: 4, sections: [{ from: 30, bpm: 125, first: 30, bar: 4 }] };
-  assert.strictEqual(warpRate(tempo, 120), 1.2);
-  assert.strictEqual(warpRate(tempo, 120, 40), 0.96);
-  assert.strictEqual(warpRate(tempo, 0), 1);                         // the desk has no tempo: as it is
-  assert.strictEqual(warpRate(null, 120), 1);
-  assert.strictEqual(warpRate(tempo, 260), 1);                       // more than double: not music any more, left alone
-});
-
-test('a warped sound: the engine knows where it is in its file, when its bar comes, and when it ends', () => {
+test('a sound at a rate: the engine knows where it is in its file, when its bar comes, and when it ends', () => {
   const { doc, id } = build([
-    { op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav', warp: 'repitch', tempo: { bpm: 100, first: 0, bar: 4 }, cutAt: 24 } },
-    { op: 'cue.add', ref: 'k', cue: { type: 'audio', file: 'k.wav', warp: 'keep', loop: true, tempo: { bpm: 100, first: 0, bar: 4 } } },
+    { op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav', rate: 1.2, tempo: { bpm: 100, first: 0, bar: 4 }, cutAt: 24 } },
+    { op: 'cue.add', ref: 'k', cue: { type: 'audio', file: 'k.wav', rate: 1.2, preservePitch: true, loop: true, tempo: { bpm: 100, first: 0, bar: 4 } } },
   ]);
-  let desk = 120;
-  const { engine, audio, advance } = rig(doc, { warp: (cue, from) => (cue.warp ? { rate: warpRate(cue.tempo, desk, from), keepPitch: cue.warp === 'keep' } : null) });
+  const { engine, audio, advance } = rig(doc);
   (audio as EngineAudio).rate = (...a) => audio.calls.push(['rate', ...a]);
   engine.setDuration('a.wav', 60); engine.setDuration('k.wav', 60);
   engine.fire(id('a'));
@@ -152,14 +141,14 @@ test('a warped sound: the engine knows where it is in its file, when its bar com
   advance(5);
   const a = () => engine.active().find((x) => x.id === id('a')) as SoundRow;
   assert.ok(near(a().elapsed, 6, 0.001) && a().rate === 1.2, JSON.stringify(a()));        // 5 s of clock is 6 s of file
-  // its bars are 2.4 s of file, 2 s of clock at the desk's 120: the next (at 7.2) is 1 s away
+  // its bars are 2.4 s of file, 2 s of clock at 1.2: the next (at 7.2) is 1 s away
   assert.ok(near(engine.toNextDownbeat(0.03)!, 1, 0.01), String(engine.toNextDownbeat(0.03)));
-  // the desk's tempo moves: it carries on from where it is, at the new speed
-  desk = 100; engine.rewarp(id('a'), warpRate({ bpm: 100, first: 0, bar: 4 }, desk));
+  // its rate moves (a Fade's "rate to", at once): it carries on from where it is, at the new speed
+  engine.fadeRate(id('a'), 1, 0, 'rate:test');
   advance(2);
   assert.ok(near(a().elapsed, 8, 0.001), String(a().elapsed));
   assert.deepStrictEqual(audio.calls.find((c) => c[0] === 'rate'), ['rate', id('a'), 1, 0]);
-  desk = 120; engine.rewarp(id('a'), 1.2);
+  engine.fadeRate(id('a'), 1.2, 0, 'rate:test');
   // it ends at its End at (24 s of file): 16 s of file away, 13.33 s of clock
   advance(13.2); assert.ok(engine.running.has(id('a')));
   advance(0.3); assert.ok(!engine.running.has(id('a')));
@@ -168,13 +157,13 @@ test('a warped sound: the engine knows where it is in its file, when its bar com
   const kept = audio.calls.filter((c) => c[0] === 'play').pop()![2];
   assert.strictEqual(kept.preservePitch, true);
   assert.strictEqual(kept.exact, false);
-  // …and while warped it is not held in a section
+  // …and while stretched it is not held in a section
   assert.strictEqual(engine.toggleHold(id('k'), { start: 4, end: 8 }, true), null);
 });
 
-test('a sound that is not warped is told nothing of rates', () => {
+test('a sound at its own speed is told nothing of rates, though it has a tempo', () => {
   const { doc, id } = build([{ op: 'cue.add', ref: 'a', cue: { type: 'audio', file: 'a.wav', tempo: { bpm: 100, first: 0, bar: 4 } } }]);
-  const { engine, audio } = rig(doc, { warp: (cue) => (cue.warp ? { rate: 2 } : null) });
+  const { engine, audio } = rig(doc);
   engine.fire(id('a'));
   assert.deepStrictEqual(Object.keys(audio.calls.find((c) => c[0] === 'play')![2]).sort(), ['bus', 'exact', 'file', 'from', 'gainDb', 'loop']);
 });

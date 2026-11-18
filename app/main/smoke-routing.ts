@@ -58,10 +58,6 @@ async function routingChecks({ host, check, until, sleep, page, win, shot }: Pic
   check('…and its bus’s fader still moves it', await until(() => near(5, -26) && near(6, -38), 3000), ch());
   host.cmd({ op: 'bus', name: 'effects', db: 0 });
   await until(() => near(5, -6), 3000);
-  host.cmd({ op: 'strip', name: 'effects', key: 'mute', value: true });
-  check('…and its bus’s mute silences it', await until(() => quiet(5, 6), 3000), ch());
-  host.cmd({ op: 'strip', name: 'effects', key: 'mute', value: false });
-  check('…and comes back', await until(() => near(5, -6), 3000), ch());
   // the ducker: a whole-mix duck of the bus dips it; a voice-band duck is repeated on it as a filter
   await audio(`setDuck({ bus: 'effects', db: -12, secs: 0.05, range: 'all' })`);
   check('…and a duck of its bus dips it', await until(() => near(5, -18), 3000), ch());

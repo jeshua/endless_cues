@@ -141,8 +141,8 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     host.cmd({ op: 'mode', mode: 'show' });
     check('show mode refuses an edit', !!host.cmd({ op: 'edit', ops: [{ op: 'cue.remove', id: rain }] }).error);
     // (every command that changes the show or its folder, not only `edit`: each is refused before it looks at anything.
-    // A hand on the desk — a bus's fader, its strip, the crossfader, the master — is running the show, and is not.)
-    { const open: string[] = []; for (const op of ['fade-from-target', 'ducking-by-kind', 'relink', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'map-set', 'map-learn', 'desk-keep', 'media-clean', 'mark-here'] as HostOp[]) { const r = await host.cmd({ op, id: rain } as HostCommand); if (!r || !/Show mode/.test(r.error || '')) open.push(op); }
+    // A hand on the mixer — a bus's fader, the master — is running the show, and is not.)
+    { const open: string[] = []; for (const op of ['fade-from-target', 'ducking-by-kind', 'relink', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here'] as HostOp[]) { const r = await host.cmd({ op, id: rain } as HostCommand); if (!r || !/Show mode/.test(r.error || '')) open.push(op); }
       check('…and every other command that changes the show (a Fade’s level from its target, Find the tempo, relink, undo, tidying its sounds…)', open.length === 0, open); }
     await shot('4-show-mode');
     host.cmd({ op: 'mode', mode: 'edit' });
@@ -213,74 +213,32 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       host.cmd({ op: 'import-seen' });
       check('…and the list is the workspace’s', await until(() => page('!document.querySelector(".welcome.imported") && document.querySelectorAll(".list tbody tr").length >= 18'), 3000));
     }
-    // the Live view: tracks, strips, the crossfader
+    // the cue list's own tools on a playing sound: a loop of any length, its level for this playing only
     host.openUntitled(); host.open(dir);
     await until(() => snap().mixer.audioReady && snap().rows.length >= 10);
-    // (the Live view is off as the app comes: checked, then switched on for the checks of it; smoke-defaults.ts)
-    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).plain({ host, win, check, until, page, sleep });
-    win.webContents.send('ec-menu', 'view-live');
-    check('the Live view shows a mixer strip for each bus and the master', await until(() => page(`document.querySelectorAll('.desk .mstrip').length`).then((n) => n === snap().mixer.buses.length + 1), 3000));
-    check('a scene for each cue that has sound, and a slot per track', await until(() => page<[number, number]>(`[document.querySelectorAll('.desk .scene').length, document.querySelectorAll('.desk .scene:first-child .slot').length]`).then(([n, k]) => n >= 3 && k === snap().mixer.buses.length + 1), 3000));
-    check('each sound is in its slot to launch', await until(() => page<number>(`document.querySelectorAll('.desk .clip').length`).then((n) => n >= 4), 3000));
-    const strips = () => host.audioWindow()!.webContents.executeJavaScript('Object.fromEntries(Object.entries(buses).map(([k, b]) => [k, { ...b.strip, wired: b.wired, gate: b.gate.gain.value }]))', true);
-    check('a bus at rest is a plain wire', (await strips()).music.wired === 'false:false', await strips());
-    host.cmd({ op: 'strip', name: 'music', key: 'eq.low', value: -40 });
-    check('a turned eq knob is heard at once and not yet in the show', (await strips()).music.low === -40 && host.document.doc.settings.audio.buses[0].eq === undefined, await strips());
-    host.cmd({ op: 'strip', name: 'music', key: 'eq.low', value: -40, commit: true });
-    host.cmd({ op: 'strip', name: 'music', key: 'filter', value: -0.5, commit: true });
-    check('let go, it is a pending change to the show', host.document.doc.settings.audio.buses[0].eq!.low === -40 && host.isDirty() && (await strips()).music.wired === 'true:true', host.document.doc.settings.audio.buses[0]);
-    await page(`document.querySelector('.desk [data-th="music"]').click()`);
-    check('a selected track shows its devices, the changed knobs marked', await until(() => page<number>(`document.querySelectorAll('.desk [data-devices="music"] .dial.pending').length`).then((n) => n >= 2), 3000));
-    await shot('9b-live-devices');
-    await page(`document.querySelector('.desk .dtabs button:nth-child(3)').click()`);
-    host.cmd({ op: 'solo', name: 'effects' });
-    await until(async () => (await strips()).music.gate < 0.01, 2000);       // (the gate closes over audio time)
-    check('a solo silences the other tracks and is not written to the show', (await strips()).music.gate < 0.01 && (await strips()).effects.gate > 0.99 && snap().mixer.solo.join() === 'effects' && !JSON.stringify(host.document.doc).includes('solo'), await strips());
-    host.cmd({ op: 'solo', name: null });
-    host.cmd({ op: 'strip', name: 'music', key: 'xf', value: 'a', commit: true });
-    host.cmd({ op: 'crossfader', value: 1 });
-    await sleep(300);
-    check('the crossfader takes side A out at the B end', (await strips()).music.gate < 0.01 && (await strips()).effects.gate > 0.99, await strips());
-    host.cmd({ op: 'crossfader', value: 0 });
+    // (a plain show, as the app comes: smoke-defaults.ts)
+    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).plain({ host, check, page });
     const clip = host.document.doc.lists[0].cues.find((c) => c.type === 'audio')!;
-    await page(`document.querySelector('.desk [data-clip="${clip.id}"] .launch').click()`);
-    check('a clip launches its sound, and a deck appears for it', await until(() => page(`!!document.querySelector('.desk [data-deck="${clip.id}"] canvas')`), 4000));
-    await shot('9-live');
+    host.cmd({ op: 'fire', id: clip.id });
+    await until(() => snap().engine.active.some((a) => a.id === clip.id), 4000);
     host.cmd({ op: 'loop', id: clip.id, region: { start: 1, end: 3 }, free: true });
-    check('a loop of any length is armed from the deck', (snap().engine.active.find((a) => a.id === clip.id) || { armed: [] }).armed!.length === 1);
+    check('a loop of any length is armed on a playing sound', (snap().engine.active.find((a) => a.id === clip.id) || { armed: [] }).armed!.length === 1);
     check('…and the sound, which was streaming, is decoded so that it can go round', await until(() => snap().engine.active.find((x) => x.id === clip.id)?.exact === true, 5000), snap().engine.active.find((x) => x.id === clip.id));
     host.cmd({ op: 'level', id: clip.id, db: -12 });
-    check('a deck’s level moves that sound only', await until(() => snap().engine.active.find((a) => a.id === clip.id)?.db === -12, 2000) && host.document.doc.lists[0].cues.find((c) => c.id === clip.id)!.gainDb !== -12);
+    check('a playing sound’s level moves that sound only', await until(() => snap().engine.active.find((a) => a.id === clip.id)?.db === -12, 2000) && host.document.doc.lists[0].cues.find((c) => c.id === clip.id)!.gainDb !== -12);
     host.cmd({ op: 'panic', hard: true });
-    // tempo: a made click track at 120, found from its sound; then a launch waits for its bar
+    // tempo: a made click track at 120, found from its sound and kept in the cue
     const { writeWav } = require('../../examples/make-demo');
     const clickFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ec-smoke-click-')), 'click120.wav');
     { const n = 44100 * 20, x = new Float32Array(n); for (let i = 0; i < n; i++) { const p = ((i / 44100) - 0.25 + 0.5) % 0.5; x[i] = Math.exp(-p / 0.04) * Math.sin(2 * Math.PI * 70 * p) * 0.8; } writeWav(clickFile, x); }
     const made = host.cmd({ op: 'import', paths: [clickFile], bus: 'music' }) as HostResult;
     const clickId = made && made.made && made.made[0];
-    check('a sound is added on a track from the Live view', !!clickId && host.document.doc.lists[0].cues.some((c) => c.id === clickId && c.bus === 'music'), made);
+    check('a sound is added on the bus asked for', !!clickId && host.document.doc.lists[0].cues.some((c) => c.id === clickId && c.bus === 'music'), made);
     const foundTempo = await host.cmd({ op: 'tempo-find', ids: [clickId] });
     const kept = (host.document.doc.lists[0].cues.find((c) => c.id === clickId) || {}).tempo;
     check('its tempo is found from its sound and kept in the cue', foundTempo.found === 1 && kept && Math.abs(kept.bpm - 120) < 0.05 && Math.abs(kept.first - 0.25) < 0.02, [foundTempo, kept]);
-    await until(() => page(`!!document.querySelector('.desk [data-clip="${clickId}"]')`), 3000);      // (drawn once the page has been pushed the new cue)
-    await page(`document.querySelector('.desk [data-clip="${clickId}"]').click()`);
-    check('the Clip view shows it with its tempo', await until(() => page(`(document.querySelector('.desk [data-clipview="${clickId}"] .bpmfield') || {}).value`).then((v) => v === '120.00'), 3000));
-    await until(() => snap().engine.durations && Object.keys(snap().engine.durations).some((f) => /click120/.test(f)), 4000);
-    host.cmd({ op: 'fire', id: clickId });
-    await sleep(700);
-    check('the desk shows the tempo and the bar of the music playing', snap().live.clock && snap().live.clock!.bpm === 120 && snap().live.clock!.id === clickId, snap().live);
-    host.cmd({ op: 'launch', id: clip.id });
-    check('a launch waits for the bar', snap().live.queued.includes(clip.id) && !snap().engine.active.some((a) => a.id === clip.id), snap().live);
-    await shot('9c-live-clip');
-    check('…and starts on it', await until(() => snap().engine.active.some((a) => a.id === clip.id) && !snap().live.queued.length, 3000));
-    host.cmd({ op: 'launch-q', q: 'none' });
-    host.cmd({ op: 'panic', hard: true });
     host.cmd({ op: 'undo' }); host.cmd({ op: 'undo' });
-    for (let i = 0; i < 4; i++) host.cmd({ op: 'undo' });
-    await sleep(400);
-    check('undone, the strip is at rest and out of the path again', host.document.doc.settings.audio.buses[0].eq === undefined && (await strips()).music.wired === 'false:false', [host.document.doc.settings.audio.buses[0], await strips()]);
-    win.webContents.send('ec-menu', 'view-live');
-    check('back to the cue list', await until(() => page(`!document.querySelector('.desk') && !!document.querySelector('.list')`), 3000));
+    check('undone, the sound is gone again', !host.document.doc.lists[0].cues.some((c) => c.id === clickId));
     // outputs: a bus sent to another pair of the device's outputs plays there and not on 1–2 (the test run's device pretends to have eight)
     host.cmd({ op: 'panic', hard: true });
     const busAt = host.document.doc.settings.audio.buses.findIndex((b) => b.id === 'effects');
@@ -596,8 +554,6 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     check('…and the page shows it so', await until(() => page(`!!document.querySelector('[data-access-row="0"]') && [...document.querySelector('[data-access-row="none"]').querySelectorAll('input')].every((i) => !i.checked)`), 3000));
     await shot('9-osc-access');
     await page(`document.querySelector('.modal .close').click()`);
-    // the Live view's desk: one clip per track, tempo sections, warp, desk recall, mapping, dragging (smoke-live.ts)
-    await (require('./smoke-live') as typeof import('./smoke-live')).live({ host, win, check, timed, until, page, shot, sleep, dir });
     // ── timecode and the rest of MIDI ──────────────────────────────────────────────────────────────────────
     // (a test run opens no MIDI port: what would be sent, and the time each message is due, is read from the host)
     {
@@ -829,9 +785,9 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
     await (require('./smoke-audio') as typeof import('./smoke-audio')).audioDepth({ host, win, check, timed, until, page, sleep, log, shot });
     // sound design (a cue's chain of tools, measured offline) and the kinds of sound (ducking by kind, the guess at a new sound) (smoke-sound.ts)
     await (require('./smoke-sound') as typeof import('./smoke-sound')).soundChecks({ host, win, check, timed, until, page, sleep, shot, log });
-    // simple until asked: the Live view hidden again, a show that uses it, a new sound's bus (smoke-defaults.ts)
-    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).after({ host, win, check, until, page, sleep });
-    // the cue list's own rescue tools, the MUTED chip and a quantised GO, all with the Live view hidden (smoke-rescue.ts)
+    // simple until asked: a new sound's bus, the steering tools (smoke-defaults.ts)
+    await (require('./smoke-defaults') as typeof import('./smoke-defaults')).after({ host, check, until, page, sleep });
+    // the cue list's own rescue tools and a quantised GO (smoke-rescue.ts)
     await (require('./smoke-rescue') as typeof import('./smoke-rescue')).rescue({ host, win, check, until, page, sleep, shot });
     // the rig, the assistant on it, and its pages (docs/specs/15-assistant-and-rig.md): each part's checks are a file of its own, run if it is there
     for (const part of ['./smoke-rig', './smoke-assistant-rig', './smoke-rig-pages', './smoke-qirx', './smoke-tabs']) {

@@ -16,14 +16,11 @@ type Span = { start: number; end: number };
 /** A pair of the device's outputs: where a bus plays in (`inp`, metered by `tap`), its master and limiter, and its split
  *  into the two outputs (none for 1–2, whose limiter is the window's own). `mono`: the pair's outputs one at a time. */
 interface Pair { inp: GainNode; tap: AnalyserNode; master: GainNode; limiter: DynamicsCompressorNode; split: ChannelSplitterNode | null; mono?: ChannelMergerNode; chTaps?: AnalyserNode[] }
-/** A bus's channel strip as it is set: the eq's three bands, the filter, the pan and the gate. */
-interface StripNow { low: number; mid: number; high: number; filter: { type: 'lowpass' | 'highpass'; hz: number } | null; pan: number; gate: number }
 /** A bus's level as a signal (`ride`). */
-interface BusCtl { fader: GainNode; gate: GainNode; duck: GainNode; dip: ConstantSourceNode; tap: AnalyserNode }
-/** A bus of the mixer: its fader, its strip, its ducker's dip, and where it plays (`to`, the pair `want`). */
+interface BusCtl { fader: GainNode; duck: GainNode; dip: ConstantSourceNode; tap: AnalyserNode }
+/** A bus of the mixer: its fader, its ducker's dip, and where it plays (`to`, the pair `want`). */
 interface Bus {
-  to: AudioNode | null; want: number; out: number; fader: GainNode; low: BiquadFilterNode; mid: BiquadFilterNode; high: BiquadFilterNode; filt: BiquadFilterNode;
-  pan: StereoPannerNode; gate: GainNode; duck: GainNode; band: BiquadFilterNode; tap: AnalyserNode; strip: StripNow; wired: string; unwire: Timer | null;
+  to: AudioNode | null; want: number; out: number; fader: GainNode; stereo: GainNode; duck: GainNode; band: BiquadFilterNode; tap: AnalyserNode;
   ctl: BusCtl; idle: ConstantSourceNode; sends?: Record<string, GainNode>;
 }
 /** A buffer voice's clock: at ctx time `t` it was `p` s into its file, at rate `r0`, on its way to `r1` over `d` s. */
@@ -133,80 +130,39 @@ function ensureBus(name: string) {
   const duck = ctx.createGain();
   const band = voiceBand();
   const tap = ctx.createAnalyser(); tap.fftSize = 1024;
-  // The channel strip (the Live view): a three-band eq, one filter that is a low-pass or a high-pass, a pan,
-  // and a gate (mute, solo and the crossfader as one gain). The eq and the filter are in the path only while
-  // they are doing something (`wire`), so a bus at rest is the plain wire it always was.
-  const biquad = (type: BiquadFilterType, hz: number, q?: number) => { const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = hz; if (q) f.Q.value = q; f.gain.value = 0; return f; };
-  const low = biquad('lowshelf', 250), mid = biquad('peaking', 1000, 0.8), high = biquad('highshelf', 4000);
-  const filt = biquad('lowpass', 20000, 0.9);
-  // stereo in, always: a mono sound would otherwise lose 3 dB the moment it met the panner
-  const pan = ctx.createStereoPanner(); pan.channelCountMode = 'explicit'; pan.channelCount = 2;
-  const gate = ctx.createGain();
+  // stereo from the fader on, always: a mono sound is heard on both sides of its pair (a pair past 1–2 is split into
+  // its outputs channel by channel, where a mono signal would reach only the first)
+  const stereo = ctx.createGain(); stereo.channelCountMode = 'explicit'; stereo.channelCount = 2;
+  fader.connect(stereo).connect(duck);
   duck.connect(band).connect(outPair(0).inp);
   band.connect(tap);
   // (its `ctl` and `idle` are made just below)
-  const b = buses[name] = { to: outPair(0).inp, want: 0, out: 1, fader, low, mid, high, filt, pan, gate, duck, band, tap, strip: { low: 0, mid: 0, high: 0, filter: null, pan: 0, gate: 1 }, wired: '', unwire: null } as Omit<Bus, 'ctl' | 'idle'> as Bus;
+  const b = buses[name] = { to: outPair(0).inp, want: 0, out: 1, fader, stereo, duck, band, tap } as Omit<Bus, 'ctl' | 'idle'> as Bus;
   ride(b);
-  wire(b);
   // A bus is never without an input. MEASURED (Chromium): a node with nothing playing into it stops its automation
-  // where it was, so a strip moved while its bus was silent (a mute, the crossfader, a Mix cue's desk) had not
-  // arrived when the next sound started, which began at the old gate and glided; and its gains read stale. A
-  // steady nothing into the fader keeps the whole path running.
+  // where it was, so a fader or a duck moved while its bus was silent had not arrived when the next sound started,
+  // which began at the old gain and glided; and its gains read stale. A steady nothing into the fader keeps the
+  // whole path running.
   b.idle = ctx.createConstantSource();
   b.idle.offset.value = 0;
   b.idle.connect(fader);
   b.idle.start();
   return b;
 }
-/** A bus's level as a signal, beside its sound: a steady 1 through a copy of its fader, its gate and its duck
- *  (`ctl`), and its voice-band dip in dB (`dip`). Every move of the real ones is made on these too. A sound with
- *  outputs of its own is ridden by them (`patch`), which is how a bus's fader, mute, solo and ducking still mean
+/** A bus's level as a signal, beside its sound: a steady 1 through a copy of its fader and its duck (`ctl`),
+ *  and its voice-band dip in dB (`dip`). Every move of the real ones is made on these too. A sound with
+ *  outputs of its own is ridden by them (`patch`), which is how a bus's fader and ducking still mean
  *  something for a sound that does not pass through the bus. The two small analysers only keep them running. */
 function ride(b: Bus) {
   const one = ctx.createConstantSource(), dip = ctx.createConstantSource();
   dip.offset.value = 0;
-  const fader = ctx.createGain(), gate = ctx.createGain(), duck = ctx.createGain();
+  const fader = ctx.createGain(), duck = ctx.createGain();
   const tap = ctx.createAnalyser(), dipTap = ctx.createAnalyser();
   tap.fftSize = dipTap.fftSize = 32;
-  one.connect(fader).connect(gate).connect(duck).connect(tap);
+  one.connect(fader).connect(duck).connect(tap);
   dip.connect(dipTap);
   one.start(); dip.start();
-  b.ctl = { fader, gate, duck, dip, tap };
-}
-/** A bus's path from its fader to its ducker, with the eq and the filter in it only while they are in use. */
-function wire(b: Bus) {
-  const s = b.strip;
-  const eq = s.low !== 0 || s.mid !== 0 || s.high !== 0, filter = !!s.filter;
-  const key = `${eq}:${filter}`;
-  if (key === b.wired) return;
-  const path = [b.fader, ...(eq ? [b.low, b.mid, b.high] : []), ...(filter ? [b.filt] : []), b.pan, b.gate, b.duck];
-  for (const n of [b.fader, b.low, b.mid, b.high, b.filt, b.pan, b.gate]) n.disconnect();
-  for (let i = 0; i < path.length - 1; i++) path[i].connect(path[i + 1]);
-  b.wired = key;
-}
-/** The Live view's strips: [{ name, low, mid, high, filter: { type, hz } | null, pan, gate }]. Every move is a short glide,
- *  or a long one when a Mix cue recalls a desk over a time. */
-function setStrips({ list, secs }: Cmd<'strips'>) {
-  // (`secs`: a Mix cue recalling a desk over a time; as a fader's ramp, a time constant of a third of it arrives by then)
-  const now = ctx.currentTime, glide = secs! > 0 ? secs! / 3 : 0.02;
-  for (const s of list || []) {
-    const b = ensureBus(s.name);
-    const was = b.strip;
-    const next: StripNow = { low: Number(s.low) || 0, mid: Number(s.mid) || 0, high: Number(s.high) || 0, filter: s.filter || null, pan: Number(s.pan) || 0, gate: s.gate == null ? 1 : Number(s.gate) };
-    clearTimeout(b.unwire!);
-    // into the path first, at rest (where it changes nothing), then moved; out of it only once it has come to rest
-    const using: StripNow = { ...next, low: next.low || was.low, mid: next.mid || was.mid, high: next.high || was.high, filter: next.filter || was.filter };
-    b.strip = using; wire(b);
-    for (const k of ['low', 'mid', 'high'] as const) b[k].gain.setTargetAtTime(next[k], now, glide);
-    if (next.filter) {
-      if (!was.filter || was.filter.type !== next.filter.type) { b.filt.type = next.filter.type; b.filt.frequency.cancelScheduledValues(now); b.filt.frequency.setValueAtTime(next.filter.type === 'lowpass' ? 20000 : 20, now); }
-      b.filt.frequency.setTargetAtTime(next.filter.hz, now, glide);
-    } else if (was.filter) b.filt.frequency.setTargetAtTime(was.filter.type === 'lowpass' ? 20000 : 20, now, glide);
-    b.pan.pan.setTargetAtTime(next.pan, now, glide);
-    b.gate.gain.setTargetAtTime(next.gate, now, glide);
-    b.ctl.gate.gain.setTargetAtTime(next.gate, now, glide);
-    b.unwire = setTimeout(() => { b.strip = next; wire(b); }, 200 + (secs! > 0 ? secs! * 1500 : 0));
-  }
+  b.ctl = { fader, duck, dip, tap };
 }
 const busIn = (name: string | undefined) => ensureBus(name || 'effects').fader;
 /** The show's buses (Settings ▸ Audio): made if new, levelled; ones no longer in the show go when nothing plays into them. */
@@ -1525,7 +1481,7 @@ async function ltcListen({ on, input, channel }: Cmd<'ltc-in'>) {
   } catch (err) { window.cueAudio.report({ type: 'ltc-in', ok: false, detail: String((err as Error).message || err) }); }
 }
 
-const ops: { [K in import('./preload').AudioOp]?: (cmd: Cmd<K>) => unknown } = { design: setDesign, lanes: setLanes, sweep, ir, ltc, 'ltc-in': ltcListen, rate: setRate, others, outputs: setOutputs, fx: setFx, ducker: setDucker, midi: midiSend, record, monitor: setMonitor, play, move, fade, cut, stop, pause, resume, seek, loop: setLoop, region: setRegion, decode, keep, peaks, pcm, probe, devices, sink, stopAll, master: setMaster, bus: setBus, buses: setBuses, strips: setStrips, duck: setDuck, masterDb: setMasterDb, limiter: setLimiter };
+const ops: { [K in import('./preload').AudioOp]?: (cmd: Cmd<K>) => unknown } = { design: setDesign, lanes: setLanes, sweep, ir, ltc, 'ltc-in': ltcListen, rate: setRate, others, outputs: setOutputs, fx: setFx, ducker: setDucker, midi: midiSend, record, monitor: setMonitor, play, move, fade, cut, stop, pause, resume, seek, loop: setLoop, region: setRegion, decode, keep, peaks, pcm, probe, devices, sink, stopAll, master: setMaster, bus: setBus, buses: setBuses, duck: setDuck, masterDb: setMasterDb, limiter: setLimiter };
 // A command that throws is said (the cue log), never lost in a window nobody can see.
 window.cueAudio.onCmd((cmd) => {
   // (each op's handler takes its own command: `cmd.op` is what chose it)

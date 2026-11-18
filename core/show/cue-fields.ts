@@ -1,6 +1,6 @@
 // Written by build/cue-fields.ts from the cue types table (core/show/cue-types.ts): never edited by hand.
 // `npm run cue-fields` writes it again; test/cue-fields.test.ts fails while it is behind the table.
-import type { Automation, BusLevels, Chain, Desk, DeviceArgs, Envelope, Eq, Marker, Matrix, Region, Shape, Sweep, Tempo } from './types';
+import type { Automation, BusLevels, Chain, DeviceArgs, Envelope, Eq, Marker, Matrix, Region, Shape, Sweep, Tempo } from './types';
 
 /** The cue types, in the table's order. */
 export type CueType = "section" | "group" | "audio" | "mic" | "video" | "text" | "camera" | "fade" | "stop" | "start" | "pause" | "load" | "reset" | "target" | "goto" | "arm" | "disarm" | "devamp" | "wait" | "memo" | "network" | "device" | "midi" | "midifile" | "timecode" | "light" | "mix" | "music" | "script";
@@ -115,10 +115,8 @@ export interface CueFields {
   markers?: Marker[];
   /** Loop regions: Sections that loop cleanly ([{start, end, name, count}]). With a count the track goes round one that many times by itself and plays on; with `hold: true` it goes round until it is let go (L, or a Devamp); with neither the operator starts it too (L). (audio) */
   loops?: Region[];
-  /** Tempo: { bpm, first, bar, sections }: a track’s tempo, the time of a downbeat, and the beats in a bar; `sections` ([{ from, bpm, first, bar }]) where it changes tempo or time signature. Found by the app when asked (the sound’s Time & Loops tab, or the Live view) or set by hand. (audio) */
+  /** Tempo: { bpm, first, bar, sections }: a track’s tempo, the time of a downbeat, and the beats in a bar; `sections` ([{ from, bpm, first, bar }]) where it changes tempo or time signature. Found by the app when asked (the sound’s Time & Loops tab) or set by hand. (audio) */
   tempo?: Tempo;
-  /** Warp: Plays at the desk’s tempo (the Live view) instead of its own: needs a tempo. repitch: faster is higher, as a record is; keep: its pitch stays (it then streams, and cannot loop a section). While warped it cannot be held in a section or jumped inside itself. (audio) */
-  warp?: "" | "repitch" | "keep";
   /** Beat grid (audio) */
   beats?: number[];
   /** Bar grid (audio) */
@@ -223,8 +221,6 @@ export interface CueFields {
   lightCue?: string;
   /** Desk follows: The desk runs it after the one before; not fired from here. (light) */
   follows?: boolean;
-  /** Desk: { crossfader, buses: { busId: { eq, filter, pan, mute, xf } } }: the Live desk, recalled whole. (mix) */
-  desk?: Desk;
   /** Loop end (music) */
   end?: number;
   /** Loop from: With Loop there: the loop starts here, not where it lands. (music) */

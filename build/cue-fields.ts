@@ -19,7 +19,7 @@ const KINDS: Record<string, string> = {
   camera: 'string', device: 'string', command: 'string', cell: 'string', color: 'string',
   number: 'number', seconds: 'number', db: 'number', bool: 'boolean', numbers: 'number[]',
   args: 'DeviceArgs', levels: 'BusLevels', markers: 'Marker[]', regions: 'Region[]', tempo: 'Tempo', matrix: 'Matrix',
-  eq: 'Eq', chain: 'Chain', sweep: 'Sweep', shape: 'Shape', envelope: 'Envelope', automation: 'Automation', desk: 'Desk',
+  eq: 'Eq', chain: 'Chain', sweep: 'Sweep', shape: 'Shape', envelope: 'Envelope', automation: 'Automation',
 };
 
 function typeOf(f: Field): string {

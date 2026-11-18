@@ -85,12 +85,6 @@ function defaultSettings(): Settings {
     },
     // the app's own lighting: where DMX goes, the patch, groups, the show's fixtures (core/light/patch.ts)
     light: lightPatch.defaults(),
-    // the Live view (the mixing desk)
-    live: {
-      overlap: false,            // false: a clip launched on a track takes over from the one playing there; true: both play
-      tempo: 0,                  // the desk's tempo, which a warped clip plays at (0: the tempo of the music playing)
-      map: [],                   // [{ on: 'key q' | 'cc 7 ch 1' | 'note 60 ch 1', to: 'clip:<cue id>' | 'fader:<bus>' | … }] (core/audio/desk-map.ts)
-    },
     // the rig: the equipment this show talks to (core/rig/devices.ts), the operator's own checklist, and the script
     rig: {
       devices: [],               // [{ id, name, kind, via, host, port, commands: [...], alive: {...}, … }]: changed only by device.add / device.set / device.remove
@@ -218,8 +212,6 @@ function normalise(input: any): { doc: ShowDoc; warnings: string[] } {
     lists: [],
   };
   if (!Array.isArray(doc.settings.audio.buses) || !doc.settings.audio.buses.length) doc.settings.audio.buses = DEFAULT_BUSES.map((b) => ({ ...b }));
-  // a strip's eq with every band back at rest is no eq (core/audio/strip.ts)
-  for (const b of doc.settings.audio.buses) if (b && b.eq && typeof b.eq === 'object' && !Object.keys(b.eq).length) delete b.eq;
   // the rig: each device as this version wants it (what it does not know is kept; what cannot be understood is said and left out)
   {
     const rig = doc.settings.rig = doc.settings.rig && typeof doc.settings.rig === 'object' && !Array.isArray(doc.settings.rig) ? doc.settings.rig : { devices: [], checks: [], script: '' };

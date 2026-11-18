@@ -12,7 +12,7 @@ import { DeviceCueField, deviceCueHides, devicesOf } from './Rig.js';
 import type { State, Info as AppInfo, Cue, CueIndex, Sounding } from './lib.js';
 import type { Pending, PendingField as PendingFieldOf } from './app.js';
 import type { TriggerRow } from './Triggers.js';
-import type { Desk, Region, Device } from '../../core/show/types';
+import type { Region, Device } from '../../core/show/types';
 import type { Field as FieldDef, TypeDef } from '../../core/show/cue-types';
 
 /** A field's value: what it holds is said by its kind (the table), so it is read as that kind where it is drawn. */
@@ -180,17 +180,6 @@ function Field({ f, cues, s, byId, info, pending, reveal }: FieldProps) {
       control = html`<div class="with-unit"><${TextBox} mono value=${value} placeholder=${mixed ? '(mixed)' : f.media === 'picture' ? 'media/film.mp4' : f.placeholder || 'media/sound.wav'} onCommit=${set} />
         <button class="btn small" onClick=${async () => { const r = await ec.app(f.media === 'picture' ? { op: 'pick-picture' } : { op: 'pick-sound', accept: f.accept || '' }); if (r && r.file) set(r.file); }}>Choose…</button></div>`;
       break;
-    case 'desk': {
-      // the Live view's whole desk, kept in the cue: said in a line here, taken and looked at there
-      const d: Desk | null = value && value.buses ? value : null;
-      const names = Object.fromEntries(s.doc.settings.audio.buses.map((b) => [b.id, b.name]));
-      const said = d ? [...Object.entries(d.buses!).map(([id, b]) => `${names[id] || id}: ${[b.mute && 'muted', b.eq && 'eq', b.filter && 'filter', b.pan && `pan ${b.pan < 0 ? 'L' : 'R'}`, b.xf && String(b.xf).toUpperCase()].filter(Boolean).join(', ') || 'at rest'}`),
-        ...(d.crossfader !== undefined ? [`crossfader ${d.crossfader === 0 ? 'centre' : d.crossfader < 0 ? `${Math.round(-d.crossfader * 100)}% A` : `${Math.round(d.crossfader * 100)}% B`}`] : [])].join(' · ') : '';
-      control = html`<div><div class=${d ? '' : 'dim'} style="font-size:12px;margin-bottom:5px">${d ? said : 'No desk kept.'}</div>
-        <button class="btn small" onClick=${() => cmd({ op: 'desk-keep', id: first.id, levels: false })} title="Keep the Live desk as it is now">Take from desk</button>
-        ${d ? html` <button class="btn ghost small" onClick=${() => set(null)}>Clear</button>` : null}</div>`;
-      break;
-    }
     case 'levels': {
       const lv: Record<string, number> = value || {};
       control = html`<div style="display:grid;gap:4px">${s.doc.settings.audio.buses.map((b) => html`<div class="with-unit"><span class="unit" style="width:70px">${b.name}</span>
@@ -228,7 +217,7 @@ function Field({ f, cues, s, byId, info, pending, reveal }: FieldProps) {
           ? html`<input type="text" disabled placeholder=${keys(`${cues.length} cues: use Tools ▸ Renumber (⌘R)`)} />`
           : html`<${TextBox} mono=${f.mono} value=${value} placeholder=${mixed ? '(mixed)' : f.placeholder || ''} onCommit=${set} />`;
   }
-  const wide = f.kind === 'shape' || f.tab === 'triggers' || f.kind === 'longtext' || f.key === 'message' || f.key === 'file' || f.kind === 'camera' || f.key === 'color' || f.key === 'color2' || f.kind === 'levels' || f.kind === 'desk' || f.kind === 'matrix' || f.kind === 'eq' || f.kind === 'sweep' || f.key === 'oscTrigger' || f.key === 'midiTrigger' || f.key === 'midi' || f.key === 'mode';
+  const wide = f.kind === 'shape' || f.tab === 'triggers' || f.kind === 'longtext' || f.key === 'message' || f.key === 'file' || f.kind === 'camera' || f.key === 'color' || f.key === 'color2' || f.kind === 'levels' || f.kind === 'matrix' || f.kind === 'eq' || f.kind === 'sweep' || f.key === 'oscTrigger' || f.key === 'midiTrigger' || f.key === 'midi' || f.key === 'mode';
   // pending: this field differs from the saved show on at least one of the selected cues
   const changed = cues.map((c) => [c, pending.cues.get(c.id) && pending.cues.get(c.id)!.fields.get(f.key)] as const).filter((x): x is readonly [Cue, PendingFieldOf] => !!x[1]);
   const back = () => edit(changed.map(([c, p]) => ({ op: 'cue.set', id: c.id, props: { [f.key]: p.rawFrom } })), 'put back');
@@ -260,7 +249,7 @@ function TimeAndLoops({ cue, s, info }: { cue: Cue; s: State; info: AppInfo }) {
   const [reg, setReg] = useState({ from: '', to: '' });      // a region typed in, start and end
   const addRegion = () => { const a0 = parseTime(reg.from), b0 = parseTime(reg.to); if (!(b0 > a0) || !(a0 >= 0)) return; setCue(cue.id, { loops: [...loops, { start: r2(a0), end: r2(b0) }].sort((x, y) => x.start - y.start) }, 'add loop region'); setReg({ from: '', to: '' }); };
   const typed = at.trim() === '' ? null : parseTime(at);
-  // The sound's tempo, looked for only when it is asked for here (or in the Live view): with one, a group can
+  // The sound's tempo, looked for only when it is asked for here: with one, a group can
   // wait for this track's beat or bar (its Quantise), and a Jump can cross on the bar.
   const [finding, setFinding] = useState(false);
   const [tempoSaid, setTempoSaid] = useState('');
@@ -290,8 +279,7 @@ function TimeAndLoops({ cue, s, info }: { cue: Cue; s: State; info: AppInfo }) {
         <button class="btn small" data-find-tempo disabled=${finding || !cue.file || s.mode === 'show'} onClick=${findTempo} title="Listen for this sound’s beat">${finding ? 'Listening…' : cue.tempo ? 'Find again' : 'Find the tempo'}</button>
         ${cue.tempo ? html`<button class="btn ghost small" disabled=${s.mode === 'show'} onClick=${() => setCue(cue.id, { tempo: null }, 'tempo removed')} title="Forget its tempo">Remove</button>` : null}
         <span class="dim">${tempoSaid || (cue.tempo ? '' : 'Only needed to move on the beat.')}</span></div>
-        ${cue.tempo ? html`<div style="margin-top:6px"><${TempoFix} cue=${cue} at=${where} playing=${!!a} locked=${s.mode === 'show'} /></div>
-          ${cue.tempo.sections && cue.tempo.sections.length ? html`<div class="dim" style="font-size:12px;margin-top:4px">Its tempo changes are edited in the Live view.</div>` : null}` : null}</div>
+        ${cue.tempo ? html`<div style="margin-top:6px"><${TempoFix} cue=${cue} at=${where} playing=${!!a} locked=${s.mode === 'show'} /></div>` : null}</div>
       <div class="field wide"><label>Markers</label><div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         <input type="text" style="width:130px" placeholder="marker name" value=${name} onInput=${(e: InputEvent) => setName((e.target as HTMLInputElement).value)} onKeyDown=${(e: KeyboardEvent) => { if (e.key === 'Enter') addMarker(); }} />
         <span class="dim">at</span>
@@ -403,10 +391,7 @@ export function Inspector({ s, info, selected, byId, pending, focus, reveal, say
   const shows = (f: FieldDef) => !f.when || Object.entries(f.when).every(([k, vals]) => selected.every((c) => vals.includes(c[k] === undefined ? (def!.fields.find((x) => x.key === k) || { default: undefined }).default : c[k])));
   // (a field with a `whenTarget` shows only while every selected cue is aimed at one of those types: what a Fade moves on a picture)
   const aimed = (f: FieldDef) => !f.whenTarget || selected.every((c) => c.target && byId.has(c.target) && f.whenTarget!.includes(byId.get(c.target)!.cue.type));
-  // (a field of the Live view's shows only while that view is switched on, or on a cue that already has it set)
-  const liveOn = !!(info.view && info.view.live);
-  const lives = (f: FieldDef) => !f.live || liveOn || selected.some((c) => c[f.key] !== undefined && c[f.key] !== '' && c[f.key] !== f.default);
-  const fields: FieldDef[] = cur === 'triggers' ? trigFields : cur === 'basics' ? info.common.filter((f: FieldDef) => !f.tab && !f.hidden && !(def && def.fields.some((x) => x.key === f.key)) && !(def && def.common && !def.common.includes(f.key))) : def!.fields.filter((f) => !f.hidden && !f.tab && shows(f) && aimed(f) && lives(f));
+  const fields: FieldDef[] = cur === 'triggers' ? trigFields : cur === 'basics' ? info.common.filter((f: FieldDef) => !f.tab && !f.hidden && !(def && def.fields.some((x) => x.key === f.key)) && !(def && def.common && !def.common.includes(f.key))) : def!.fields.filter((f) => !f.hidden && !f.tab && shows(f) && aimed(f));
   // on the Triggers tab: whatever else in the show the same key or message would set off
   const clashes: TriggerRow[] = cur === 'triggers' ? (s.triggers || []).filter((t: TriggerRow) => t.clash.length && selected.some((c) => c.id === t.id)) : [];
   // Pre-wait and Post-wait are on Basics only once one is set (a post-wait also with auto-continue, the only time it

@@ -50,7 +50,7 @@ Rows are features of roughly equal weight to an operator, not manual pages, so r
 
 ## The short version
 
-Endless Cues today is a cue list for sound, video on one stage, light over Art-Net and sACN, OSC, MIDI and timecode, with most of QLab's ways of building and running one: copy and paste (between shows too), Find, the single keys, cue templates, Paste Cue Properties, five group modes, lists with playheads of their own, cue carts, second windows, second triggers, a cue that ducks the others, Load, Reset and Target cues, a Triggers tab and a table of every trigger, a cue's own outputs as a matrix, OSC control over UDP and TCP with passcodes, and a QLab workspace opened directly. In a few places it goes past QLab (versions with diffs, an explicit save model with every pending change marked, a dry run, an assistant, a web remote, holds and counted loops inside a track, a Live view of the show's sound, sACN, Windows and Linux builds). Against QLab as a whole it does two fifths, does a little more than that in part, and lacks a seventh.
+Endless Cues today is a cue list for sound, video on one stage, light over Art-Net and sACN, OSC, MIDI and timecode, with most of QLab's ways of building and running one: copy and paste (between shows too), Find, the single keys, cue templates, Paste Cue Properties, five group modes, lists with playheads of their own, cue carts, second windows, second triggers, a cue that ducks the others, Load, Reset and Target cues, a Triggers tab and a table of every trigger, a cue's own outputs as a matrix, OSC control over UDP and TCP with passcodes, and a QLab workspace opened directly. In a few places it goes past QLab (versions with diffs, an explicit save model with every pending change marked, a dry run, an assistant, a web remote, holds and counted loops inside a track, sACN, Windows and Linux builds). Against QLab as a whole it does two fifths, does a little more than that in part, and lacks a seventh.
 
 **Read the 🟡 before the ✅.** Nearly half the rows are "partly", and for most of them the part that is missing is proof, not code. Almost all of this was written in a few days and is held up by unit tests and a smoke run. It has not been worked by a person's hands for long, and none of the MIDI, the timecode, the DMX, the output routing, the Mic cue, the stage or the remotes built for QLab has met real equipment. `CLAUDE.md` lists what has never been verified.
 
@@ -259,7 +259,7 @@ The first audit also found things that were wrong or unfinished in our own code,
 | Arm, Disarm | Yes | ✅ | |
 | Wait, Memo | Yes | ✅ | |
 | Script | AppleScript | 🟡 | Not code, by design: a short list of show commands as text, run in order with waits (`/cue/12/start`, `/go`, `/panic`, `/playhead/20`, `wait 2`). It can do what an operator's hands could do to this show's transport; it cannot run arbitrary code or reach another application. Tested, smoke-checked. |
-| Mix | No (a Fade on a patch is the nearest) | ➕🟡 | Ramps bus faders, and can recall a whole desk (eq, filter, pan, mutes, crossfader) over its duration; the mixer shows where a cue has put a fader until a hand is on it (smoke-checked by the gains, not heard). |
+| Mix | No (a Fade on a patch is the nearest) | ➕🟡 | Ramps bus faders over its duration; the mixer shows where a cue has put a fader until a hand is on it (smoke-checked by the gains, not heard). |
 | Jump | No (Devamp and slices are the nearest) | ➕🟡 | Moves a playing track to another place in itself as a cut, a fade or a blend. Untested; the beat-aligned parts read a tempo the app can now find. |
 
 ## 10. Audio
@@ -287,7 +287,7 @@ The first audit also found things that were wrong or unfinished in our own code,
 | Start and end time | Fields, draggable handles, ⇧I ⇧O | ✅ | Fields, handles to drag on the waveform, and ⇧I ⇧O at the place it is playing. End is cut to the sample. |
 | Play count | Any number, or infinite | ✅ | A count, or Loop for ever (tested). It can be typed while the sound plays. |
 | Slices with their own play counts; markers imported from the file | Yes | 🟡 | Loop regions: each with a count, or held until let go, or held by the operator (tested; run in the app). QLab's slices come across on import with their counts. Regions are typed or made from markers, not drawn, and nothing reads markers from the sound file. |
-| Rate 0.03–33, preserve pitch | Yes | 🟡 | 0.25–4 on an Audio cue, and a Fade can move it; a warp in the Live view multiplies it. Pitch is kept only on a streamed sound, which then has no exact loops. Positions are checked; it has not been listened to. |
+| Rate 0.03–33, preserve pitch | Yes | 🟡 | 0.25–4 on an Audio cue, and a Fade can move it. Pitch is kept only on a streamed sound, which then has no exact loops. Positions are checked; it has not been listened to. |
 | Integrated fade envelope drawn over the waveform | Yes | 🟡 | The Volume line, always drawn on the waveform, with bends; pan and effect settings have lines too (beyond QLab). Scheduled 60 ms ahead in 10 ms ramps, not to the sample. |
 | Open in an external editor, reveal in Finder | Yes | ❌ | |
 | Zoom the waveform; view one channel | Yes | ❌ | |
@@ -301,14 +301,14 @@ The first audit also found things that were wrong or unfinished in our own code,
 | A level per cue | Yes | ✅ | Heard at once when changed on a playing cue. |
 | Cue matrix: file channels × cue outputs, crosspoints | Yes | 🟡 | A cue's Own outputs: channels × the device's outputs, a level each; its bus still rides it. No gangs. Meters only: not heard on a real interface. |
 | Gangs | Yes | ❌ | |
-| Pan | By level per output | 🟡 | Per bus, on the Live view's strips (the maths tested). Not per cue. |
+| Pan | By level per output | 🟡 | Per cue (Audio and Mic, equal power), and as a line over a sound. Not per bus. |
 | Trim (untouched by fades) | Yes | ❌ | |
 | Set default levels, set all silent, name inputs | Yes | ❌ | |
 | Meters on the cue | Yes | ❌ | Meters are on buses and the master. |
 | Output patches: up to 128 cue outputs routed to device outputs | Audio licence for editing | 🟡 | Each bus goes to one pair of the device's outputs (Settings ▸ Audio), with a master and limiter per pair; a pair the device lacks is silent and flagged. Smoke-checked on a pretended eight-output device; not heard on a real one. A cue can have outputs of its own (the matrix above), and each output a name and a trim. No named patches, no mono bus outputs. |
 | Named buses with a fader and meter each, into a master | Cue outputs of a patch | ✅ | Add, rename, remove in Settings. |
-| Mute and solo of outputs | Yes | ✅ | Per bus, on the Live view's strips; a solo is not saved. The maths is tested and the solo smoke-checked. |
-| Effects on cue outputs and device outputs | Audio licence | 🟡 | Each bus has three built-in devices (a three-band EQ with a kill on each band, a one-knob filter, a utility: Live view) and sends to one reverb and one delay; a cue has a three-band eq of its own. Checked by meter, none of it heard. No plug-ins, nothing on the device's outputs. |
+| Mute and solo of outputs | Yes | ❌ | |
+| Effects on cue outputs and device outputs | Audio licence | 🟡 | Each bus sends to one reverb and one delay; a cue has an eq and a chain of tools of its own. Checked by meter, none of it heard. No plug-ins, nothing on the device's outputs. |
 | Mixer moves are unsaved edits, marked, with Defaults | n/a | ➕ | |
 
 ### Fades
@@ -335,16 +335,6 @@ The first audit also found things that were wrong or unfinished in our own code,
 | Mic cues (live input through the cue list) | Audio licence | 🟡 | See Mic in section 9: smoke-checked with a stand-in signal, not opened on a real input. No effects on it. |
 | Object audio: maps, marks, objects, paths | Audio licence | ❌ | |
 | Record the show's output | No | ➕🟡 | ● Rec in the mixer writes what outputs 1–2 get to `recordings/` in the show folder. The file and its length are smoke-checked; it has not been listened to. |
-
-### The Live view
-
-The show's sound laid out as tracks and scenes (View ▸ Live Mixer, ⌘L). QLab has nothing like it. Hidden until it is switched on (Settings ▸ General ▸ Show the Live view, or View ▸ Show the Live View): [`00-defaults.md`](00-defaults.md).
-
-| Feature | QLab 5 | Us | Note |
-|---|---|---|---|
-| A track per bus and a scene per cue that has sound, each sound a clip to launch or stop; a mixer under the tracks | No | ➕🟡 | Written and drawn; smoke checks cover the strips, the slots, a launch and a deck. Not heard, and not worked by hand. |
-| Tempo found from a sound, kept in the cue; a launch waits for the next beat or bar | No | ➕🟡 | The finder is tested on made tracks and was tried on real ones; half time, dotted readings and "none" are offered. One steady tempo per file. The quantised launch is engine-tested. |
-| A crossfader between tracks set to A and to B | No | ➕🟡 | Written; the gain it gives is smoke-checked, not heard. |
 
 ## 11. Auditioning, overrides, status and logs
 
@@ -521,7 +511,7 @@ Things the first audit turned up in our own code, none of which depends on QLab,
 
 **Built, but no show can reach it.** Decided (R8; `04-cue-engine.md` section 12). A Jump's Loop from has a field. Chained sections of a track (`stanza`), a child that fires when a sibling sound ends (`after`, `afterWait`), a pre-wait of "the longest sibling sound", `withScene`, light-cue groups and the `visuals` hook are taken out of the engine. A field the table does not list is kept on save instead of dropped (tested), so a file that carries one is not damaged; it is not played.
 
-**Beat features with nothing to feed them.** Mostly fixed. A cue now has a `tempo` (found from its sound in the Live view, or typed), and the engine reads its beats and bars from it (tested), so quantise to beat or bar has something to read. Loop regions can be typed in on Time & Loops as well as made from markers. Still open: a tempo that changes within a track, the Jump blends' match scores, and drawing a region on the waveform.
+**Beat features with nothing to feed them.** Mostly fixed. A cue now has a `tempo` (found from its sound when asked, or typed), and the engine reads its beats and bars from it (tested), so quantise to beat or bar has something to read. Loop regions can be typed in on Time & Loops as well as made from markers. Still open: a tempo that changes within a track, the Jump blends' match scores, and drawing a region on the waveform.
 
 **Built, but no control.**
 

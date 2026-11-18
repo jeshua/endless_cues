@@ -83,7 +83,7 @@ function plan(doc: ShowDoc, fromId: string, { durations = {}, skipLights = false
       if (key) said(`midi ${key}`, cue, cue.sends ? 'device' : 'midi');
     },
     lights: (cue) => said('light desk', cue, 'light'),
-    mix: (cue) => { for (const bus of Object.keys(cue.levels || {})) said(`mix ${bus}`, cue, 'mix'); if (cue.desk) said('mix desk', cue, 'mix'); },
+    mix: (cue) => { for (const bus of Object.keys(cue.levels || {})) said(`mix ${bus}`, cue, 'mix'); },
   });
   sim.dmxHook = (action, cue) => { if (action === 'run') said(`dmx ${cue.id}`, cue, 'light'); };
   sim.skipLights = !!skipLights;

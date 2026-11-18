@@ -11,7 +11,7 @@ It is deliberately in QLab's family. QLab's model (one GO, a playhead, cues that
 ## Who it is for
 
 1. **The sound designer / operator of a small or mid-sized production** who knows QLab, or will learn it from a tutorial written for QLab, and who needs one or more of: a computer that is not a Mac, a price that is not $1,399, a show file they can put in git, or a way to hand the show to someone else without licences.
-2. **The person whose show has music under it that must bend on the night**: a scene runs long, an entrance is late, an actor skips a page. The music tools are for designing a sound (a cue's chain of tools) and for rescuing a show that goes off script (go round from here, skip or crossfade to a marker on the bar), in the cue list itself. They are not for performing music: the Ableton-like Live view was built early, judged premature, and is hidden until switched on ([00](00-defaults.md)).
+2. **The person whose show has music under it that must bend on the night**: a scene runs long, an entrance is late, an actor skips a page. The music tools are for designing a sound (a cue's chain of tools) and for rescuing a show that goes off script (go round from here, skip or crossfade to a marker on the bar), in the cue list itself. They are not for performing music.
 3. **The production with a developer near it**: people who want to script, extend and integrate. An open file format, a documented command surface and a module interface are for them.
 
 Not for (yet): large video shows (Watchout, disguise), lighting programmers (a console), broadcast playout.

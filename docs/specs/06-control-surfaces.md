@@ -151,7 +151,7 @@ One `keydown` listener on `window`, in the capture phase, so a focused button or
 | ⌘1 … ⌘0 | Add a cue of the 1st … 10th type in toolbar order (Group, Audio, Fade, Stop, Start, Pause, Devamp, Load, GoTo, Arm) | yes | ⌘2 adds an empty Audio cue; the toolbar's Audio button opens the file dialog instead. |
 | ⌘, | Settings | | Works while typing. Also a menu item. |
 
-Everything but Esc and ⌘, is ignored while typing or while Settings is open. Menu accelerators (`main.ts`): ⌘N new show, ⌘O open, ⌘S save version, ⇧⌘S open the Versions drawer, ⇧⌘O add sounds, ⇧⌘M Show mode, ⌘L the Live view, ⌘K assistant, ⇧⌘V versions, ⌘T Load to Time, ⌘J Jump to cue, ⌘R Renumber. Also ⌥⌘V Paste Cue Properties, ⌘E go to the selected cue's target, ⇧⌘F the flagged cues and problems.
+Everything but Esc and ⌘, is ignored while typing or while Settings is open. Menu accelerators (`main.ts`): ⌘N new show, ⌘O open, ⌘S save version, ⇧⌘S open the Versions drawer, ⇧⌘O add sounds, ⇧⌘M Show mode, ⌘K assistant, ⇧⌘V versions, ⌘T Load to Time, ⌘J Jump to cue, ⌘R Renumber. Also ⌥⌘V Paste Cue Properties, ⌘E go to the selected cue's target, ⇧⌘F the flagged cues and problems.
 
 ## 6. Module: OSC control
 
@@ -500,13 +500,7 @@ Rules the shipped modules follow, worth keeping: bind nothing until `start`; rel
 | `unset` | `path` | Puts one setting back to its saved value. |
 | `fadeto` | `id`, `t`, `secs?` | Crossfades a playing track to `t` inside itself (default 1.5 s). |
 | `prepare` | `id` | Decodes a playing track so `fadeto` is a real crossfade. |
-| `launch` | `id` | The Live view's ▶: fires the cue on the launch quantise, taking over the tracks it plays on unless `settings.live.overlap`. Again while it waits: called off. |
-| `live-set` | `key: 'overlap' \| 'tempo'`, `value` | A Live setting of the show (`settings.live`). The desk's tempo may be set in Show mode; it re-rates warped sounds that are playing. |
 | `tempo-edit` | `id`, `edit: { do: 'set' \| 'nudge' \| 'one' \| 'split' \| 'join', at, … }` | A sound's tempo changed by hand, in the section `at` is in (`editTempo`). |
-| `desk-keep` | `id?`, `name?` | The desk as it stands into a new Mix cue after the playhead, or into the Mix cue `id`. |
-| `desk-live` | `key`, `value`, `name?` | A control moved as a controller moves it: heard and shown, not written to the show. |
-| `mute`, `stop-track`, `stop-clips` | `name` | A track's on/off button toggled; every clip on a track stopped; every sound stopped. |
-| `map-set`, `map-learn`, `map-learn-cancel`, `map-in` | `on`, `to` | Give a key or MIDI control to a desk control (`on: null` unmaps); wait for the next MIDI control and give it; a mapped key was pressed. |
 | `fade-from-target` | `id` or `number` (a Fade cue) | Writes the level its target is playing at (not playing: the target cue's own) into the Fade cue, and makes it absolute. One edit. Returns `{ db, playing }`. |
 | `revert-fade` | `id` or `number` (a Fade cue) | Puts what that cue last faded back as it was (level, voice-band dip, rate) over half a second. `{ reverted: n }`, or an error when there is nothing to put back. |
 | `peaks` | `file`, `detail?` | A file's waveform: `{ peaks, rms, pending }`, 1,600 slices, or 8,000 with `detail` (the inspector's zoomable waveform). |
@@ -603,7 +597,7 @@ On the **main** (role `main`), each transport command becomes OSC control messag
 | Host command | Sent to the backup |
 |---|---|
 | `go` (not one double-GO protection ignored) | `/playheadID/<the cue fired>`, `/go`, `/playheadID/<where the playhead now is>` |
-| `start`, `fire` / `launch`, `stop` (`fade`), `pause`, `resume`, `toggle` with a cue | `/cue_id/<id>/start`, `/preview`, `/stop` (`/panic`), `/pause`, `/resume`, `/togglePause` |
+| `start`, `fire`, `stop` (`fade`), `pause`, `resume`, `toggle` with a cue | `/cue_id/<id>/start`, `/preview`, `/stop` (`/panic`), `/pause`, `/resume`, `/togglePause` |
 | `pause`, `resume` (all), `panic` (`hard`), `fadeall`, `reset` | `/pause`, `/resume`, `/panic` (`/hardStop`), `/panicInTime <s>`, `/reset` |
 | `load` | `/cue_id/<playhead>/loadAt <s>` |
 | `playhead`, `move`, `jump`, `list` | `/playheadID/<id>` |

@@ -57,7 +57,7 @@ error is a log line (`[native]`).
 
 Not in the first version (each says so by `operror`, and the sound plays without it): sound design (`design`,
 `sweep`, `ir`, a `play`'s `own.chain`/`own.eq`), a sound's outputs of its own (`own.outputs`), the ducker (`ducker`,
-`duck`), the Live desk (`strips`), sends (`fx`), the monitor feed, lines over a sound other than Volume and Pan
+`duck`), sends (`fx`), the monitor feed, lines over a sound other than Volume and Pan
 (`automation`), microphones, recording, LTC in and out, keep-pitch rate. While the native engine is chosen, the audio
 window still runs for what is not sound: MIDI (Web MIDI), and reading a file's peaks and samples for the waveform and
 the tempo (`peaks`, `pcm`).

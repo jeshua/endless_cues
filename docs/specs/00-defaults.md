@@ -14,41 +14,18 @@ Three rules follow from that:
 - **Hiding a view never changes what is heard.** The engine does what the show says whether or not the view that
   made it is shown.
 
-## The Live view
-
-The Live view (`app/renderer/Live.ts`: a mixer strip for each bus with eq, filter and pan, a crossfader, clips
-launched on the bar, a desk tempo and warp, keys and controllers mapped to all of it) is **hidden until it is switched
-on**, on this computer: **Settings ▸ General ▸ Show the Live view**, or **View ▸ Show the Live View** (the same
-setting: `view.live` in this computer's `config.json`, not in the show). The app is for running a show once, from a
-cue list; the Live view is for someone who wants to mix it like a set.
-
-With it off:
-
-- there is no Cues | Live switch in the title bar, no Live Mixer item in the View menu, and ⌘L is nobody's;
-- nothing looks for a tempo in any sound (see below);
-- a Mix cue's kept desk (the one field marked `live: true` in `core/show/cue-types.ts`) is not in the inspector,
-  unless the cue already has one;
-- a show that was made with it **plays exactly as it was made**: warped sounds play warped, a Mix cue recalls its
-  desk, a bus's eq, pan and mute are what is heard, MIDI controls mapped to the desk still move it (all of that is
-  the host's and the engine's, which do not know whether the view is shown). The title bar says so in one quiet
-  line, "Uses the Live view · show it" (`core/show/uses-live.ts` says what in the show came from it), and a click
-  shows the view. A muted bus still has its red MUTED chip; with the view hidden a click on it unmutes.
-
-Keyboard keys mapped to the desk are read by the Live view itself, as before: they work while that view is on screen.
-
 ## Tempo and beat analysis
 
 `core/audio/tempo.ts` runs only when a person asks, for the sounds they ask about:
 
-- **Time & Loops ▸ Tempo ▸ Find the tempo** on one Audio cue, or **Find the tempo** in the Playing strip while it plays (the cue list's own way; that sound only);
-- in the Live view, a clip's Find, or Find Tempos for every sound that has none.
+- **Time & Loops ▸ Tempo ▸ Find the tempo** on one Audio cue, or **Find the tempo** in the Playing strip while it plays (that sound only).
 
 Nothing looks for a tempo when a sound is added, when a workspace is imported, when a show is opened or when a view
 is opened. What is found is written to the cue (`tempo`) as one undoable edit and travels with the show.
 
 ## Steering a running track is the cue list's own
 
-These work with the Live view hidden, because a show needs them:
+These are the cue list's own, because a show needs them:
 
 | Tool | Where it lives |
 |---|---|
@@ -59,16 +36,12 @@ These work with the Live view hidden, because a show needs them:
 | Move to another place in a track | Click the waveform in the Playing strip to mark a place, then **Skip** (at once) or **Fade to** (a 1.5 s crossfade inside the track). Each marker of the sound has a button in the row (click: skip; Shift: crossfade). **+ here** (More; Edit mode) keeps a marker where the track is. A Jump cue does it from the list. |
 | …on the bar | **On the bar** (More; a sound with a tempo): a skip or a crossfade from the strip leaves on the track's own next bar line and lands on the bar line nearest the place (`seek` / `fadeto` with `on: 'bar'`; `engine.moveOnGrid`). Off as it comes. |
 | Start or move on the beat or the bar | A group's **Quantise** (now / beat / bar), Beat lead-in and Blend (under More). They need the playing track's tempo. |
-| Find a tempo, and correct it | **Find the tempo** in the Playing strip or on Time & Loops ▸ Tempo (that sound only). Corrected there: the number typed, ÷2 and ×2, the listen's other readings, beats in a bar, **1 is here**, a 10 ms nudge of the bar lines, Remove. |
+| Find a tempo, and correct it | **Find the tempo** in the Playing strip or on Time & Loops ▸ Tempo (that sound only). Corrected there: the number typed, ÷2 and ×2, the listen's other readings, beats in a bar, **1 is here**, a 10 ms nudge of the bar lines, Remove. A track that changes tempo: **+ Change here** begins a new section on the beat nearest where the sound is, **Remove change** takes away the one it is in; the other tools act on the section the sound is in. |
 | One cue to the next without a hole | A group's or a cue's "Fade & stop others", a Fade cue, a playlist group's Crossfade. |
 
 The strip stays quiet until a tool is wanted: one row under the waveform, the extras behind More, and on a sound
 with no tempo nothing of bars at all, only "Find the tempo". Loops and moves are running the show and work in Show
 mode; keeping a marker and finding or correcting a tempo are edits and wait for Edit mode.
-
-Still only in the Live view: the sections of a track that changes tempo (a new change, removing one; the tools on
-Time & Loops act on the section the sound is in); a bus's eq, filter, pan, mute and solo; the crossfader; keys and
-controllers mapped to the desk.
 
 ## Every behaviour, and its default
 
@@ -83,9 +56,7 @@ controllers mapped to the desk.
 | A cue ducking the others while it runs | Off (`duckOthers` 0) | The cue, under More | No. |
 | "Fade & stop others" on a cue or group | Off (0) | The cue, under More | No. |
 | A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.ts` `stopsTarget`) | The Fade cue's switch | **Yes: it was always off**, as QLab's is, which leaves a faded sound playing at −∞. An imported QLab fade carries QLab's own setting, so it plays as it did there. |
-| Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip; the Live view | It never ran by itself; it could only be asked for in the Live view. Now also asked for on one cue's Time & Loops tab. |
-| Warp (a sound played at the desk's tempo) | Off (`warp` ''; a hidden field) | The Live view's Clip view | No. |
-| Launch on the bar (a clip launched in the Live view waits for the bar) | Applies only to launches from the Live view | The Live view's control bar | No. A GO, a cart button and a trigger never wait unless a group's Quantise says so. |
+| Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip | It never ran by itself. |
 | Quantise on a group | Off (`onBeat` 'now') | The group, under More | No. |
 | A skip or crossfade from the Playing strip waiting for the bar | Off ("on the bar" unticked; kept by the window, not the show) | The Playing strip, under More | New here, off. |
 | A new long sound put on the Music bus by its length | **Off** (`settings.editing.longSoundsToMusic`) | Settings ▸ Show ▸ Long sounds go on the Music bus; show | **Yes: it was always on.** A sound added with no bus chosen now goes on the bus every Audio cue starts on (Effects, or the show's Audio template). |
@@ -97,7 +68,6 @@ controllers mapped to the desk.
 | Upcoming sounds read into memory ahead of their GO | On | None | No: this is what makes a GO immediate (QLab's loading). |
 | A waveform's peaks | Read when a view asks to draw that sound | None | No. |
 | Falling back to the system output when the chosen device goes away | On | None | No: the alternative is silence. Said in a notice. |
-| The Live view | **Hidden** (`view.live`, computer) | Settings ▸ General; View ▸ Show the Live View | **Yes: it was always shown.** |
 | The native audio engine (`ec-audio`, [18](18-native-audio.md)) | **Off**: Web Audio makes the sound (`audio.engine` 'webaudio', computer). Chosen while something plays, it takes over once nothing does; if it stops three times in a minute, or there is no program, Web Audio plays for the rest of the sitting, said in a notice and the show log | Settings ▸ Audio ▸ Audio engine; computer | New, off. The status bar names the engine in use beside the output. |
 
 ### The network and other equipment

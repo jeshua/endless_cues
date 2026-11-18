@@ -1,4 +1,4 @@
-// A sound's tempo as the views read it (the Playing strip, Time & Loops, the Live view): its sections, the bar
+// A sound's tempo as the views read it (the Playing strip, Time & Loops): its sections, the bar
 // lines to draw, the bar and beat a place is in; and the controls that correct a tempo where it is found.
 import { html, useState, useEffect, cmd, setCue, clock, cx } from './lib.js';
 import type { Cue } from './lib.js';
@@ -72,7 +72,7 @@ const BARS = [2, 3, 4, 5, 6, 7, 9, 12];
 /** Correcting a found tempo, where it is found (Time & Loops ▸ Tempo): the number itself, half and double, the
  *  other readings the listen offered, the beats in a bar, and where beat one is. `at` is the place the edits
  *  act at (where the sound is playing, or the place picked on the waveform); a tempo that changes is edited in
- *  the section `at` is in. Sections themselves (a new change of tempo, removing one) are made in the Live view. */
+ *  the section `at` is in, and a change of tempo is added there or the one there removed. */
 /** What a listen heard: a reading and the others it offered. */
 type Heard = { none?: boolean; bpm: number; first?: number; others?: { bpm: number; first?: number }[] };
 export function TempoFix({ cue, at, playing, locked }: { cue: Cue; at: number; playing?: boolean; locked?: boolean }) {
@@ -99,5 +99,8 @@ export function TempoFix({ cue, at, playing, locked }: { cue: Cue; at: number; p
     <button class=${cx('btn small')} data-one disabled=${locked} onClick=${() => editAt({ do: 'one' })} title=${`The beat nearest ${where} is beat one of a bar`}>1 is here</button>
     <button class="btn small" disabled=${locked} onClick=${() => editAt({ do: 'nudge', by: -0.01 })} title="Bar lines 10 ms earlier">◀</button>
     <button class="btn small" disabled=${locked} onClick=${() => editAt({ do: 'nudge', by: 0.01 })} title="Bar lines 10 ms later">▶</button>
+    <span class="sep"></span>
+    <button class="btn small" data-split disabled=${locked} onClick=${() => editAt({ do: 'split' })} title=${`A change of tempo on the beat nearest ${where}`}>+ Change here</button>
+    ${(sectionAt(tempo, at) || { index: 0 }).index > 0 ? html`<button class="btn ghost small" data-join disabled=${locked} onClick=${() => editAt({ do: 'join' })} title="Remove the change of tempo this place is after">Remove change</button>` : null}
   </div>`;
 }

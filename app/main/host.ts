@@ -45,18 +45,14 @@ import type { Cue, CueList, CueType, Modules, ShowDoc } from '../../core/show/ty
 import type { Problem } from '../../core/show/show';
 import type { FieldChange } from '../../core/show/diff';
 import type { TriggerRow } from '../../core/show/triggers';
-import type { EngineCue, Running } from '../../core/engine/cue-engine';
+import type { EngineCue } from '../../core/engine/cue-engine';
 import type { AppConfig } from './main';
 import type { importQlab } from '../../core/import/qlab';
 import { triggersOf, clockDue } from '../../core/show/triggers';
 const MODULES: ModuleDef[] = [require('./modules/osc-control') as typeof import('./modules/osc-control'), require('./modules/lighting-desk') as typeof import('./modules/lighting-desk'), require('./modules/web-remote') as typeof import('./modules/web-remote'), require('./modules/show-feedback') as typeof import('./modules/show-feedback'), require('./modules/backup-link') as typeof import('./modules/backup-link')];
 
 const TICK_MS = 100;
-import { stripOf, cleanSetting, withSetting, withSettings, deskOf, recallOf } from '../../core/audio/strip';
-import * as deskMap from '../../core/audio/desk-map';
-import { usesLive } from '../../core/show/uses-live';
-import { tempoMap, editTempo, sectionAt, warpRate, MIN_CONFIDENCE } from '../../core/audio/tempo';
-import { replacedBy, TAKEOVER_FADE } from '../../core/audio/launch';
+import { tempoMap, editTempo, MIN_CONFIDENCE } from '../../core/audio/tempo';
 import * as clipboard from '../../core/show/clipboard';
 import * as templates from '../../core/show/templates';
 import * as routing from '../../core/audio/routing';
@@ -119,9 +115,6 @@ interface Commands {
   prepare: { id: string };
   'mark-here': { id: string };
   arm: { id: string };
-  launch: {};
-  'live-set': { key: string; value: unknown };
-  'launch-q': { q: string };
   'tempo-find': { ids?: string[] | null; again?: boolean };
   'tempo-edit': { id: string; edit: Parameters<typeof editTempo>[1] & { do?: string } };
   'tempo-of': { file?: string };
@@ -141,20 +134,8 @@ interface Commands {
   template: { type?: string; clear?: boolean };
   undo: {}; redo: {};
   import: ImportOptions & { paths: string[] };
-  // the mixer and the Live view's desk
+  // the mixer
   bus: { name: string; db: number; commit?: boolean };
-  strip: { name: string; key: string; value: unknown; commit?: boolean };
-  crossfader: { value: number; commit?: boolean };
-  solo: { name?: string | null; on?: boolean; only?: boolean };
-  'desk-live': { key: string; value: unknown; name?: string };
-  mute: { name: string };
-  'stop-track': { name: string };
-  'stop-clips': {};
-  'map-in': { on: string };
-  'map-set': { on: string | null; to: string };
-  'map-learn': { to: string; ms?: number };
-  'map-learn-cancel': {};
-  'desk-keep': { levels?: boolean; name?: string };
   level: { id: string; db: number };
   master: { db: number; commit?: boolean };
   device: { id: string; label?: string };
@@ -219,7 +200,7 @@ export type HostOp = HostCommand['op'];
 /** What a command answers: `{ error }` when it is refused, otherwise what that op says (an IPC payload to the window). */
 export type HostResult = { error?: string; [field: string]: any };
 /** The ops whose answer may come later: they wait for the audio window, a device, a person or a model (a refusal comes at once). */
-type LaterOp = 'tempo-find' | 'map-learn' | 'osc-learn' | 'midi-learn' | 'media-clean' | 'ask' | 'device-ask' | 'rig-check' | 'import' | 'point' | 'rig-scan';
+type LaterOp = 'tempo-find' | 'osc-learn' | 'midi-learn' | 'media-clean' | 'ask' | 'device-ask' | 'rig-check' | 'import' | 'point' | 'rig-scan';
 /** What the audio window says (app/audio/audio.ts `report`), by `type`. */
 export type AudioEvent =
   | { type: 'ready' }
@@ -267,7 +248,7 @@ interface Learner<T> { resolve: (v: T | null) => void; timer: ReturnType<typeof 
 interface HostRun {
   audioReady: boolean; devices: AudioDevice[]; device: string; deviceOk: boolean; deviceDetail: string;
   level: Meter[] | null; busPeaks: Record<string, number>; limiting: boolean;
-  mode: string; notice: { text: string; at: number; until: number } | null; muted: boolean; launchQ: string;
+  mode: string; notice: { text: string; at: number; until: number } | null; muted: boolean;
   outputs: number;
   midi: { inputs: string[]; outputs: string[]; error: string };
   inputs?: unknown[]; outPeaks?: number[]; outCh?: number[]; channels?: Record<string, number>;
@@ -398,16 +379,9 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   const nameOf = (key: string) => { const c = engine.byId.get(key); return c ? `${c.number ? `${c.number} ` : ''}${c.name || c.id}` : String(key); };
   const dbText = (d: unknown) => (Number(d) <= -60 ? 'silence' : `${Number(d) > 0 ? '+' : ''}${Math.round(Number(d) * 10) / 10} dB`);
-  const liveBus = new Map<string, number>();        // bus -> the level a Mix cue has taken it to (until Reset, or a hand on its knob)
+  const mixLevels = new Map<string, number>();        // bus -> the level a Mix cue has taken it to (until Reset, or a hand on its knob)
   const tempos = new Map<string, Found>();         // file -> what was found in it: { bpm, first, confidence, others } | null (kept in a cue only when asked)
   const tempoWaits = new Map<string, ((found: Found) => void)[]>();     // file -> the callers waiting for its sound to come back from the audio window
-  const launches = new Map<string, { at: number; timer: ReturnType<typeof setTimeout> }>();       // cue id -> { at, timer }: a clip launched in the Live view, waiting for the beat or the bar
-  // the desk as it is played, over the show's: strip settings a Mix cue recalled or a controller moved (until Reset,
-  // or a hand on that control), the crossfader and the master likewise
-  const liveStrip = new Map<string, Record<string, unknown>>();      // bus -> { 'eq.low': …, pan: …, … }
-  let liveXf: number | undefined, liveMaster: number | undefined;
-  let mapLearner: Learner<string> | null = null;            // the Live view's Map mode waiting for a MIDI control to give to a desk control
-  const solo = new Set<string>();           // buses soloed in the Live view: the operator's ear, never the show's (gone when a show is opened)
   // every OSC message in or out goes through the hub: one monitor, and each patch knows how it is doing
   const hub = createHub({ log: (l) => log(`[network] ${l}`), changed: () => schedulePush(), dryRun: smoke && !net });
   let triggers: ReturnType<typeof oscTriggers> = [];                // [{ id, address, args }]: cues an incoming OSC message fires
@@ -418,7 +392,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   const state: HostRun = {
     audioReady: false, devices: [], device: 'default', deviceOk: true, deviceDetail: '',
     level: null, busPeaks: {}, limiting: false,
-    mode: 'edit', notice: null, muted: !!smoke, launchQ: 'bar',
+    mode: 'edit', notice: null, muted: !!smoke,
     outputs: 2,                      // how many outputs the device has (a bus can be sent to a pair of them)
     midi: { inputs: [], outputs: [], error: '' },
   };
@@ -571,18 +545,9 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       duck: (key, db, secs) => audioCmd({ op: 'others', key, db, secs }),
     },
     send: sendNetwork,
-    // a warped sound plays at the desk's tempo (settings.live.tempo, or the tempo of the music playing)
-    warp: (cue, from) => (cue.warp && cue.tempo ? { rate: warpRate(cue.tempo, deskTempo(), from), keepPitch: cue.warp === 'keep' } : null),
     mix: (cue) => {
       const secs = Number(cue.duration) || 0;
-      for (const [bus, db] of Object.entries(cue.levels || {})) { audioCmd({ op: 'bus', name: bus, db, secs }); liveBus.set(bus, Number(db) || 0); }
-      // a desk kept in the cue: every strip of the buses it names, and the crossfader, glide to where it has them
-      if (cue.desk) {
-        const r = recallOf(cue.desk);
-        for (const [bus, set] of Object.entries(r.buses)) liveStrip.set(bus, set);
-        if (r.crossfader !== undefined) liveXf = r.crossfader;
-        sendStrips(null, secs);
-      }
+      for (const [bus, db] of Object.entries(cue.levels || {})) { audioCmd({ op: 'bus', name: bus, db, secs }); mixLevels.set(bus, Number(db) || 0); }
     },
     lights: (cue) => {
       const m = running.get('lighting-desk');
@@ -752,11 +717,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     const msg = midi.decode(bytes);
     if (!msg) return;
     hub.record({ dir: 'in', who: `MIDI ${port}`.trim(), patch: null, text: midi.toText(msg), via: 'midi' });
-    const mapped = deskMap.onOfMidi(msg);
-    // Map mode: the first control moved (or pad struck) is given to the desk control that is waiting for one
-    if (mapLearner && mapped && (msg.kind === 'cc' || (mapped.value ?? 0) > 0)) { const l = mapLearner; mapLearner = null; clearTimeout(l.timer); l.resolve(mapped.on); schedulePush(); return; }
     if (midiLearner) { const l = midiLearner; midiLearner = null; clearTimeout(l.timer); l.resolve({ text: midi.toText(msg, { brief: true }), from: port }); schedulePush(); return; }
-    if (away) { schedulePush(); return; }      // (a show from another computer: no MIDI trigger, mapping or show command until it is turned on)
+    if (away) { schedulePush(); return; }      // (a show from another computer: no MIDI trigger or show command until it is turned on)
     for (const t of midiTriggers) {
       if (!midi.matches(t.msg, msg) || !engine.byId.has(t.id)) continue;
       log(`[midi] ${midi.toText(msg)} fires ${t.id}`);
@@ -764,8 +726,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     }
     // the end of a note that is a cue's trigger: its "second trigger on release", if it has one
     if (msg.kind === 'noteoff') for (const t of midiTriggers) if (t.msg.kind === 'note' && midi.matches({ ...t.msg, kind: 'noteoff' }, msg)) engine.released(t.id);
-    // a control mapped to the Live view's desk (settings.live.map)
-    if (mapped) for (const hit of deskMap.matching((document.doc.settings.live || {}).map, mapped.on)) { const act = deskMap.actionOf(hit.to, { type: msg.kind === 'cc' ? 'cc' : 'note', value: mapped.value }); if (act) cmd(act as HostCommand); }
     const m = document.doc.settings.midi || {};
     // a note or a controller set to run the show (Settings ▸ Integrations ▸ Network ▸ MIDI)
     for (const [what, text] of Object.entries(m.commands || {})) {
@@ -883,9 +843,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     audioCmd({ op: 'outputs', trims: r.trims, use: routing.outputsUsed(document.doc) });
     audioCmd({ op: 'fx', ...r.fx });
     // (a level a Mix cue has moved stays where the cue put it through an edit; Reset puts the saved levels back)
-    audioCmd({ op: 'buses', list: a.buses.map((b) => (liveBus.has(b.id) ? { ...b, db: liveBus.get(b.id) } : b)) });
-    sendStrips();
-    audioCmd({ op: 'masterDb', db: state.muted ? -60 : liveMaster !== undefined ? liveMaster : Number(a.masterDb) || 0 });
+    audioCmd({ op: 'buses', list: a.buses.map((b) => (mixLevels.has(b.id) ? { ...b, db: mixLevels.get(b.id) } : b)) });
+    audioCmd({ op: 'masterDb', db: state.muted ? -60 : Number(a.masterDb) || 0 });
     audioCmd({ op: 'limiter', on: a.limiter !== false });
     // ducking: by kind (music and ambience under voices), or an older show's one pair, as rules (core/audio/kinds.ts)
     const rules = kinds.duckRules(a);
@@ -897,20 +856,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     const mon: Partial<NonNullable<typeof a.monitor>> = a.monitor || {};
     audioCmd({ op: 'monitor', on: !!mon.on, out: Math.max(2, Math.round(Number(mon.out) || 3) - 1), db: Number.isFinite(Number(mon.db)) ? Number(mon.db) : -12 });
   }
-  /** Each bus's channel strip (eq, filter, pan, and its gate: mute, solo and the crossfader as one gain).
-   *  `over` is a setting being moved by hand and not yet written: { name, key, value } or { crossfader }. */
-  function sendStrips(over: { name?: string; key?: string; value?: unknown; crossfader?: number } | null = null, secs = 0) {
-    const a = document.doc.settings.audio;
-    for (const id of [...solo]) if (!a.buses.some((b) => b.id === id)) solo.delete(id);
-    const crossfader = over && over.crossfader !== undefined ? over.crossfader : crossfaderNow();
-    audioCmd({ op: 'strips', secs, list: a.buses.map((b) => stripOf(over && over.name === b.id ? withSetting(busNow(b), over.key!, over.value) : busNow(b), { solo: [...solo], crossfader })) });
-  }
-  /** A bus as the desk has it now: the show's, with what a Mix cue or a controller has moved laid over. */
-  function busNow(b: Bus) { return liveStrip.has(b.id) ? withSettings(b, liveStrip.get(b.id)) : b; }
-  function crossfaderNow() { return liveXf !== undefined ? liveXf : Number(document.doc.settings.audio.crossfader) || 0; }
-  function clearLiveDesk() { liveBus.clear(); liveStrip.clear(); liveXf = undefined; liveMaster = undefined; }
-  /** A hand on a strip control: what a Mix cue or a controller had it at no longer stands. */
-  function handOn(name: string, key: string) { const o = liveStrip.get(name); if (o) { delete o[key]; if (!Object.keys(o).length) liveStrip.delete(name); } }
   function probe() {
     if (!state.audioReady) return;
     engine.missing.clear();
@@ -927,7 +872,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   function bind(doc: ShowDocument, keep = false) {
     document = doc;
     state.imported = null;
-    if (!keep) { solo.clear(); clearLaunches(); clearLiveDesk(); }
+    if (!keep) mixLevels.clear();
     document.on('change', ({ reason }: { reason: string }) => applyDocument(reason));
     document.on('proposal', () => schedulePush());
     if (!keep) { stopRecording(); playlog.endAll(); transport.stop(); engine.reset(); audioCmd({ op: 'stopAll' }); stage.clear(); lightFails.clear(); lastLoad.clear(); rig.opened(); }
@@ -1141,49 +1086,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     if (cues.length > 1 || none.length) notice(`Tempo found in ${ops.length} of ${cues.length}.${none.length ? ` Not in: ${none.slice(0, 4).join(', ')}${none.length > 4 ? '…' : ''}.` : ''} Check the bar lines in each Clip view.`, 9000);
     return { looked: cues.length, found: ops.length, results };
   }
-  function clearLaunches() { for (const l of launches.values()) clearTimeout(l.timer); launches.clear(); }
-  /** A launch from the Live view, now: the clip (or the scene) takes over the tracks it plays on, unless the show
-   *  lets clips overlap. What it takes over is faded out under it and stopped (core/audio/launch.ts). */
-  function launchNow(id: string) {
-    const cue = engine.byId.get(id);
-    if (!cue) return;
-    if (!(document.doc.settings.live || {}).overlap) {
-      for (const old of replacedBy(cue, [...engine.running.keys()], engine.byId)) {
-        engine.following.delete(engine.topOf(old)); engine.leavePlaylists(old);
-        engine.fadeAudio(old, -60, TAKEOVER_FADE, true, `stop:${old}`);
-      }
-    }
-    engine.fire(id); engine.changed();
-  }
-  /** Where the music is: the tempo, bar and beat of the newest sound playing that has a beat. null: nothing has. */
-  function musicClock() {
-    let best: { id: string; r: Running; c: EngineCue & { beats: number[] } } | null = null;
-    for (const [id, r] of engine.running) { const c = engine.byId.get(id); if (c && Array.isArray(c.beats) && c.beats.length > 1 && (!best || r.startedAt > best.r.startedAt)) best = { id, r, c: c as EngineCue & { beats: number[] } }; }
-    if (!best) return null;
-    const p = engine.positionOf(best.r), downs = best.c.downbeats || [];
-    const bars = downs.filter((d) => d <= p + 0.001);
-    const from = bars.length ? bars[bars.length - 1] : -Infinity;
-    // (the tempo and the beats in a bar are those of the section the track is in)
-    const sec = best.c.tempo ? sectionAt(best.c.tempo, p) : null;
-    const rate = best.r.rate || 1;                 // (a warped sound's tempo is the one it is heard at)
-    return { id: best.id, name: best.c.name, bpm: Math.round((sec ? sec.bpm : 60 / (best.c.beats[1] - best.c.beats[0])) * rate * 100) / 100, per: sec ? sec.bar : 4, ...(rate !== 1 ? { rate } : {}),
-             bar: bars.length, beat: best.c.beats.filter((b) => b >= from - 0.001 && b <= p + 0.001).length || 1 };
-  }
-
-  /** The desk's tempo: the one set on it, else the tempo of the music playing as it is heard; 0 when there is neither. */
-  function deskTempo() {
-    const set = Number((document.doc.settings.live || {}).tempo) || 0;
-    if (set) return set;
-    const c = musicClock();
-    return c ? c.bpm : 0;
-  }
-  /** The desk's tempo moved: every warped sound playing moves with it, from where it is. */
-  function rewarp() {
-    const desk = Number((document.doc.settings.live || {}).tempo) || 0;
-    if (!desk) return;
-    for (const [id, r] of engine.running) { const c = engine.byId.get(id); if (c && c.warp && c.tempo) engine.rewarp(id, warpRate(c.tempo, desk, engine.positionOf(r))); }
-  }
-
   /** `detail`: finer slices, for a waveform that is zoomed into (the inspector's). */
   function peaksFor(file: string, detail = false): Peaks | 'pending' | null | undefined {
     const bins = detail ? PEAK_DETAIL : PEAK_BINS, key = detail ? `${file}|${bins}` : file;
@@ -1200,7 +1102,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   // ── what the views are sent ───────────────────────────────────────────
   let rowsFor = -1, rows: Row[] = [], labels: Record<string, string> = {}, docForView: ViewDoc | null = null, docProblems: Problem[] = [], triggerRows: TriggerRow[] = [], carts: Record<string, ReturnType<typeof cartOf.layout>> = {};
   let fadeStops: string[] = [];               // Fade cues that stop their target because they were left alone (a fade to silence: cueTypes.stopsTarget)
-  let liveUsed: ReturnType<typeof usesLive> = [];                // what in this show came from the Live view (core/show/uses-live.ts): said when that view is hidden
   function derive() {
     if (rowsFor === rev) return;
     rowsFor = rev;
@@ -1221,7 +1122,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     const floor = cleanLimits(doc.settings.audio.levels).min;
     fadeStops = [];
     show.walk(doc, (c) => { if (c.type === 'fade' && (c.stopTarget === undefined || c.stopTarget === null) && cueTypes.stopsTarget(c, byId.get(c.target!) || null, floor)) fadeStops.push(c.id); });
-    liveUsed = usesLive(doc);
     for (const [file, secs] of midiFiles) if (!(secs > 0)) show.walk(doc, (c) => { if (c.type === 'midifile' && c.file === file) docProblems.push({ id: c.id, level: 'error', why: 'its file is missing, or is not a MIDI file' }); });
     triggerRows = triggersOf(doc);
     // each cart's buttons, decided in one place (core/show/cart.ts): list id -> { rows, columns, cells, extra }
@@ -1257,8 +1157,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
               undoLabel: (document.undoStack.at(-1) || {}).label || '', warnings: document.warnings },
       problems: [...docProblems, ...missing],
       engine: e,
-      live: { quantise: state.launchQ, queued: [...launches.keys()], clock: musicClock(), overlap: !!(document.doc.settings.live || {}).overlap, tempo: Number((document.doc.settings.live || {}).tempo) || 0, map: (document.doc.settings.live || {}).map || [], used: liveUsed },
-      mixer: { masterDb: liveMaster !== undefined ? liveMaster : Number(a.masterDb) || 0, outputs: state.outputs, outPeaks: state.outPeaks || [], buses: a.buses.map((b) => ({ ...busNow(b), ...(liveStrip.has(b.id) ? { liveStrip: true } : {}), peak: state.busPeaks[b.id] ?? -60, ...(noOut(b) ? { noOutput: true } : {}), ...(liveBus.has(b.id) && liveBus.get(b.id) !== b.db ? { live: liveBus.get(b.id) } : {}) })), level: state.level, limiting: state.limiting, crossfader: crossfaderNow(), solo: [...solo],
+      mixer: { masterDb: Number(a.masterDb) || 0, outputs: state.outputs, outPeaks: state.outPeaks || [], buses: a.buses.map((b) => ({ ...b, peak: state.busPeaks[b.id] ?? -60, ...(noOut(b) ? { noOutput: true } : {}), ...(mixLevels.has(b.id) && mixLevels.get(b.id) !== b.db ? { live: mixLevels.get(b.id) } : {}) })), level: state.level, limiting: state.limiting,
                ducking: !!state.ducking, duckOn: !!state.duckOn, ducked: state.ducked || [], kinds: Object.fromEntries(a.buses.map((b) => [b.id, kinds.kindOf(b)])), duckingBy: kinds.duckingOf(a), recording: recording ? { file: path.basename(recording.file), secs: Math.round((Date.now() - recording.since) / 1000) } : null, device: state.device, devices: state.devices, inputs: state.inputs || [], deviceOk: state.deviceOk,
                // the chosen output is away and the show is on the default meanwhile; the monitor feed, and whether the device has the output it wants
                fallback: outWatch.fallback && outWatch.wanted ? { label: outWatch.wanted.label || 'the chosen output' } : null,
@@ -1284,7 +1183,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       point: state.point || null,
       rig: rig.snapshot(),
       network: { ...hub.status(), triggers: triggers.length, inputPort: document.doc.settings.network.inputPort },
-      midi: { ...state.midi, triggers: midiTriggers.length, learning: !!midiLearner, mapping: !!mapLearner, test: !!smoke },
+      midi: { ...state.midi, triggers: midiTriggers.length, learning: !!midiLearner, test: !!smoke },
       stage: stage.status(),
       timecode: { ...transport.status(), ltcInError: state.ltcIn || '' },
       // outputs held back for a rehearsal: [{ id, label, on }]
@@ -1342,7 +1241,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
 
   // ── commands ──────────────────────────────────────────────────────────
   // What Show mode locks. Riding the mixer and saving are part of running a show, so they are not here.
-  const EDITS = new Set<string>(['fade-from-target', 'ducking-by-kind', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'map-set', 'map-learn', 'desk-keep', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
+  const EDITS = new Set<string>(['fade-from-target', 'ducking-by-kind', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
   const cmdListeners = new Set<CmdListener>();   // told each command once it is done (a module reporting "pause all", "panic")
   function cmd<C extends HostCommand>(c: C): ResultOf<C> {
     const before: Playhead = { playhead: engine.playhead };
@@ -1373,8 +1272,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   }
   function run(c: HostCommand): HostResult | Promise<HostResult> | null {
     if (!c || typeof c.op !== 'string') return { error: 'no command' };
-    if (c.op === 'panic' || c.op === 'reset' || c.op === 'fadeall') clearLaunches();      // nothing waits for a beat through a panic
-    if (['go', 'start', 'launch', 'fire', 'panic', 'reset'].includes(c.op)) audition.clear();   // only what V itself starts is an audition
+    if (['go', 'start', 'fire', 'panic', 'reset'].includes(c.op)) audition.clear();   // only what V itself starts is an audition
     // a command that names a cue which is not there is refused: it must never fall through to "everything"
     if ((c.number != null || c.id != null) && ['pause', 'resume', 'toggle', 'stop', 'fire', 'start', 'reset', 'load', 'release'].includes(c.op) && !idOf(c as CueNamed)) return { error: `no cue ${c.number != null ? `numbered ${c.number}` : c.id}` };
     if (state.mode === 'show' && EDITS.has(c.op)) return { error: 'Show mode: editing is locked' };
@@ -1396,7 +1294,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'panic': { const hard = c.hard || performance.now() / 1000 - engine.lastPanic < 1.5; engine.panic(); if (c.hard) engine.panic(); if (hard) { playlog.endAll(); audioCmd({ op: 'stopAll' }); } lighting.panic(hard, engine.panicFade); break; }
       // with a cue named: that cue alone is put back as the show has it (stopped, unloaded, armed as written, re-aimed)
       case 'reset': if (c.id != null || c.number != null) { engine.resetCue(idOf(c)!); engine.changed(); break; }
-        engine.reset(); playlog.endAll(); audioCmd({ op: 'stopAll' }); stage.clear(); clearLiveDesk(); lightFails.clear(); lighting.reset(); sendMixer(); break;
+        engine.reset(); playlog.endAll(); audioCmd({ op: 'stopAll' }); stage.clear(); mixLevels.clear(); lightFails.clear(); lighting.reset(); sendMixer(); break;
       case 'pause': engine.pause(idOf(c)); break;
       case 'resume': engine.resume(idOf(c)); break;
       case 'toggle': { const id = idOf(c); if (id) (engine.isPaused(id) ? engine.resume(id) : engine.pause(id)); break; }
@@ -1444,26 +1342,6 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       }
       case 'arm': engine.toggleArm(c.id); break;
       // preview (V): the cue alone, where the playhead is
-      // the Live view's launch: as `fire`, but on the next beat or bar of the music playing when the desk is set to
-      case 'launch': {
-        const id = idOf(c); if (!id || !engine.byId.has(id)) return { error: 'no such cue' };
-        if (launches.has(id)) { clearTimeout(launches.get(id)!.timer); launches.delete(id); break; }      // launched again while it waits: called off
-        const wait = state.launchQ === 'none' ? null : engine.toNextDownbeat(0.03, state.launchQ === 'beat' ? 'beats' : 'downbeats');
-        if (!(wait! > 0.03)) { launchNow(id); break; }
-        launches.set(id, { at: Date.now() + wait! * 1000, timer: setTimeout(() => { launches.delete(id); try { launchNow(id); } catch (err) { log(`[live] launch ${id}: ${(err as Error).stack || err}`); } schedulePush(); }, wait! * 1000) });
-        break;
-      }
-      // a setting of the Live view that is the show's (settings.live): one clip per track or overlapping, the desk's tempo
-      case 'live-set': {
-        const v = c.key === 'overlap' ? !!c.value : c.key === 'tempo' ? (Number(c.value) >= 20 && Number(c.value) <= 400 ? Math.round(Number(c.value) * 100) / 100 : 0) : undefined;
-        if (v === undefined) return { error: 'no such setting' };
-        if (state.mode === 'show' && c.key !== 'tempo') return { error: 'Show mode: editing is locked' };
-        if ((((document.doc.settings.live || {}) as Record<string, unknown>)[c.key] || 0) === (v || 0)) break;
-        const r = document.edit([{ op: 'show.set', path: `settings.live.${c.key}`, value: v }], { label: c.key === 'overlap' ? (v ? 'clips overlap' : 'one clip per track') : 'desk tempo' });
-        if (c.key === 'tempo') rewarp();
-        return r;
-      }
-      case 'launch-q': state.launchQ = ['none', 'beat', 'bar'].includes(c.q) ? c.q : 'bar'; break;
       case 'tempo-find': return findTempos(c).catch((err) => ({ error: err.message }));
       // a tempo changed by hand in the Clip view: a section's bpm or beats in a bar, "1 is here", a new section (core/audio/tempo.ts)
       case 'tempo-edit': {
@@ -1557,92 +1435,13 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       // the mixer: a fader moves the sound at once; `commit` (on release) writes it to the show
       case 'bus': {
         audioCmd({ op: 'bus', name: c.name, db: Number(c.db) || 0, secs: 0.03 });
-        liveBus.delete(c.name);
+        mixLevels.delete(c.name);
         if (c.commit) { const i = document.doc.settings.audio.buses.findIndex((b) => b.id === c.name); if (i >= 0) document.edit([{ op: 'show.set', path: `settings.audio.buses.${i}.db`, value: Math.round(Number(c.db) * 10) / 10 }], { label: `${c.name} fader` }); }
         break;
-      }
-      // the Live view's strips: heard as the control moves; `commit` (on release) writes it to the show
-      case 'strip': {
-        const i = document.doc.settings.audio.buses.findIndex((b) => b.id === c.name);
-        const v = cleanSetting(c.key, c.value);
-        if (i < 0 || v === undefined) return { error: 'no such bus or setting' };
-        handOn(c.name, c.key);
-        if (!c.commit) { sendStrips({ name: c.name, key: c.key, value: v }); break; }
-        // a setting back at rest is taken out of the file, so a show that uses none of this reads as it always did
-        const rest = v === 0 || v === false || v === '';
-        const now = c.key.split('.').reduce<unknown>((o, k) => (o == null ? undefined : (o as Record<string, unknown>)[k]), document.doc.settings.audio.buses[i]);
-        if (rest && now === undefined) { sendStrips(); break; }
-        return document.edit([{ op: 'show.set', path: `settings.audio.buses.${i}.${c.key}`, value: rest ? undefined : v }], { label: `${c.name} ${c.key.replace('eq.', 'eq ')}` });
-      }
-      case 'crossfader': {
-        const v = Math.max(-1, Math.min(1, Math.round((Number(c.value) || 0) * 100) / 100));
-        liveXf = undefined;
-        if (!c.commit) { sendStrips({ crossfader: v }); break; }
-        if (v === 0 && document.doc.settings.audio.crossfader === undefined) { sendStrips(); break; }
-        return document.edit([{ op: 'show.set', path: 'settings.audio.crossfader', value: v === 0 ? undefined : v }], { label: 'crossfader' });
-      }
-      case 'solo': {
-        if (c.name == null) solo.clear(); else if (c.on === false || (c.on === undefined && solo.has(c.name))) solo.delete(c.name); else { if (c.only) solo.clear(); solo.add(c.name); }
-        sendStrips();
-        break;
-      }
-      // ── the desk played from keys and a controller (settings.live.map; core/audio/desk-map.ts) ──
-      // a control moved by a controller: heard and shown, and not the show's until a hand writes it
-      case 'desk-live': {
-        const a = document.doc.settings.audio;
-        if (c.key === 'crossfader') { liveXf = Math.max(-1, Math.min(1, Number(c.value) || 0)); sendStrips(); break; }
-        if (c.key === 'master') { liveMaster = Math.max(-60, Math.min(12, Number(c.value) || 0)); if (!state.muted) audioCmd({ op: 'masterDb', db: liveMaster }); break; }
-        if (!a.buses.some((b) => b.id === c.name)) return { error: 'no such bus' };
-        if (c.key === 'db') { const d = Math.max(-60, Math.min(12, Number(c.value) || 0)); liveBus.set(c.name!, d); audioCmd({ op: 'bus', name: c.name, db: d, secs: 0.03 }); break; }
-        const v = cleanSetting(c.key, c.value);
-        if (v === undefined) return { error: 'no such setting' };
-        liveStrip.set(c.name!, { ...(liveStrip.get(c.name!) || {}), [c.key]: v });
-        sendStrips();
-        break;
-      }
-      // a track's on/off button, pressed (as a click on it: written to the show)
-      case 'mute': { const b = document.doc.settings.audio.buses.find((x) => x.id === c.name); if (!b) return { error: 'no such bus' }; return run({ op: 'strip', name: c.name, key: 'mute', value: !busNow(b).mute, commit: true }); }
-      // a track's ■: every clip on it stops; Stop All Clips: every sound
-      case 'stop-track': case 'stop-clips': {
-        for (const id of [...engine.running.keys()]) { const q = engine.byId.get(id); if (q && q.type === 'audio' && (c.op === 'stop-clips' || q.bus === c.name)) engine.stopCue(id); }
-        break;
-      }
-      case 'map-in': {
-        let did = 0;
-        for (const hit of deskMap.matching((document.doc.settings.live || {}).map, String(c.on || ''))) { const act = deskMap.actionOf(hit.to, { type: 'key', value: 1 }); if (act) { did++; const r = run(act as HostCommand); if (r && (r as HostResult).error) return r; } }
-        return { did };
-      }
-      // Map mode: give a key or a MIDI control to a desk control (`on` null: take its mappings away)
-      case 'map-set': {
-        if (!deskMap.parseTo(c.to) || (c.on != null && !deskMap.parseOn(c.on))) return { error: 'that cannot be mapped' };
-        return document.edit([{ op: 'show.set', path: 'settings.live.map', value: deskMap.assign((document.doc.settings.live || {}).map, c.on == null ? null : c.on, c.to) }], { label: c.on == null ? 'mapping removed' : `${c.on} mapped` });
-      }
-      // …the next MIDI control moved is the one
-      case 'map-learn': {
-        if (!deskMap.parseTo(c.to)) return { error: 'that cannot be mapped' };
-        if (mapLearner) { clearTimeout(mapLearner.timer); mapLearner.resolve(null); }
-        return new Promise<string | null>((resolve) => { mapLearner = { resolve, timer: setTimeout(() => { mapLearner = null; resolve(null); }, Number(c.ms) || 30000) }; })
-          .then((on) => (on ? cmd({ op: 'map-set', on, to: c.to }) : { none: true }));
-      }
-      case 'map-learn-cancel': if (mapLearner) { clearTimeout(mapLearner.timer); mapLearner.resolve(null); mapLearner = null; } break;
-      // the desk as it stands, kept in a Mix cue (a new one after the cue standing by, or the Mix cue named): its levels and every strip
-      case 'desk-keep': {
-        const a = document.doc.settings.audio;
-        const desk = deskOf(a.buses.map(busNow), crossfaderNow());
-        const levels = Object.fromEntries(a.buses.map((b) => [b.id, liveBus.has(b.id) ? liveBus.get(b.id) : Number(b.db) || 0]));
-        const { byId } = show.index(document.doc);
-        if (c.id) {
-          if (!byId.has(c.id) || byId.get(c.id)!.type !== 'mix') return { error: 'that is not a Mix cue' };
-          return document.edit([{ op: 'cue.set', id: c.id, props: { desk, ...(c.levels === false ? {} : { levels }) } }], { label: 'desk kept in the cue' });
-        }
-        const list = document.doc.lists.find((l) => l.name === engine.listName) || document.doc.lists[0];
-        const after = engine.playhead && list.cues.some((q) => q.id === engine.playhead) ? engine.playhead : null;
-        return document.edit([{ op: 'cue.add', ref: 'desk', cue: { type: 'mix', name: c.name || 'Desk', levels, desk }, ...(after ? { after } : { list: list.id }) }], { label: 'desk kept as a Mix cue' });
       }
       // one playing sound's level, for this playing only (the cue keeps its own)
       case 'level': { if (!engine.running.has(c.id)) return { error: 'that is not playing' }; engine.fadeAudio(c.id, Math.max(-60, Math.min(Math.max(12, engine.limits ? engine.limits.max : 12), Number(c.db) || 0)), 0.05, false, `level:${c.id}`); break; }
       case 'master': {
-        liveMaster = undefined;
         if (!state.muted) audioCmd({ op: 'masterDb', db: Number(c.db) || 0 });
         if (c.commit) document.edit([{ op: 'show.set', path: 'settings.audio.masterDb', value: Math.round(Number(c.db) * 10) / 10 }], { label: 'master fader' });
         break;
@@ -1800,7 +1599,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         const lines = [...p.sounds.map((x) => `${name(x)} · ${dbText(x.db)}${x.at > 0 ? ` · from ${cueTypes.formatSeconds(x.at, 1)}` : ''}`), ...p.sends.map(name)];
         if (c.preview) return { text: p.text, lines, playing: engine.running.size > 0 || engine.waits.size > 0, from: id };
         // everything stops dead first (the hard Esc), then what the show would have left is started
-        clearLaunches(); audition.clear();
+        audition.clear();
         engine.panic(); engine.panic(); playlog.endAll(); audioCmd({ op: 'stopAll' }); lighting.panic(true, 0);
         runFrom.apply(engine, p);
         showLog.add('show', `run from ${name({ id, number: (engine.byId.get(id) || {}).number })}: ${p.text}`);

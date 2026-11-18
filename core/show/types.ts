@@ -37,11 +37,6 @@ export type Envelope = NonNullable<ReturnType<typeof cleanEnvelope>>;
 export type Automation = NonNullable<ReturnType<typeof cleanAutomation>>;
 /** A cart's grid (a list drawn as buttons). */
 export type Cart = NonNullable<ReturnType<typeof cleanCart>>;
-/** A Mix cue's kept Live desk: { crossfader, buses: { busId: { eq, filter, pan, mute, xf } } }. */
-export interface Desk {
-  crossfader?: number;
-  buses?: Record<string, { eq?: Record<string, number>; filter?: number; pan?: number; mute?: boolean; xf?: string }>;
-}
 
 /** A cue as the show file keeps it. A group's (and a playlist's) cues are its `children`. What this version does
  *  not know (a field from a newer one, or written by hand) is kept as it was: any other key is there, unknown. */
@@ -71,16 +66,9 @@ export interface Bus {
   /** sends to the reverb and the delay, dB */
   reverb?: number;
   delay?: number;
-  eq?: Record<string, number>;
-  filter?: number;
-  pan?: number;
-  mute?: boolean;
-  xf?: string;
   stopFade?: number;
   oneAtATime?: number;
   noDuck?: boolean;
-  /** its tint in the Live view: one of the cue colours (cue-types.ts `COLORS`) */
-  color?: string;
 }
 
 /** A further place a patch's (or a device's) messages go. */
@@ -147,9 +135,6 @@ export interface Device {
 /** A line of the operator's own checklist on the Rig page. */
 export interface RigCheck { id: string; text: string }
 
-/** A Live desk mapping: { on: 'key q' | 'cc 7 ch 1' | 'note 60 ch 1', to: 'clip:<cue id>' | 'fader:<bus>' | … }. */
-export interface DeskMapping { on: string; to: string }
-
 /** OSC or MIDI messages that run the show, written as a trigger is: '' is none. */
 export interface ShowCommands { go: string; panic: string; pause: string; resume: string; next: string; previous: string }
 
@@ -176,8 +161,6 @@ export interface Settings {
     fx?: { reverb?: { secs?: number; db?: number; out?: number }; delay?: { secs?: number; feedback?: number; db?: number; out?: number } };
     /** the show's own sound design presets, by name */
     chains?: Record<string, { chain?: Chain; eq?: Eq }>;
-    /** the Live desk's crossfader, −1 (all A) … +1 (all B) */
-    crossfader?: number;
   };
   editing: { autoNumber: boolean; numberStep: number; lockPlayhead: boolean; longSoundsToMusic: boolean };
   /** what a new cue of a type starts with: { fade: { duration: 5 } } */
@@ -186,7 +169,6 @@ export interface Settings {
   backup: { minutes: number; keep: number };
   midi: { output: string; mscIn: boolean; deviceId: number; commands: ShowCommands };
   light: ReturnType<typeof lightDefaults>;
-  live: { overlap: boolean; tempo: number; map: DeskMapping[] };
   rig: { devices: Device[]; checks: RigCheck[]; script: string };
   timecode: { source: 'off' | 'mtc' | 'ltc'; rate: '24' | '25' | '29.97df' | '30'; input: string; channel: number; catchUp: boolean; follow: boolean };
   /** the stage: its size, and four corners (each [x, y], 0–1) or none */

@@ -551,7 +551,7 @@ function KeysPane({ info, refreshInfo, say }: { info: Info; refreshInfo: () => u
           <button class="keycap reset" style=${changed(id) ? '' : 'visibility:hidden'} title="Back to the default" onClick=${() => reset(id)}>↺</button>
         </span></div>`; })}</div>`)}
     <h3 class="keygroup">In the menus <span class="dim" style="font-weight:400">· fixed</span></h3>
-    <div class="keytable fixed">${FIXED_KEYS.filter(([label]) => label !== 'Live mixer' || (info.view || {}).live).map(([label, key]) => html`<div class="keyrow"><span class="what">${label}</span><span class="caps">${keys(key).split(/\s{2,}/).map((k) => html`<span class="keycap still">${k}</span>`)}</span></div>`)}
+    <div class="keytable fixed">${FIXED_KEYS.map(([label, key]) => html`<div class="keyrow"><span class="what">${label}</span><span class="caps">${keys(key).split(/\s{2,}/).map((k) => html`<span class="keycap still">${k}</span>`)}</span></div>`)}
       <div class="keyrow"><span class="what">A cue’s hotkey, on its Triggers tab</span><span class="caps"><span class="keycap still">any free key</span></span></div></div>`;
 }
 
@@ -573,9 +573,7 @@ function AppearancePane({ info, refreshInfo }: { info: Info; refreshInfo: () => 
     ${info.themes.map((t: string) => html`<div class=${cx('card', info.theme === t && 'picked')} onClick=${async () => { await ec.app({ op: 'theme', theme: t }); refreshInfo(); }}>
       <div class="ch"><span class=${cx('dot', info.theme === t && 'go')}></span><b>${NAMES[t][0]}</b></div><p>${NAMES[t][1]}</p></div>`)}
     <${Row} title="Cue list rows">
-      <div class="seg rowsize">${[['compact', 'Compact'], ['normal', 'Normal'], ['large', 'Large']].map(([k, l]) => html`<button class=${cx(((info.view || {}).rowSize || 'normal') === k && 'on')} onClick=${async () => { await ec.app({ op: 'view', view: { rowSize: k } }); refreshInfo(); }}>${l}</button>`)}</div><//>
-    <${Row} title="Show the Live view" help="A DJ-style desk beside the cue list. Hiding it never changes what plays.">
-      <span data-live-switch><${Switch} on=${!!(info.view || {}).live} onChange=${async (on: boolean) => { await ec.app({ op: 'view', view: { live: on } }); refreshInfo(); }} /></span><//>`;
+      <div class="seg rowsize">${[['compact', 'Compact'], ['normal', 'Normal'], ['large', 'Large']].map(([k, l]) => html`<button class=${cx(((info.view || {}).rowSize || 'normal') === k && 'on')} onClick=${async () => { await ec.app({ op: 'view', view: { rowSize: k } }); refreshInfo(); }}>${l}</button>`)}</div><//>`;
 }
 
 /** New versions, on this computer (app/main/updates.ts): whether it looks by itself, and whether test versions are offered. */

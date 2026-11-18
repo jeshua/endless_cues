@@ -3,7 +3,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { ChainValue, EqValue, SweepValue } from '../../core/audio/chain';
 import type { AutomationValue } from '../../core/audio/lanes';
 import type { MatrixRow, settingsOf as routingOf } from '../../core/audio/routing';
-import type { stripOf } from '../../core/audio/strip';
 import type { DuckRule } from '../../core/audio/kinds';
 import type { LtcCmd } from '../../core/timecode/transport';
 import type { TC, Rate } from '../../core/timecode/timecode';
@@ -51,7 +50,6 @@ export interface AudioCommands {
   limiter: { on?: boolean };
   bus: { name: string; db: number; secs?: number };
   buses: { list?: { id: string; db?: number; out?: number; reverb?: number; delay?: number }[] };
-  strips: { list?: ReturnType<typeof stripOf>[]; secs?: number };
   duck: { bus?: string; db: number; secs?: number; range?: string };
   ducker: { rules?: DuckerRule[] | null; on?: boolean; key?: string; target?: string; threshold?: number; depth?: number; attack?: number; hold?: number; release?: number; range?: string };
   monitor: { on?: boolean; out?: number; db?: number };

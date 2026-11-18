@@ -307,11 +307,11 @@ fn what_it_cannot_do_yet_it_says_once_and_plays_without() {
     let play = json!({ "op": "play", "key": "d", "file": "/d.wav", "own": { "chain": { "reverb": { "mix": 0.3 } } }, "automation": { "chain.lowpass.hz": [[0, 300]] } });
     rig.cmd(play.clone());
     rig.cmd(play);
-    rig.cmd(json!({ "op": "strips", "list": [] }));
+    rig.cmd(json!({ "op": "fx", "list": [] }));
     let said = rig.said();
     let errs = of(&said, "operror");
     let ops: Vec<&str> = errs.iter().map(|e| e["op"].as_str().unwrap()).collect();
-    assert_eq!(ops, ["design", "automation", "strips"], "{errs:?}");
+    assert_eq!(ops, ["design", "automation", "fx"], "{errs:?}");
     assert!(errs.iter().all(|e| e["detail"].as_str().unwrap().starts_with("not in the native engine yet")));
     // (the first play of the key, replaced, goes over its 2 ms; the two together met the limiter, which lets go
     // over 150 ms)

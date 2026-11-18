@@ -134,7 +134,7 @@ test('an old show opens, plays and saves byte for byte as it did, with its patch
   const { doc } = show.normalise(JSON.parse(fixture));
   // what this app writes for it is, to the byte, what the app wrote before there was a rig (the hash is of that)
   const text = show.stringify(doc);
-  assert.equal(crypto.createHash('sha256').update(text).digest('hex'), 'cc6a454e9fd43e334ee785969e8044a0cca3b3124bae149aa795f10a865719a9');
+  assert.equal(crypto.createHash('sha256').update(text).digest('hex'), '6cc899b4ab09c9eb566a4b654e27119404a2c27e7098bca78f5d60a6b89ff9a1');
   assert.ok(!text.includes('"rig"'), 'a rig with nothing in it is not written');
   assert.deepEqual(doc.settings.rig, { devices: [], checks: [], script: '' }, '…though the open show has one');
   // opened from a folder and saved: the file is what it was, and a second save writes nothing

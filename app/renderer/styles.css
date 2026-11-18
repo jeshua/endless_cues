@@ -182,7 +182,7 @@ input.bad { border-color: var(--danger); }
 .wash { position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--wash-image) var(--wash-position) / cover no-repeat; opacity: var(--wash); filter: var(--wash-filter); }
 .wash::after { content: ''; position: absolute; inset: 0; background: radial-gradient(115% 115% at 50% 38%, transparent 38%, var(--bg-0) 96%); }
 .app > .titlebar, .app > .masthead, .app > .work, .app > .footer { position: relative; z-index: 1; }   /* (not the modal or the toast: those are fixed) */
-.titlebar, .masthead, .toolbar, .inspector, .side, .drawer-pane, .playing, .footer, .desk, .list thead th {
+.titlebar, .masthead, .toolbar, .inspector, .side, .drawer-pane, .playing, .footer, .list thead th {
   background: linear-gradient(color-mix(in srgb, var(--bg-1) var(--slab-mix), transparent), color-mix(in srgb, var(--bg-1) var(--slab-mix), transparent)), var(--slab-image) center / 900px auto;
 }
 
@@ -205,7 +205,7 @@ input.bad { border-color: var(--danger); }
 .chip { height: var(--h-s); padding: 0 8px; border-radius: 11px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text-1); display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-s); white-space: nowrap; }
 .chip.warn { color: var(--standby); border-color: color-mix(in srgb, var(--standby) 35%, var(--line)); }
 .chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
-/* The tabs: Edit · Rig · Show (· Live). Show is the cue list in Show mode and is drawn in standby colours: filled when
+/* The tabs: Edit · Rig · Show. Show is the cue list in Show mode and is drawn in standby colours: filled when
    it is the page, its words still yellow while Show mode holds on another tab, and a yellow rule under the title bar
    for as long as the show is locked. */
 .tabs-main { display: inline-flex; flex: none; gap: 2px; padding: 2px; margin-left: 6px; border-radius: var(--radius-s); background: var(--bg-3); }
@@ -672,123 +672,7 @@ button.chip.warn:hover { background: var(--standby-wash); }
 
 .snippet { user-select: text; white-space: pre-wrap; word-break: break-all; background: var(--bg-0); border: 1px solid var(--line); border-radius: var(--radius-s); padding: 8px 10px; margin: 4px 0 8px; font-size: var(--fs-s); color: var(--text-0); }
 
-/* ── the Live view: Ableton Live's Session view in this app's clothes (Live.js) ── */
-.work.live-view { grid-template-columns: 1fr; }
-.work.live-view.drawer { grid-template-columns: 1fr 400px; }
-.desk { display: grid; grid-template-rows: auto minmax(0, 1.5fr) auto minmax(150px, 1fr); min-height: 0; min-width: 0; }
-/* the control bar */
-.lbar { display: flex; align-items: center; gap: 14px; padding: 5px 12px; border-bottom: 1px solid var(--line); font-size: var(--fs-m); color: var(--text-1); }
-.lbar .tempo { font: 600 var(--fs-h) var(--mono); color: var(--text-0); min-width: 92px; } .lbar .tempo small { font: var(--fs-xs) var(--font); color: var(--text-2); margin-left: 5px; letter-spacing: .08em; text-transform: uppercase; }
-.lbar .pos { font: 500 var(--fs-l) var(--mono); color: var(--text-3); min-width: 56px; } .lbar .pos.on { color: var(--text-0); }
-.lbar .beats { display: inline-flex; gap: 4px; } .lbar .beats i { width: 9px; height: 9px; border-radius: 2px; background: var(--bg-3); }
-.lbar .beats i.on { background: var(--text-0); } .lbar .beats i.one.on { background: var(--go); }
-.lbar label { display: inline-flex; align-items: center; gap: 7px; } .lbar select { width: auto; height: 24px; }
-/* the session: every row is the same columns (--cols), so slots, stops and mixer strips line up under their track */
-.session { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; min-height: 0; min-width: 0; }
-.shead, .scene, .stops, .mixer { display: grid; grid-template-columns: var(--cols); padding-right: 10px; }
-.shead { border-bottom: 1px solid var(--line); }
-.shead .th { height: 26px; border: 0; border-right: 1px solid var(--line); background: var(--bg-2); color: var(--text-0); font-size: var(--fs-m); font-weight: 600; text-align: left; padding: 0 9px; display: flex; align-items: center; gap: 7px; overflow: hidden; white-space: nowrap; }
-.shead .th .tn { font: var(--fs-xs) var(--mono); color: var(--text-2); }
-.shead button.th:hover { background: var(--bg-3); }
-.shead .th.sel { background: var(--accent-wash); box-shadow: inset 0 -2px 0 var(--accent); }
-.shead .th.master { border-right: 0; color: var(--text-1); }
-.slots { overflow-y: scroll; min-height: 0; }
-.scene { border-bottom: 1px solid var(--line-soft); padding-right: 0; }
-.scene .slot, .stops .slot { min-height: 25px; padding: 2px; border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.scene.head .scenecell { box-shadow: inset 3px 0 0 var(--standby); } .scene.head .sname { color: var(--standby); }
-.scene.running .scenecell .launch { color: var(--go); }
-.clip { --clip: var(--text-3); position: relative; display: flex; align-items: center; gap: 5px; height: 21px; padding: 0 6px 0 0; border-radius: var(--radius-xs); overflow: hidden; font-size: var(--fs-m); cursor: pointer;
-  background: color-mix(in srgb, var(--clip) 26%, var(--bg-2)); box-shadow: inset 3px 0 0 var(--clip); }
-.clip:hover { background: color-mix(in srgb, var(--clip) 36%, var(--bg-2)); }
-.clip.sel { outline: 1px solid var(--accent); outline-offset: -1px; }
-.clip .launch, .scenecell .launch { width: 22px; height: 21px; flex: none; border: 0; background: transparent; color: var(--text-1); font-size: 9.5px; padding: 0 0 0 3px; }
-.clip .launch:hover, .scenecell .launch:hover { color: var(--text-0); background: color-mix(in srgb, var(--text-0) 12%, transparent); }
-.clip .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-0); }
-.clip .bpm { font: var(--fs-xs) var(--mono); color: var(--text-2); flex: none; }
-.clip .len { font: var(--fs-xs) var(--mono); color: var(--text-1); flex: none; }
-.clip .prog { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--go); }
-.clip.on { background: var(--go-wash); box-shadow: inset 3px 0 0 var(--go), inset 0 0 0 1px color-mix(in srgb, var(--go) 45%, transparent); }
-.clip.on .launch, .clip.on .len { color: var(--go); }
-.clip.paused { background: var(--standby-wash); box-shadow: inset 3px 0 0 var(--standby); } .clip.paused .prog { background: var(--standby); }
-.clip.queued .launch { color: var(--standby); animation: queued .5s steps(2, start) infinite; }
-@keyframes queued { to { visibility: hidden; } }
-.stopslot { height: 21px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--bg-4); font-size: 8px; text-align: left; padding: 0 0 0 8px; }
-.stopslot:hover { color: var(--text-0); background: var(--bg-2); }
-.stopslot.big { color: var(--text-2); width: 26px; flex: none; }
-.scenecell { flex-direction: row !important; align-items: center; border-right: 0 !important; background: color-mix(in srgb, var(--bg-0) 30%, transparent); }
-.scenecell .sname { flex: 1; min-width: 0; height: 21px; border: 0; background: transparent; color: var(--text-1); font-size: var(--fs-m); text-align: left; padding: 0 6px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.scenecell .sname:hover { color: var(--text-0); } .scenecell .cn { font: var(--fs-s) var(--mono); color: var(--text-2); margin-right: 6px; }
-.stops { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); } .stops .slot { flex-direction: row; align-items: center; justify-content: space-between; font-size: var(--fs-s); }
-.stops .scenecell { justify-content: flex-start; gap: 4px; }
-/* the mixer */
-.mstrip { display: flex; justify-content: center; gap: 12px; padding: 8px 9px 8px; border-right: 1px solid var(--line-soft); height: 168px; min-width: 0; }
-.mstrip.sel { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-.mstrip.master { border-right: 0; background: color-mix(in srgb, var(--bg-0) 30%, transparent); }
-.mstrip .mleft { flex: 0 0 74px; min-width: 0; display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
-.mstrip .mleft .dial { margin-bottom: 1px; }
-.mstrip .mright { flex: none; width: 52px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.mstrip .fval { font: var(--fs-s) var(--mono); color: var(--text-1); height: 16px; white-space: nowrap; }
-.mstrip .devs { display: flex; gap: 3px; height: 14px; } .devchip { font: 9px var(--mono); color: var(--text-1); border: 1px solid var(--bg-4); border-radius: var(--radius-xs); padding: 0 3px; line-height: 12px; }
-.mstrip.silenced .vfader, .mstrip.silenced .dial { opacity: .45; }
-.dial { display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.dial .kdial { width: 34px; height: 34px; cursor: ns-resize; touch-action: none; }
-.dial.big .kdial { width: 48px; height: 48px; }
-.dial .dname { font-size: var(--fs-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); margin-top: -2px; white-space: nowrap; }
-.dial .dval { font: var(--fs-xs) var(--mono); color: var(--text-3); height: 14px; white-space: nowrap; }
-.dial.moved .kval { stroke: var(--text-0); stroke-width: 2.5; } .dial.moved .dval { color: var(--text-0); }
-.dial.pending .kring { stroke: var(--standby); }
-.vfader { position: relative; width: 46px; height: 112px; flex: none; cursor: ns-resize; touch-action: none; }
-.vfader .vtick { position: absolute; left: 0; width: 14px; margin-bottom: -6px; font: 8.5px var(--mono); color: var(--text-3); text-align: right; pointer-events: none; }
-.vfader .vmeter { position: absolute; left: 20px; width: 10px; top: 0; bottom: 0; border-radius: 2px; background: var(--bg-0); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
-.vfader .vmeter.l { width: 5px; } .vfader .vmeter.r { left: 26px; width: 5px; }
-.vfader .vmeter i { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--go) 0 78%, var(--standby) 78% 94%, var(--danger) 94%) bottom / 100% 112px no-repeat; }
-.vfader .vthumb { position: absolute; left: 16px; width: 26px; height: 0; border-top: 2px solid var(--text-0); pointer-events: none; }
-.vfader .vthumb::after { content: ""; position: absolute; right: -2px; top: -6px; border: 5px solid transparent; border-right-color: var(--text-0); }
-.tbtn { height: 21px; border-radius: var(--radius-xs); border: 1px solid var(--bg-4); background: var(--bg-3); color: var(--text-1); font-size: var(--fs-s); font-weight: 600; padding: 0 6px; }
-.tbtn:hover { background: var(--bg-4); color: var(--text-0); }
-.tbtn.activator { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, var(--bg-4)); background: var(--danger-wash); }
-.tbtn.activator.on { color: var(--on-go, #0b0b0b); background: var(--text-1); border-color: var(--text-1); }
-.tbtn.mute.on { background: var(--danger-wash); border-color: color-mix(in srgb, var(--danger) 50%, var(--bg-4)); color: var(--danger); }
-.tbtn.solo.on { background: var(--standby-wash); border-color: color-mix(in srgb, var(--standby) 50%, var(--bg-4)); color: var(--standby); }
-.tbtn.kill { width: 28px; padding: 0; } .tbtn.kill.on { color: var(--text-0); border-color: var(--text-2); } .tbtn.kill:not(.on) { color: var(--danger); background: var(--danger-wash); }
-.xfpick { display: flex; gap: 3px; }
-.xfpick button { flex: 1; height: 19px; border-radius: var(--radius-xs); border: 1px solid var(--bg-4); background: var(--bg-3); color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; padding: 0; }
-.xfpick button.on { background: var(--accent-wash); border-color: color-mix(in srgb, var(--accent) 55%, var(--bg-4)); color: var(--text-0); }
-.xfader { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 5px 14px; border-bottom: 1px solid var(--line); font-size: var(--fs-m); color: var(--text-1); }
-.xfader .xside { width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .xfader .xside.a { text-align: right; }
-.xfader .xside b { color: var(--text-0); margin: 0 4px; }
-.xfader input[type=range] { width: 280px; flex: none; padding: 0; border: 0; height: 18px; accent-color: var(--text-0); }
-.xfader.unused input[type=range] { opacity: .45; } .xfader .hint { font-size: var(--fs-s); }
-/* the detail view */
-.detail { display: grid; grid-template-columns: 78px 1fr; min-height: 0; }
-.dtabs { display: flex; flex-direction: column; gap: 3px; padding: 8px 6px; border-right: 1px solid var(--line); }
-.dtabs button { height: 24px; border-radius: 4px; border: 1px solid transparent; background: transparent; color: var(--text-2); font-size: var(--fs-s); text-align: left; padding: 0 7px; white-space: nowrap; }
-.dtabs button:hover { color: var(--text-0); } .dtabs button.on { background: var(--bg-3); border-color: var(--bg-4); color: var(--text-0); }
-.dview { min-height: 0; min-width: 0; overflow-y: auto; }
-.chain { display: flex; gap: 8px; padding: 10px 12px; align-items: stretch; }
-.chain-of { width: 130px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-m); padding-top: 4px; } .chain-of .dim { font-size: var(--fs-s); }
-.device { border: 1px solid var(--bg-4); border-radius: 5px; background: var(--bg-1); overflow: hidden; display: flex; flex-direction: column; }
-.device .dvt { height: 22px; padding: 0 9px; display: flex; align-items: center; gap: 7px; font-size: var(--fs-s); font-weight: 600; background: var(--bg-3); color: var(--text-1); }
-.device.on .dvt { color: var(--text-0); }
-.device .dvb { display: flex; gap: 14px; padding: 10px 14px 9px; align-items: flex-start; }
-.device .band { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.device .ftype { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-s); color: var(--text-3); padding-top: 10px; } .device .ftype .on { color: var(--text-0); }
-.clipview { display: grid; grid-template-columns: 330px 1fr; min-height: 100%; }
-.clipbox { --clip: var(--text-3); border-right: 1px solid var(--line); padding: 0 0 8px; font-size: var(--fs-m); }
-.clipbox .cbt { padding: 5px 10px; font-weight: 600; font-size: var(--fs-m); background: color-mix(in srgb, var(--clip) 30%, var(--bg-2)); box-shadow: inset 3px 0 0 var(--clip); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.clipbox .cbrow { display: flex; align-items: center; gap: 5px; padding: 6px 10px 0; flex-wrap: wrap; }
-.clipbox .lbl, .deck .dctl .lbl { font-size: var(--fs-xs); letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); margin-right: 2px; }
-.clipbox .lbl { width: 42px; }
-.clipbox .bpmfield { width: 70px; height: 24px; font-size: var(--fs-m); }
-.clipwave { min-width: 0; }
-.deck { padding: 8px 12px 9px; border-bottom: 1px solid var(--line-soft); }
-.deck .dhead { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
-.deck .dhead .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.deck .dhead .t { font: 500 var(--fs-m) var(--mono); color: var(--text-1); }
-.deck .dbody { display: flex; align-items: center; gap: 10px; }
-.deck .dwave { flex: 1; min-width: 0; }
-.deck .dctl { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
-.deck .dctl .sep { width: 1px; height: 16px; background: var(--line); margin: 0 5px; }
+/* a waveform's bar lines (the Playing strip, once its sound has a tempo) */
 .wave.tall { height: 96px; }
 .wave .barline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid color-mix(in srgb, var(--text-0) 10%, transparent); pointer-events: none; }
 .wave .barline.four { border-left-color: color-mix(in srgb, var(--text-0) 24%, transparent); }
@@ -845,36 +729,6 @@ button.chip.warn:hover { background: var(--standby-wash); }
 .matrix td.on.gone input { border-color: var(--danger); }
 .outlevel { display: block; height: 6px; border-radius: var(--radius-xs); background: var(--bg-0); overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
 .outlevel i { display: block; height: 100%; background: var(--go); }
-/* ── the Live view: what was added with tempo sections, warp, mapping and dragging ── */
-.lbar .tempo { display: inline-flex; align-items: baseline; gap: 5px; }
-.lbar .desktempo { width: 78px; height: 26px; padding: 0 5px; font: 600 var(--fs-h) var(--mono); color: var(--text-0); background: transparent; border: 1px solid transparent; border-radius: var(--radius-s); }
-.lbar .desktempo:hover, .lbar .desktempo:focus { border-color: var(--line); background: var(--bg-0); }
-.lbar .desktempo.set { border-color: var(--bg-4); }
-.lbar label.check input { width: auto; height: auto; margin: 0; }
-.lbar .mapbar { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
-.lbar .maphint { color: var(--standby); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .lbar .maphint b { color: var(--text-0); font-weight: 600; }
-/* Map mode: every control that can be mapped is outlined, says what it is mapped to, and a click chooses it */
-.desk.mapping [data-map] { position: relative; outline: 1px dashed color-mix(in srgb, var(--standby) 55%, transparent); outline-offset: 1px; cursor: copy; }
-.desk.mapping [data-map][data-mapsel] { outline: 2px solid var(--accent); }
-.desk.mapping [data-map][data-maptag]::after { content: attr(data-maptag); position: absolute; right: 1px; top: 1px; z-index: 3; padding: 0 4px; border-radius: var(--radius-xs); background: var(--standby); color: var(--bg-0); font: 600 var(--fs-xs)/var(--fs-l) var(--mono); white-space: nowrap; pointer-events: none; }
-.xfader .xrail { display: inline-flex; flex: none; }
-/* (what comes and goes beside a control is laid outside its box, so the control does not move under the hand) */
-.xfader { position: relative; } .xfader .xtail { position: absolute; left: calc(50% + 400px); top: 0; bottom: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.mstrip .fval, .dial .dname { position: relative; }
-.mstrip .fval .was, .dial .dname .was { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 2px; }
-.shead .th .tname { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.shead .th.tinted { box-shadow: inset 3px 0 0 var(--clip); background: color-mix(in srgb, var(--clip) 16%, var(--bg-2)); }
-.shead .th.tinted.sel { box-shadow: inset 3px 0 0 var(--clip), inset 0 -2px 0 var(--accent); }
-.shead .th .swatch { margin-left: auto; flex: none; width: 11px; height: 11px; border-radius: var(--radius-xs); border: 1px solid var(--bg-4); background: var(--clip, transparent); opacity: 0; }
-.shead .th:hover .swatch, .shead .th.tinted .swatch { opacity: 1; }
-.shead .th.dropping { box-shadow: inset 3px 0 0 var(--accent); }
-.shead .th.naming { padding: 0 4px 0 9px; } .shead .thname { flex: 1; min-width: 0; height: 21px; font-size: var(--fs-m); font-weight: 600; }
-.scene .slot.dropping, .stops .slot.dropping { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); }
-.clip[draggable=true] { cursor: grab; }
-.clipbox select.barsel, .clipbox select.warpsel { width: auto; height: 24px; }
-.clipbox .secchip { font-family: var(--mono); font-size: var(--fs-s); } .clipbox .secchip.on { box-shadow: inset 0 0 0 1px var(--accent); color: var(--text-0); }
-.clipbox .lbl { width: 54px; }
-.lbar .beats i { box-shadow: inset 0 0 0 1px var(--bg-4); }
 /* ── a cue cart: a list drawn as a grid of buttons ─────────────────────── */
 .cart { display: grid; gap: 8px; padding: 10px; overflow: auto; min-height: 0; position: relative; background: color-mix(in srgb, var(--bg-0) var(--sheet-mix), transparent); }
 .cart .cell { position: relative; overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; gap: 2px; text-align: left; padding: 8px 10px 9px 13px; min-width: 0; min-height: 64px;

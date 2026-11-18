@@ -20,15 +20,15 @@ VOICE  (one per playing Audio or Mic cue, or Video cue's sound)
                                                                  ▼
   level (the cue's level, every Fade, a trim) ─▶ [ envelope ] ─▶ [ "others" duck ] ─▶ voice band (a voice-range Fade)
                                                                  ▼
-BUS    fader ─▶ [ strip eq ─▶ strip filter ] ─▶ pan ─▶ gate (mute, solo, crossfader) ─▶ duck ─▶ voice band ─┬─▶ its pair
-                                                                                          [ sends ─▶ reverb, delay ─▶ a pair ]
+BUS    fader ─▶ (stereo) ─▶ duck ─▶ voice band ─┬─▶ its pair
+                                                [ sends ─▶ reverb, delay ─▶ a pair ]
        or, for a cue with outputs of its own: the voice skips the bus's path, is ridden by the bus's level and
        voice-band dip as control signals, and goes channel by channel to the pairs it names
 
 PAIR   (one per pair of outputs in use)      master ─▶ limiter ─▶ meters ─▶ [ per-output trim ] ─▶ device
 ```
 
-**Where sound design sits, and why.** Between the source and the level. Everything that moves a sound's loudness (its level, a Fade, the envelope, a duck, its bus) comes after its tools, so (1) a fade or a trim never changes how hard its compressor or gate is driven, or how much it distorts: the character of the sound is the same at any level; (2) a fade takes a reverb's tail down with the sound, as an insert effect on a channel does; (3) the bus's own eq and filter (the Live view's strip) come after the cue's, and shape the whole bus. And it is after everything that makes the source: a move's crossfade, a loop region, a change of rate and the stream-to-buffer swap all happen before it and it sees one continuous sound.
+**Where sound design sits, and why.** Between the source and the level. Everything that moves a sound's loudness (its level, a Fade, the envelope, a duck, its bus) comes after its tools, so (1) a fade or a trim never changes how hard its compressor or gate is driven, or how much it distorts: the character of the sound is the same at any level; and (2) a fade takes a reverb's tail down with the sound, as an insert effect on a channel does. And it is after everything that makes the source: a move's crossfade, a loop region, a change of rate and the stream-to-buffer swap all happen before it and it sees one continuous sound.
 
 - **A voice** is created by `play` and destroyed by `stop` or when its file ends. Its level gain carries the cue's level and every Fade aimed at it; fades are linear in dB.
 - **The voice band** is a peaking filter at 1.2 kHz (Q 0.6, roughly 400 Hz–3.5 kHz), flat at 0 dB. A Fade with `range: voice` moves this filter's gain instead of the level: the music keeps its bass and its air while speech sits in the gap. There is one per voice (a cue's duck) and one per bus (the ducker's).
@@ -63,12 +63,12 @@ An Audio or Mic cue may carry `outputs`: one row per channel of its sound, each 
 
 A silent crosspoint is simply absent; a cue with no rows plays on its bus. The inspector draws it as a grid (More ▸ Own outputs) with a "Send it to outputs…" menu for the plain cases.
 
-**The decision: a routed cue leaves its bus's path but stays under its bus's hand.** A bus here is a stereo strip (its pan and its pair are two channels wide), so a matrix cannot be something that happens *after* a bus without the bus becoming a matrix too. The alternatives were (a) QLab's model, where a cue's matrix goes straight to the outputs and there are no buses in the way: then a "Music" fader, the mute and solo buttons and the ducker would silently stop applying to any cue that had been routed, which is exactly the kind of surprise a mixer must not have; or (b) making every bus N channels wide, which the strip (pan, crossfader) has no meaning for. So:
+**The decision: a routed cue leaves its bus's path but stays under its bus's hand.** A bus here is stereo (its pair is two channels wide), so a matrix cannot be something that happens *after* a bus without the bus becoming a matrix too. The alternatives were (a) QLab's model, where a cue's matrix goes straight to the outputs and there are no buses in the way: then a "Music" fader and the ducker would silently stop applying to any cue that had been routed, which is exactly the kind of surprise a mixer must not have; or (b) making every bus N channels wide, which its pair and its sends have no meaning for. So:
 
 - The sound's channels go, crosspoint by crosspoint, into the **pairs** of the outputs they name, at each pair's input. So the master fader and **the limiter per pair are still the last things every sound meets**, whichever way it came.
-- **Its bus still rides it.** Each bus keeps its level as a control signal beside its sound: a steady 1 through copies of its fader, its gate (mute, solo, the crossfader) and its duck, and its voice-band dip as a second signal in dB (`ride`). Every move of the real ones is made on the copies in the same call. A routed sound passes through one gain driven by the first signal and one voice-band filter driven by the second. A bus fader, a Mix cue, mute, solo, the crossfader and both kinds of ducking therefore move a routed cue exactly as they move the bus.
+- **Its bus still rides it.** Each bus keeps its level as a control signal beside its sound: a steady 1 through copies of its fader and its duck, and its voice-band dip as a second signal in dB (`ride`). Every move of the real ones is made on the copies in the same call. A routed sound passes through one gain driven by the first signal and one voice-band filter driven by the second. A bus fader, a Mix cue and both kinds of ducking therefore move a routed cue exactly as they move the bus.
 - **Its bus hears it.** The routed sound is also fed to the bus's meter tap, so the bus's meter shows it and the ducker's key is triggered by it (a routed Mic cue on Vocals still ducks the music).
-- **What does not follow:** the bus's eq, filter and pan, its own output pair, and its reverb and delay sends. Those shape the bus's stereo pair; a routed sound is not in it. (A cue has an eq of its own; see below.)
+- **What does not follow:** the bus's own output pair, and its reverb and delay sends. Those shape the bus's stereo pair; a routed sound is not in it. (A cue has an eq of its own; see below.)
 - The cue's own level, its fades, its ducks and its `cutAt` are on the voice before any of this and work as they always did.
 
 A change to a cue's `outputs` is heard the next time the cue plays, not on a sound already running. There are no gangs (QLab's linked crosspoints): the "Send it to outputs…" menu covers the common case of setting a whole diagonal at once.
@@ -169,7 +169,7 @@ Applying a preset writes its `chain` and `eq` onto the cue, where every number c
 
 That shows each tool does what its numbers say. It does not show that any of them sounds good, that the generated room is a pleasant one, that the presets are well chosen, or that a rebuild's click is acceptable in a show.
 
-**Not built:** the same chain on a bus (the Live view's strip still has its three-band eq and one filter, and the show-wide reverb and delay take sends from buses); reverse; side-chain anything; a meter for the compressor's gain reduction (the worklet reports it and nothing draws it); reordering the tools; overlapping plays of one cue (below).
+**Not built:** the same chain on a bus (the show-wide reverb and delay take sends from buses); reverse; side-chain anything; a meter for the compressor's gain reduction (the worklet reports it and nothing draws it); reordering the tools; overlapping plays of one cue (below).
 
 ## The kinds of sound
 
@@ -249,23 +249,11 @@ Web Audio gives one output device per `AudioContext` (`setSinkId`), so a second 
 
 What is worth building first when it is done: **audition on a second device** (headphones on the computer's own output while the show plays on the interface). It needs no synchronisation at all, is the most common reason to want two devices, and its failure is harmless. After that, a device per bus, with the manual saying plainly that two devices are not sample-locked. Until then: one device, and as many of its outputs as it has.
 
-## The channel strip (the Live view)
+## A bus's level from a Mix cue
 
-Each bus has a strip between its fader and its ducker: a three-band eq (low shelf 250 Hz, peak 1 kHz, high shelf 4 kHz; −40 dB is a kill), one filter (a low-pass or a high-pass, by which way its knob is turned), a pan, and a gate that is mute, solo and the crossfader as one gain. `core/audio/strip.ts` turns a bus's settings into those numbers; `setStrips` in `audio.html` applies them, each as a 20 ms glide.
+A Mix cue moves bus faders over its `duration` (`levels: { <bus>: dB }`). The host keeps where a cue has taken each bus (`mixLevels`) over the show's own fader until Reset, opening a show, or a hand on that bus's knob, and the mixer shows such a bus as `·mix`. A playing sound's level from the Playing strip (`op: 'level'`) is for that playing only.
 
-The eq and the filter are connected only while they are doing something, so a bus at rest is the plain wire it was before the strip existed. The pan is always in the path and is told its input is stereo, so a mono file does not drop 3 dB on meeting it.
-
-Strip settings are the show's (`settings.audio.buses[].eq`, `.filter`, `.pan`, `.mute`, `.xf`, and `settings.audio.crossfader`), written only when not at rest. Solo is not: it is the operator's ear, kept by the host and cleared when a show is opened. A deck's level (`op: 'level'`) is for that playing only.
-
-**The desk as it is played.** Three things move the desk without changing the show: a Mix cue with a `desk` (below), a MIDI controller mapped to a control, and solo. The host keeps what they set (`liveStrip`, `liveXf`, `liveMaster`, and `liveBus` for faders) and lays it over the show's settings for the sound and for the view (a track so moved is marked `·mix`). A hand on a control takes that control back; Reset, or opening a show, takes all of it back.
-
-**A desk in a Mix cue.** `desk: { crossfader, buses: { <bus>: { eq, filter, pan, mute, xf } } }`, written like a bus's own settings (only what is not at rest). Recalling it (`recallOf`) sets every strip setting of each bus it names, so what it leaves out goes to rest, and the crossfader if it names it; a bus it does not name is left alone. It glides over the cue's `duration` (`setStrips({ list, secs })`: the same time constant a fader's ramp has). **Keep desk** in the Live view (`op: 'desk-keep'`) writes the desk as it stands, live moves included, into a new Mix cue or the one named.
-
-**One clip per track.** A launch from the Live view (`op: 'launch'`; never a GO, a fire or a trigger) fades out, over `TAKEOVER_FADE` (80 ms), every sound playing on the tracks the launched cue has sounds on, at the moment the launch fires (so on the quantise). `core/audio/launch.ts` says which. `settings.live.overlap: true` turns it off.
-
-**Mapping.** `settings.live.map` is `[{ on, to }]` (`core/audio/desk-map.ts`): `on` a key (`key q`), a note or a controller (`cc 7 ch 1`); `to` a clip or scene (`launch:<id>`), a track's stop, mute or solo, a fader, pan, eq band or filter, the crossfader, the master. Buttons answer a key down, a note on, or a controller at 64 or more. A controller's value is spread over a control's travel with its rest at 64 (`actionOf`), and what it moves is the desk as it is played (`op: 'desk-live'`), never the show. Keys are sent by the Live view (`op: 'map-in'`), MIDI arrives in `midiIn`. In Map mode the view marks every element that carries `data-map`, and the next key or MIDI control (`op: 'map-learn'`) is given to the one clicked.
-
-A deck's loop buttons hold any stretch of a track (`toggleHold(id, region, free)`), not only the regions a cue declares as looping cleanly. Nothing aligns such a loop to the music: with no beat grid it wraps wherever it was asked to.
+A loop of any stretch of a playing track (`toggleHold(id, region, free)`: the Playing strip's loops, drawn or from here) is held whether or not the cue declares it as looping cleanly. With no beat grid it wraps wherever it was asked to.
 
 ## Tempo
 
@@ -273,9 +261,9 @@ A deck's loop buttons hold any stretch of a track (`toggleHold(id, region, free)
 
 **Sections.** A tempo may change within a track: `tempo: { bpm, first, bar, sections: [{ from, bpm, first, bar }] }`. The top is the section from the start of the file; each later section has its own tempo, its own bar line (`first`) and its own beats in a bar from `from` on, so a change of time signature is a section too. `gridOf` lays every section's beats and bar lines end to end, and that one grid is all the engine reads, so quantise, loops in beats and the bar counter follow the section the track is in with no code of their own. `tempoMap` finds sections: where `tempoOf`'s grid does not hold, each stretch of sixteen seconds or more is listened to by itself, two stretches on one grid are joined (a breakdown does not make a section), and the hand-over between two tempos is placed on the beat before which the onsets sit on the first grid and after which on the second. It cannot hear a ritardando or a tempo kept for under sixteen seconds; those are marked by hand. `editTempo` is the hand: a section's bpm or bar, a nudge, "1 is here" (the beat nearest a place becomes beat one of its section's bar), a new section on the beat nearest a place, a section taken away. Beat one is never guessed.
 
-**Warp.** An Audio cue with `warp: 'repitch' | 'keep'` and a tempo plays at the desk's tempo: `settings.live.tempo`, or with that at 0 the tempo of the music playing as it is heard. The rate is desk ÷ the tempo of the section it starts in (`warpRate`; outside ½ … 2 it plays as it is), fixed at the start and moved only when the desk's tempo is set by hand (`engine.setRate`). Re-pitched, a stream's `playbackRate` or a buffer source's; keeping pitch is the browser's own stretch, which only a stream has, so such a sound is never played from a buffer. The engine keeps a running sound's `rate`: places stay in the file's seconds, and every wait derived from one (its end, a fade-out's start, the next bar) is divided by it. A warped sound cannot be held in a section, looped from a deck, or moved inside itself (a Jump, Fade to): those are timed to the sample for a sound at its own speed, and are refused with a line in the log.
+**A sound at another rate.** An Audio cue's `rate` (a Fade can move it) re-pitches it: a stream's `playbackRate` or a buffer source's; with `preservePitch` it is the browser's own stretch, which only a stream has, so such a sound is never played from a buffer. The engine keeps a running sound's `rate`: places stay in the file's seconds, and every wait derived from one (its end, a fade-out's start, the next bar) is divided by it. A sound stretched with its pitch kept cannot be held in a section, looped, or moved inside itself (a Jump, Fade to): those are timed to the sample, and are refused with a line in the log.
 
-The audio window decodes the file to mono at 11 kHz (`op: 'pcm'`) and the host does the arithmetic (about half a second for a ten-minute track; it runs when asked, not during a GO). What is found is kept only when the operator asks: `tempo: { bpm, first, bar }` on the Audio cue, where `first` is the time of a downbeat. The engine makes its `beats` and `downbeats` from that (`gridFromTempo`), which is what a quantised GO, a quantised launch and a loop in beats read. It hears a pulse, not a bar: whether `first` is beat one is set by hand ("1 is here"), as are the beats in a bar.
+The audio window decodes the file to mono at 11 kHz (`op: 'pcm'`) and the host does the arithmetic (about half a second for a ten-minute track; it runs when asked, not during a GO). What is found is kept only when the operator asks: `tempo: { bpm, first, bar }` on the Audio cue, where `first` is the time of a downbeat. The engine makes its `beats` and `downbeats` from that (`gridFromTempo`), which is what a quantised GO, a move on the bar and a loop in beats read. It hears a pulse, not a bar: whether `first` is beat one is set by hand ("1 is here"), as are the beats in a bar.
 
 ## Streams and buffers
 
