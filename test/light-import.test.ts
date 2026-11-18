@@ -22,7 +22,7 @@ test('QLab Light cues are imported as Light cues with their commands and fade ti
   assert.match(report.issues.filter((i) => i.id === c.id).map((i) => i.why).join('|'), /pulled levels from another cue/);
   // one with no commands to be found stays a Memo, as before
   assert.equal(d.type, 'memo');
-  assert.match(report.issues.find((i) => i.id === d.id)!.why, /was a Light cue: kept as a Memo/);
+  assert.match(report.issues.find((i) => i.id === d.id)!.why, /was a Light cue with no commands: kept as a Memo/);
   // the patch is not read: the report says which names the cues need
   const patch = report.issues.find((i) => i.cue === 'Light patch')!;
   assert.match(patch.why, /front, cyc, all, 1 - 3, side/);

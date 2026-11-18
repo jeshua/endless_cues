@@ -18,7 +18,7 @@ test('QLab’s Video, Text and Camera cues come across as cues for the stage, ea
   assert.match(film.file!, /film\.mov$/);
   assert.deepEqual([film.opacity, film.x, film.y, film.scale, film.layer, film.fit], [50, 120, -40, 0.5, 7, 'natural']);
   const why = (re: RegExp) => report.issues.filter((i) => re.test(i.why)).map((i) => i.cue);
-  assert.deepEqual(why(/have not been checked against a real workspace/), ['1 Film']);
+  assert.deepEqual(why(/its file, level, times and opacity, position, scale, layer.*came across/), ['1 Film']);
   assert.deepEqual(why(/was not found in the file, so it fits the stage/), ['2 Backdrop']);
   assert.deepEqual([n('2').type, n('2').fit, n('2').opacity], ['video', undefined, undefined]);
   assert.deepEqual([n('3').type, n('3').text], ['text', 'Act Two']);
