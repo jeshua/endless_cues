@@ -21,6 +21,8 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+
+## 0.3.0-alpha.8 · 2026-11-21
 - **Windows: a sound could go silent as it started.** Chromium on Windows sometimes paused a sound's stream by itself just after it began; the app then took it for a pause and the sound stayed silent while the cue showed it playing. Fixed: a stream the browser pauses on its own is started again.
 - **The native audio engine on Windows.** The Windows installers carry the native engine too (off until chosen in Settings ▸ Audio).
 - **Updates on Windows and Linux.** An installed Windows copy and the Linux AppImage now find, download and install a new version from inside the app, as the Mac does (never in Show mode or while anything plays); a signed Windows copy takes only an update signed by the same publisher. A `.deb` install says when a new version is out and links to the download page: it never installs anything itself. Not yet tried: an update installed on Windows.

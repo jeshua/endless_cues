@@ -1,6 +1,6 @@
 {
   "name": "endless-cues",
-  "version": "0.3.0-alpha.7",
+  "version": "0.3.0-alpha.8",
   "description": "Endless Cues: free, open-source show control. A cue list with one GO for sound, video, lights and the network.",
   "main": "app/main/main.js",
   "scripts": {
