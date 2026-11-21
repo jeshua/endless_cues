@@ -94,7 +94,8 @@ async function run({ host, win, check, until, page, sleep, shot: take }: Pick<Sm
   const over = () => page<string[]>(`(() => { const r = document.querySelector('[data-resident]'); if (!r) return ['no resident']; const a = r.getBoundingClientRect(); const hits = [];
     const rows = [...document.querySelectorAll('.list tbody tr')];
     for (const [name, el] of [['GO', document.querySelector('.go-btn')], ['the Playing strip', document.querySelector('.playing')], ['the inspector', document.querySelector('.inspector')], ['the drawer', document.querySelector('.drawer-pane')], ['the last cue row', rows[rows.length - 1]], ['the mixer', document.querySelector('.side .knobs')], ['the transport', document.querySelector('.transport')], ['the footer', document.querySelector('.footer')]]) {
-      if (!el) continue; const b = el.getBoundingClientRect(); if (b.width && b.height && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) hits.push(name); }
+      // (by more than half a pixel: at a display scale such as Windows's 150% two boxes side by side share a fraction of one)
+      if (!el) continue; const b = el.getBoundingClientRect(); const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (b.width && b.height && w > 0.5 && h > 0.5) hits.push(name + ' (' + w.toFixed(2) + ' by ' + h.toFixed(2) + ')'); }
     const side = document.querySelector('.side').getBoundingClientRect(); if (a.left < side.left || a.right > side.right + 0.5) hits.push('outside the side panel');
     return hits; })()`);
   check('at 1024 by 700, with the drawer open and a change waiting, the eye lies over no control', (await over()).length === 0, await over());

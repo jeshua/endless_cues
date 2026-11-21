@@ -7,10 +7,15 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { createNativeAudio, createAudioRouter, toNative, fromNative, routeOf, lineSplitter, parseLine, binaryPath, engineOf, WINDOW_OPS } from '../app/main/native-audio';
 import type { NativeChild, Spawn, NativeCommand, AudioEngine } from '../app/main/native-audio';
 import type { AudioCommand, AudioEvent } from '../app/main/host';
+
+/** A path as this computer writes it, and its file:// URL: on Windows '/show/a.wav' is 'C:\show\a.wav' and
+ *  file:///C:/show/a.wav (a URL with no drive, file:///a.wav, is no path there at all). */
+const native = (p: string) => fileURLToPath(pathToFileURL(p));
+const urlOf = (p: string) => pathToFileURL(p).href;
 
 /** A child process that records what it is written and says what the test tells it to. */
 class FakeChild extends EventEmitter {
@@ -120,19 +125,19 @@ test('no program, or one that cannot be started: given up at once, and stopping 
 
 test('a command for the native engine names its files by path: no bytes, no file:// URL', () => {
   const names = new Map<string, string>();
-  const url = pathToFileURL('/show/media/Rain 1.wav').href;
+  const url = urlOf('/show/media/Rain 1.wav'), rain = native('/show/media/Rain 1.wav'), mp3 = native('/show/media/b.mp3');
   const play = toNative({ op: 'play', key: 'c', url, gainDb: -6, loop: true }, names);
-  assert.deepEqual(play, { op: 'play', key: 'c', gainDb: -6, loop: true, file: '/show/media/Rain 1.wav' });
+  assert.deepEqual(play, { op: 'play', key: 'c', gainDb: -6, loop: true, file: rain });
   assert.deepEqual(toNative({ op: 'play', key: 'm', mic: { channel: 1 } }, names), { op: 'play', key: 'm', mic: { channel: 1 } });
-  assert.deepEqual(toNative({ op: 'decode', url, file: 'media/Rain 1.wav', bytes: Buffer.from('x') }, names), { op: 'decode', file: '/show/media/Rain 1.wav' });
-  assert.deepEqual(toNative({ op: 'keep', urls: [url] }, names), { op: 'keep', files: ['/show/media/Rain 1.wav'] });
-  assert.deepEqual(toNative({ op: 'probe', files: [{ file: 'media/b.mp3', url: pathToFileURL('/show/media/b.mp3').href }] }, names), { op: 'probe', files: [{ file: '/show/media/b.mp3' }] });
+  assert.deepEqual(toNative({ op: 'decode', url, file: 'media/Rain 1.wav', bytes: Buffer.from('x') }, names), { op: 'decode', file: rain });
+  assert.deepEqual(toNative({ op: 'keep', urls: [url] }, names), { op: 'keep', files: [rain] });
+  assert.deepEqual(toNative({ op: 'probe', files: [{ file: 'media/b.mp3', url: urlOf('/show/media/b.mp3') }] }, names), { op: 'probe', files: [{ file: mp3 }] });
   assert.deepEqual(toNative({ op: 'ir', file: 'rooms/hall.wav', bytes: Buffer.from('x') }, names, (f) => `/show/${f}`), { op: 'ir', file: '/show/rooms/hall.wav' });
   assert.deepEqual(toNative({ op: 'fade', key: 'c', db: -60, secs: 2 }, names), { op: 'fade', key: 'c', db: -60, secs: 2 }, 'anything else as it is');
   for (const c of [play, toNative({ op: 'decode', url, file: 'x', bytes: new Uint8Array(4) }, new Map())]) assert.ok(!('bytes' in c) && !JSON.stringify(c).includes('file://'));
   // its answers come back under the show's names
-  assert.deepEqual(fromNative({ type: 'decoded', file: '/show/media/Rain 1.wav', secs: 12.5 }, names), { type: 'decoded', file: 'media/Rain 1.wav', secs: 12.5 });
-  assert.deepEqual(fromNative({ type: 'duration', file: '/show/media/b.mp3', secs: 3 }, names), { type: 'duration', file: 'media/b.mp3', secs: 3 });
+  assert.deepEqual(fromNative({ type: 'decoded', file: rain, secs: 12.5 }, names), { type: 'decoded', file: 'media/Rain 1.wav', secs: 12.5 });
+  assert.deepEqual(fromNative({ type: 'duration', file: mp3, secs: 3 }, names), { type: 'duration', file: 'media/b.mp3', secs: 3 });
   assert.deepEqual(fromNative({ type: 'missing', file: '/elsewhere.wav' }, names), { type: 'missing', file: '/elsewhere.wav' });
   assert.deepEqual(fromNative({ type: 'ended', key: 'c' }, names), { type: 'ended', key: 'c' });
 });
@@ -167,7 +172,7 @@ const level = (voices: number): AudioEvent => ({ type: 'level', channels: [], bu
 
 test('the host on Web Audio: everything goes to the window', () => {
   const r = routed();
-  r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav' });
+  r.router.cmd({ op: 'play', key: 'a', url: urlOf('/a.wav') });
   assert.equal(r.toWindow.length, 0, 'nothing before the window is ready');
   r.router.fromWindow({ type: 'ready' });
   assert.deepEqual(r.heard, [{ type: 'ready' }]);
@@ -186,17 +191,17 @@ test('the host on the native engine: sound to it, MIDI and waveforms to the wind
   assert.equal(r.router.choose('native'), 'now');
   assert.equal(r.started(), 1);
   assert.deepEqual(r.down.map((d) => d[0]), ['webaudio'], 'nothing is ready to play until the native engine says so');
-  r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav' });
+  r.router.cmd({ op: 'play', key: 'a', url: urlOf('/a.wav') });
   assert.equal(r.toNative.length, 0, 'not before it is ready');
   r.native().onEvent({ type: 'ready' });
   assert.deepEqual(r.heard.map((e) => e.type), ['ready', 'ready']);
-  r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav', gainDb: 0 });
-  r.router.cmd({ op: 'decode', url: 'file:///show/a.wav', file: 'a.wav', bytes: new Uint8Array(3) });
+  r.router.cmd({ op: 'play', key: 'a', url: urlOf('/a.wav'), gainDb: 0 });
+  r.router.cmd({ op: 'decode', url: urlOf('/show/a.wav'), file: 'a.wav', bytes: new Uint8Array(3) });
   r.router.cmd({ op: 'midi', bytes: [0x90, 60, 100] });
   r.router.cmd({ op: 'peaks', file: 'a.wav', bytes: new Uint8Array(3) });
   r.router.cmd({ op: 'pcm', file: 'a.wav', bytes: new Uint8Array(3) });
   r.router.cmd({ op: 'masterDb', db: -3 });
-  assert.deepEqual(r.toNative, [{ op: 'play', key: 'a', gainDb: 0, file: '/a.wav' }, { op: 'decode', file: '/show/a.wav' }, { op: 'masterDb', db: -3 }]);
+  assert.deepEqual(r.toNative, [{ op: 'play', key: 'a', gainDb: 0, file: native('/a.wav') }, { op: 'decode', file: native('/show/a.wav') }, { op: 'masterDb', db: -3 }]);
   assert.deepEqual(r.toWindow.map((c) => c.op), ['midi', 'peaks', 'pcm']);
   assert.ok(r.toWindow.every((c) => c.op === 'midi' || c.bytes), 'the window still gets its bytes');
   // events: the native engine's count; of the window's, only what is still its own
@@ -207,7 +212,7 @@ test('the host on the native engine: sound to it, MIDI and waveforms to the wind
   r.router.fromWindow({ type: 'midi-in', bytes: [0x90, 60, 1], port: 'Keys' });
   r.router.fromWindow({ type: 'peaks', file: 'a.wav', bins: 10, peaks: [0] });
   r.native().onEvent(level(1));
-  r.native().onEvent({ type: 'decoded', file: '/show/a.wav', secs: 2 });
+  r.native().onEvent({ type: 'decoded', file: native('/show/a.wav'), secs: 2 });
   assert.deepEqual(r.heard.slice(before), [{ type: 'midi-in', bytes: [0x90, 60, 1], port: 'Keys' }, { type: 'peaks', file: 'a.wav', bins: 10, peaks: [0] }, level(1), { type: 'decoded', file: 'a.wav', secs: 2 }]);
   // the window dying does not stop the sound
   r.router.windowGone();
@@ -215,10 +220,10 @@ test('the host on the native engine: sound to it, MIDI and waveforms to the wind
   // it exits: what it played is gone, and it is ready again after its restart
   r.native().onExit!('it exited (code 101)');
   assert.deepEqual(r.down.at(-1), ['native', 'it exited (code 101)']);
-  r.router.cmd({ op: 'play', key: 'b', url: 'file:///b.wav' });
+  r.router.cmd({ op: 'play', key: 'b', url: urlOf('/b.wav') });
   assert.equal(r.toNative.length, 3, 'nothing sent while it is down');
   r.native().onEvent({ type: 'ready' });
-  r.router.cmd({ op: 'play', key: 'b', url: 'file:///b.wav' });
+  r.router.cmd({ op: 'play', key: 'b', url: urlOf('/b.wav') });
   assert.equal(r.toNative.length, 4);
 });
 
@@ -240,8 +245,8 @@ test('choosing the engine while something plays waits for the next stop-all', ()
   assert.equal(r.router.choose('webaudio'), 'now');
   assert.equal(r.stopped(), 1);
   assert.deepEqual(r.heard.slice(heard), [{ type: 'ready' }]);
-  r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav' });
-  assert.equal(r.toWindow.at(-1)!.url, 'file:///a.wav');
+  r.router.cmd({ op: 'play', key: 'a', url: urlOf('/a.wav') });
+  assert.equal(r.toWindow.at(-1)!.url, urlOf('/a.wav'));
   r.native().onEvent(level(1));
   assert.notDeepEqual(r.heard.at(-1), level(1), 'a word from it after it was left is not heard');
   // changing the mind before the stop-all: nothing changes
@@ -261,7 +266,7 @@ test('the native engine given up: Web Audio plays for the sitting, the host is t
   assert.deepEqual(r.down.at(-1), ['native', 'it stopped 3 times in a minute']);
   assert.deepEqual(r.heard.at(-1), { type: 'ready' }, 'the host sends the window the mixer and the sounds again');
   assert.deepEqual(r.router.status(), { wanted: 'native', using: 'webaudio', pending: null, failed: 'it stopped 3 times in a minute' });
-  r.router.cmd({ op: 'play', key: 'a', url: 'file:///a.wav' });
+  r.router.cmd({ op: 'play', key: 'a', url: urlOf('/a.wav') });
   assert.equal(r.toWindow.at(-1)!.op, 'play');
   assert.equal(r.router.choose('native'), 'failed', 'not tried again this sitting');
   assert.equal(r.started(), 1);
@@ -377,7 +382,8 @@ test('the real ec-audio killed mid-play (kill -9): started again and said so; th
       await got((e) => e.type === 'level' && (e as Extract<AudioEvent, { type: 'level' }>).voices === 1, `playing ${k}`, from);
       process.kill(pids[pids.length - 1], 'SIGKILL');
       await until(() => downs.length >= k, `the host was told it went (${k})`);
-      assert.match(downs[k - 1], /signal SIGKILL/);
+      // (Windows has no signals: a process killed there is ended with an exit code)
+      assert.match(downs[k - 1], process.platform === 'win32' ? /it exited \(code \d+\)/ : /signal SIGKILL/);
       if (k < 3) {
         const at = heard.length;
         await got((e) => e.type === 'ready', `ready again (${k})`, at);

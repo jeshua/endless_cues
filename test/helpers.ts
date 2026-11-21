@@ -5,6 +5,7 @@ import * as show from '../core/show/show';
 import { applyOps } from '../core/show/ops';
 import type { Op } from '../core/show/ops';
 import type { ShowDoc } from '../core/show/types';
+import * as fs from 'fs';
 
 /** One call the engine made of the fake audio: its name, then its arguments as given. */
 export type AudioCall = [op: string, ...args: any[]];
@@ -57,3 +58,18 @@ function build(ops: readonly Op[]) {
 export type Built = ReturnType<typeof build>;
 
 export { rig, build };
+
+/** A link at `at` to the folder `target`. On Windows it is a junction, which anyone may make (a symbolic link needs
+ *  an administrator or Developer Mode); Node, and so the app, sees either as a link. */
+export function linkFolder(target: string, at: string): void {
+  fs.symlinkSync(target, at, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
+/** A link at `at` to the file `target`, or false where this computer may not make one (Windows, unless an
+ *  administrator or in Developer Mode: a file has no junction). */
+export function linkFile(target: string, at: string): boolean {
+  try { fs.symlinkSync(target, at, 'file'); return true; } catch (e) {
+    if (process.platform === 'win32' && (e as NodeJS.ErrnoException).code === 'EPERM') return false;
+    throw e;
+  }
+}

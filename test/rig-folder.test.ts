@@ -6,7 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as zlib from 'zlib';
 import * as folder from '../core/rig/folder';
-import { build } from './helpers';
+import { build, linkFile, linkFolder } from './helpers';
 
 /** One second of silence as a WAV, so a sound in the listing has a length. */
 function wav(secs = 1, rate = 8000) {
@@ -64,14 +64,14 @@ test('what is not read, each with its sentence: outside the folder, a link out o
   const dir = showFolder();
   const outside = path.join(path.dirname(dir), 'secret.txt');
   fs.writeFileSync(outside, 'the wifi password');
-  fs.symlinkSync(outside, path.join(dir, 'link.txt'));
-  fs.symlinkSync(path.dirname(dir), path.join(dir, 'up'));
+  const fileLinked = linkFile(outside, path.join(dir, 'link.txt'));   // (not on Windows without the right to)
+  linkFolder(path.dirname(dir), path.join(dir, 'up'));
   fs.writeFileSync(path.join(dir, 'score.pdf'), '%PDF-1.7');
   fs.writeFileSync(path.join(dir, 'big.txt'), Buffer.alloc(2 * 1024 * 1024 + 1, 97));
   const why = (rel: string) => { const r = folder.readText(dir, rel); assert.equal(r.ok, false, rel); assert.equal(r.text, ''); return r.why; };
   assert.match(why('../secret.txt'), /outside the show folder/);
   assert.match(why(outside), /outside the show folder/);
-  assert.match(why('link.txt'), /a link that points out of the show folder/);
+  if (fileLinked) assert.match(why('link.txt'), /a link that points out of the show folder/);
   assert.match(why('up/secret.txt'), /a link that points out of the show folder/);
   assert.match(why('show.json'), /is the show itself/);
   assert.match(why('versions/a.json'), /the app’s own/);
@@ -83,6 +83,9 @@ test('what is not read, each with its sentence: outside the folder, a link out o
   assert.equal(folder.readText(null, 'notes.txt').why, 'This show is not in a folder yet.');
   // and a link is never in the listing
   assert.ok(!folder.listing(dir).some((e) => e.path.startsWith('link') || e.path.startsWith('up')));
+  // nor listed by asking for the folder through it
+  assert.deepEqual(folder.listing(dir, null, { under: 'up' }), []);
+  assert.deepEqual(folder.listing(dir, null, { under: 'up/' + path.basename(dir) }), []);
 });
 
 test('a .docx is read as its paragraphs', () => {
