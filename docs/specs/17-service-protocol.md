@@ -11,8 +11,8 @@ The same text lives in two places and changes in both at once, in one commit eac
 `PROTOCOL.md` in the service repository (`endless_cues_service`), and `docs/specs/17-service-protocol.md` in the
 app repository (`endless_cues`).
 
-Status: reports, sign-in (the email link and the device flow), device tokens and the admin API are **deployed**
-(2026-11-16). The hosted assistant and the usage counter are **built and tested locally** (section 7).
+Status: reports, sign-in (the email link and the device flow), device tokens, the admin API, the hosted assistant
+and its usage counter are **deployed** (section 7; the assistant is free to try, for a limited number of asks).
 Subscriptions and billing are **interfaces only**: they answer `501` until they are built.
 
 ## 1. Hosts, versions, conventions
@@ -266,7 +266,7 @@ the account site. Anyone else: `404` (and `401` with no credentials at all).
 
 ## 7. The hosted assistant
 
-Built 2026-11-16 (tested locally against a stand-in for the model; not yet deployed). The app keeps its own
+Built 2026-11-16 and deployed: free to try, for a limited number of asks. The app keeps its own
 agent loop: it sends one model call at a time and runs the tools itself; the service chooses the model, pays for
 it, counts it and passes the answer back. It keeps no conversation.
 Its design (`docs/16-hosted-assistant.md`) is in the service repository.
