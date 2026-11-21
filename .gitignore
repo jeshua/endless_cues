@@ -2,6 +2,7 @@ node_modules
 dist/
 dist.noindex/
 dist-win.noindex/
+dist-linux.noindex/
 *.log
 .DS_Store
 # The private snapshot this project grew out of (show-specific; never published)
