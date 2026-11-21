@@ -187,11 +187,11 @@ it, and an app without it plays on Web Audio.
 - **What each target needs.** A Rust toolchain (https://rustup.rs) and the target for each architecture:
   - Mac, both architectures on either kind of Mac: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`.
     Xcode's command-line tools link both; nothing else is needed.
-  - Windows (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`): built on Windows, with the Visual Studio Build
-    Tools' C++ workload. From a Mac it needs `cargo-xwin` (`cargo install cargo-xwin`, and the MSVC libraries it
-    downloads) in place of plain cargo, which `build/native.ts` does not do yet: build the `.exe` on Windows, or with
-    `cargo xwin build --release --target …`, and put it in `native/dist/win-<arch>/` before `node bin/release.js win`
-    with `EC_NO_NATIVE=1`.
+  - Windows (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`): built on Windows, by GitHub Actions. Before
+    `node bin/release.js win`, run `gh workflow run native-win.yml --ref main`, wait for it, then
+    `gh run download <run> -n ec-audio-win -D native/dist`: that puts `win-x64/ec-audio.exe` and
+    `win-arm64/ec-audio.exe` in `native/dist/`, and the Mac's pack takes them as they are (`build/native.ts`, for a
+    platform other than this computer's). Without them, pack with `EC_NO_NATIVE=1`.
   - Linux (`x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`): built on Linux, with ALSA's headers
     (`libasound2-dev`); another architecture needs its cross linker (or `cross`).
 - **Signing.** On a Mac, electron-builder signs every Mach-O file inside the app, `Contents/Resources/ec-audio`
