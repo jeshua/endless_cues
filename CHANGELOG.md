@@ -21,6 +21,7 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **Licence: GPL-3.0-or-later** (it was the AGPL). The same freedoms; running a changed copy as a service no longer obliges anyone to publish their changes. Versions already published stay under the AGPL.
 
 ## 0.3.0-alpha.6 · 2026-11-18
 - **QLab import, checked against QLab itself.** Fifty-three workspaces (QLab 4.0 to 5.6) were imported and compared, field by field, with what QLab 5.6.3 says about them; seventeen kinds of thing that came across wrong now come across. Text cues bring their words, font, size, colour and alignment; Timecode cues their start, frame rate and LTC output; wall-clock and timecode triggers, ducking, the second trigger, auto-load and "fade and stop others" (with which cues it stops) are kept; a MIDI trigger keeps the value it asked for (a controller at one value only); Reset and Target cues are cues again; a Fade that moves a picture keeps where it moves it; MSC commands with no words here go as their bytes; QLab's colours all have a match. The import report says less that is not so: no "silent on outputs of its own" for a cue that is not, and a MIDI cue with no message says what it held.

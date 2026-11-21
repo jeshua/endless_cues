@@ -189,6 +189,6 @@
     "ec-user": "bin/ec-user.js"
   },
   "productName": "Endless Cues Public Alpha",
-  "license": "AGPL-3.0-or-later",
+  "license": "GPL-3.0-or-later",
   "private": true
 }
