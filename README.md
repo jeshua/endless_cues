@@ -70,6 +70,7 @@ All of it is free. There are no tiers and nothing to unlock.
 **Everywhere else**
 
 - macOS and Windows builds (signed), and Linux (an AppImage and a .deb, 64-bit). Shortcuts follow the platform.
+- Written in strict TypeScript, with an optional native audio engine in Rust. It is checked by about 675 automated tests and a full end-to-end run of the app on Mac, Windows and Linux.
 - Lab, Ocean and Graphite themes.
 - Updates from inside the app (never in Show mode or while anything plays), and Help ▸ Report a Problem.
 - No telemetry and no crash reports. The one thing it sends by itself is a daily check for a new version, which Settings ▸ General turns off.
