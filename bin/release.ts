@@ -242,10 +242,11 @@ function buildLinux(flags: string[]) {
   console.log(`Building ${v} (${info.commit}${dirty ? ', with uncommitted changes' : ''}) for Linux ${arch}: an AppImage and a .deb…`);
   try {
     const r = spawnSync('npx', ['electron-builder', '--linux', 'AppImage', 'deb', `--${arch}`, '--publish', 'never', `-c.directories.output=${LINUX_OUT}`,
-      '-c.appImage.artifactName=Endless-Cues-${version}-linux-${arch}.${ext}', '-c.deb.artifactName=Endless-Cues-${version}-linux-${arch}.${ext}', ...flags.filter((f) => f.startsWith('-c.'))], { cwd: ROOT, stdio: 'inherit' });
+      // (the architecture by our name for it: electron-builder says x86_64 for an AppImage and amd64 for a .deb)
+      `-c.appImage.artifactName=Endless-Cues-\${version}-linux-${arch}.\${ext}`, `-c.deb.artifactName=Endless-Cues-\${version}-linux-${arch}.\${ext}`, ...flags.filter((f) => f.startsWith('-c.'))], { cwd: ROOT, stdio: 'inherit' });
     if (r.status !== 0) fail('The Linux build failed.');
   } finally { fs.rmSync(path.join(ROOT, 'app/build-info.json'), { force: true }); }
-  const files = fs.readdirSync(out).filter((f) => /-linux-(x64|arm64|amd64)\.(AppImage|deb)$/.test(f)).sort().map((f): FileRecord => {
+  const files = fs.readdirSync(out).filter((f) => /-linux-(x64|arm64)\.(AppImage|deb)$/.test(f)).sort().map((f): FileRecord => {
     const bytes = fs.readFileSync(path.join(out, f));
     return { file: f, arch, kind: f.endsWith('.deb') ? 'deb' : 'appimage', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   });
