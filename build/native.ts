@@ -60,7 +60,10 @@ async function beforePack(context: { electronPlatformName: string; arch: number 
   if (process.env.EC_NO_NATIVE) { console.log('  • native audio engine  left out (EC_NO_NATIVE)'); return; }
   const arch: Arch | null = context.arch === 1 ? 'x64' : context.arch === 3 ? 'arm64' : null;
   if (!arch) throw new Error(`no native engine for architecture ${context.arch}`);
-  buildFor(osOf(context.electronPlatformName), arch);
+  const os = osOf(context.electronPlatformName), ready = path.join(distDir(os, arch), exe(os));
+  // (for another platform, a program built there and put in native/dist/ is taken as it is: Windows' comes from CI)
+  if (os !== osOf(process.platform) && fs.existsSync(ready)) { console.log(`  • native audio engine  ${os} ${arch}: ${path.relative(ROOT, ready)}, built elsewhere`); return; }
+  buildFor(os, arch);
 }
 export default beforePack;
 
