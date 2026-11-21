@@ -36,7 +36,11 @@ async function run({ host, check, until, sleep, shot, log }: Pick<Smoke, 'host' 
 
   // media, made by code
   const media = path.join(host.document.showDir!, 'media');
-  const film = await webm(stagePage, { secs: 4, colours: [GREEN, BLUE] });
+  // ten seconds: green for two, then blue. Long enough that on a slow machine (an emulated one takes seconds over
+  // each look) the film is still playing when it is paused and skipped back. The change comes early in the film's
+  // own time: the picture follows its sound, and a test run's sound can run slow (on CI's Mac, 3 s of it in 8).
+  const FILM_S = 10;
+  const film = await webm(stagePage, { secs: FILM_S, colours: [GREEN, BLUE, BLUE, BLUE, BLUE] });
   fs.writeFileSync(path.join(media, 'smoke-film.webm'), film.bytes);
   fs.writeFileSync(path.join(media, 'smoke-card.png'), png(64, 36, ORANGE));
   if (!film.sound) log(`SMOKE note  the test video has no sound track (${film.audioError || 'no Opus encoder here'})`);
@@ -48,11 +52,11 @@ async function run({ host, check, until, sleep, shot, log }: Pick<Smoke, 'host' 
     { op: 'cue.add', ref: 'card', cue: { type: 'video', file: 'media/smoke-card.png', fit: 'stretch', number: 'V2', name: 'Card' } },
     { op: 'cue.add', ref: 'title', cue: { type: 'text', text: 'ENDLESS', size: 300, textColor: '#ffffff', layer: 5 } },
     { op: 'cue.add', ref: 'cam', cue: { type: 'camera', fit: 'fill' } },
-    { op: 'cue.add', ref: 'late', cue: { type: 'load', target: '@film', at: 3.3 } },
+    { op: 'cue.add', ref: 'late', cue: { type: 'load', target: '@film', at: FILM_S - 0.7 } },
   ] });
   const id = (ref: string) => r.refs && r.refs[ref];
   check('Video, Text and Camera cues can be added', !!(id('film') && id('cam')) && !r.error, r);
-  check('a video is measured like a sound, and a still is not asked to be', await until(() => Math.abs((snap().engine.durations['media/smoke-film.webm'] || 0) - 4) < 0.3), snap().engine.durations);
+  check('a video is measured like a sound, and a still is not asked to be', await until(() => Math.abs((snap().engine.durations['media/smoke-film.webm'] || 0) - FILM_S) < 0.3), snap().engine.durations);
   check('none of them is a problem', !snap().problems.some((p) => Object.values(r.refs || {}).includes(p.id)), snap().problems);
 
   // V1: a video plays, picture and sound
@@ -61,26 +65,36 @@ async function run({ host, check, until, sleep, shot, log }: Pick<Smoke, 'host' 
   check('…and its sound plays in the audio window', await until(async () => (await audioPage(`voices.has(${JSON.stringify(id('film'))})`))));
   if (film.sound) check('…on the cue’s bus', await until(() => ((snap().mixer.buses.find((b) => b.id === 'vocals') || {}).peak ?? -60) > -40, 3000), snap().mixer.buses.map((b) => [b.id, b.peak]));
   const a = () => snap().engine.active.find((x) => x.id === id('film'));
-  check('it runs as a sound does in Active Cues, marked as a picture', !!a() && a()!.picture === 'video' && a()!.total > 3.5, a());
+  check('it runs as a sound does in Active Cues, marked as a picture', !!a() && a()!.picture === 'video' && a()!.total > FILM_S - 0.5, a());
   await sleep(1200);
-  const drift = async () => Math.abs((await stagePage(`layers.get(${JSON.stringify(id('film'))}).media.currentTime`)) - (await audioPage(`voices.get(${JSON.stringify(id('film'))}).el.currentTime`)));
-  check('the picture keeps step with its sound (within a tenth of a second)', await until(async () => (await drift()) < 0.1, 3000), await drift().catch(() => null));
-  check('its later frames come', await sees(BLUE, 0.5, 0.5, 4000), await pixel());
-  await shot('v1-video');
+  // where the picture is, and where its sound is (null: not there: a layer or a voice gone fails its check, not the run)
+  const picAt = (): Promise<number | null> => stagePage(`(() => { const l = layers.get(${JSON.stringify(id('film'))}); return l && l.media ? l.media.currentTime : null; })()`).catch(() => null);
+  const soundAt = (): Promise<number | null> => audioPage(`(() => { const v = voices.get(${JSON.stringify(id('film'))}); return v ? placeOf(v) : null; })()`).catch(() => null);
+  const drift = async () => { const p = await picAt(), s = await soundAt(); return p == null || s == null ? null : Math.abs(p - s); };
+  const step = { drift: null as number | null };
+  /** What a failure says: the sound's element and the picture's, each as it is. */
+  const where = async () => ({
+    sound: await audioPage(`(() => { const v = voices.get(${JSON.stringify(id('film'))}); return v ? { buf: !!v.buf, at: placeOf(v), el: v.el ? { paused: v.el.paused, t: v.el.currentTime, ready: v.el.readyState } : null, held: !!v.held } : null; })()`).catch(() => null),
+    picture: await stagePage(`(() => { const l = layers.get(${JSON.stringify(id('film'))}); return l && l.media ? { paused: l.media.paused, t: l.media.currentTime, rate: l.media.playbackRate, ready: l.media.readyState, off: l.off } : null; })()`).catch(() => null) });
+  check('the picture keeps step with its sound (within a tenth of a second)', await until(async () => { step.drift = await drift(); return step.drift != null && step.drift < 0.1; }, 3000), { drift: step.drift, ...(await where()) });
+  check('its later frames come', await sees(BLUE, 0.5, 0.5, 6000), { pixel: await pixel(), ...(await where()) });
 
   // pause, a skip back, resume
   host.cmd({ op: 'pause', id: id('film') });
+  await shot('v1-video');
   await sleep(250);
-  const t1 = await stagePage(`layers.get(${JSON.stringify(id('film'))}).media.currentTime`);
+  const t1 = await picAt();
   await sleep(300);
-  check('pause holds the picture', Math.abs((await stagePage(`layers.get(${JSON.stringify(id('film'))}).media.currentTime`)) - t1) < 0.02);
+  const t2 = await picAt();
+  check('pause holds the picture', t1 != null && t2 != null && Math.abs(t2 - t1) < 0.02, { t1, t2 });
   host.cmd({ op: 'seek', id: id('film'), t: 0.5 });
   host.cmd({ op: 'resume', id: id('film') });
   check('a skip back takes the picture with it', await sees(GREEN), await pixel());
 
   // V2: geometry and opacity, by a Fade
   host.cmd({ op: 'fire', id: id('half') });
-  check('a Fade aimed at a video scales it (the corner of the stage goes black, the middle stays)', (await black(0.1, 0.1)) && near(await pixel(), GREEN), [await pixel(0.1, 0.1), await pixel()]);
+  // (the middle is the film, green or, on a machine slow to get here, already blue)
+  check('a Fade aimed at a video scales it (the corner of the stage goes black, the middle stays)', (await black(0.1, 0.1)) && ((p) => near(p, GREEN) || near(p, BLUE))(await pixel()), [await pixel(0.1, 0.1), await pixel()]);
   host.cmd({ op: 'fire', id: id('dim') });
   check('…and fades its opacity to nothing over a time, the cue still running', (await black(0.5, 0.5, 3000)) && !!a(), [await pixel(), !!a()]);
   check('a Fade that names no level leaves the video’s sound where it was', a() && a()!.db === 0 && !a()!.fadingTo, a() && [a()!.db, a()!.fadingTo]);
@@ -144,9 +158,10 @@ async function run({ host, check, until, sleep, shot, log }: Pick<Smoke, 'host' 
 
   // panic: the picture fades out with everything else, to black
   host.cmd({ op: 'panic' });
-  await sleep(250);
-  const mid = await stagePage(`Math.max(...[...layers.values()].map((l) => Number(l.el.style.opacity)))`).catch(() => null);
-  check('Esc fades the stage out', mid != null && mid < 1 && mid > 0, mid);
+  // part way down at some look within its second (a slow machine can take more than a quarter of one to begin it)
+  const seen: (number | null)[] = [];
+  const faded = await until(async () => { const o = await stagePage(`layers.size ? Math.max(...[...layers.values()].map((l) => Number(l.el.style.opacity))) : null`).catch(() => null); seen.push(o); return o != null && o < 1 && o > 0; }, 1500);
+  check('Esc fades the stage out', faded, seen);
   check('…to black, with nothing left on it', (await until(async () => (await stagePage('layers.size')) === 0, 4000)) && (await black()) && snap().engine.active.length === 0, snap().engine.active.map((x) => x.name));
   host.cmd({ op: 'stage-close' });
 }
