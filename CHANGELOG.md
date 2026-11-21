@@ -21,6 +21,8 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **The assistant cannot list a folder outside the show through a link in it.** Asked for a folder by a path that goes through a link (or a junction on Windows) pointing out of the show folder, it now lists nothing; before, it listed the names and sizes of the files there (it never read them).
+- **Run and tested on Windows.** The app was launched from source on a Windows 10 PC, and the tests and the end-to-end run pass there; the tests no longer fail on a Windows checkout (line endings, paths, and links that only an administrator may make).
 
 ## 0.3.0-alpha.6 · 2026-11-18
 - **QLab import, checked against QLab itself.** Fifty-three workspaces (QLab 4.0 to 5.6) were imported and compared, field by field, with what QLab 5.6.3 says about them; seventeen kinds of thing that came across wrong now come across. Text cues bring their words, font, size, colour and alignment; Timecode cues their start, frame rate and LTC output; wall-clock and timecode triggers, ducking, the second trigger, auto-load and "fade and stop others" (with which cues it stops) are kept; a MIDI trigger keeps the value it asked for (a controller at one value only); Reset and Target cues are cues again; a Fade that moves a picture keeps where it moves it; MSC commands with no words here go as their bytes; QLab's colours all have a match. The import report says less that is not so: no "silent on outputs of its own" for a cue that is not, and a MIDI cue with no message says what it held.

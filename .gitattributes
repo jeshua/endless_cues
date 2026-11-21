@@ -1,0 +1,3 @@
+# Every text file is checked out with LF line endings, on Windows too: generated files (core/show/cue-fields.ts)
+# are compared byte for byte with what the generator writes, and Git for Windows would otherwise turn them to CRLF.
+* text=auto eol=lf
