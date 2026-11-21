@@ -16,12 +16,12 @@ The code is TypeScript (`strict`). `build/compile.mjs` writes the `.js` beside e
 
 ## 2. The contributor agreement
 
-Endless Cues is licensed under the AGPL-3.0-or-later. So that the project can also offer it under other terms (for example a commercial licence to someone who cannot use AGPL software, which is one of the ways the project pays for itself), contributors keep their copyright and grant the project a broad licence to their contribution.
+Endless Cues is licensed under the GPL-3.0-or-later. So that the project can also offer it under other terms (for example a commercial licence to someone who cannot use GPL software, which is one of the ways the project pays for itself), contributors keep their copyright and grant the project a broad licence to their contribution.
 
 By submitting a contribution you agree that:
 
 1. It is your own work, or you have the right to submit it, and you are not knowingly including anyone else's code or material without saying so.
-2. You grant Jeshua Bratman (the project's owner) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable licence to use, reproduce, modify, distribute and sublicense your contribution, including under licences other than the AGPL.
+2. You grant Jeshua Bratman (the project's owner) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable licence to use, reproduce, modify, distribute and sublicense your contribution, including under licences other than the GPL.
 3. You grant the same patent licence the Apache License 2.0 grants, for any patent of yours that your contribution necessarily infringes.
 4. Your contribution is provided as-is, with no warranty.
 

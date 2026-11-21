@@ -1,6 +1,8 @@
 # 0005 · Licence
 
-**Status:** decided: AGPL-3.0-or-later, with the contributor agreement in `CONTRIBUTING.md`. The repository stays private until the owner makes it public.
+**Status:** decided: GPL-3.0-or-later, with the contributor agreement in `CONTRIBUTING.md` (changed from AGPL-3.0-or-later on 2026-11-21, for every version after 0.3.0-alpha.6; versions published before stay under the AGPL).
+
+**The change, 2026-11-21.** The owner does not mind the program being run for others as a service, so the AGPL's network clause buys nothing he wants and makes some people wary. The GPL keeps what the decision below was for: nobody can ship it closed under their own name. The contributor agreement is unchanged.
 
 ## The choice
 

@@ -3,9 +3,9 @@
 Version 1 · written 2026-11-16, section 7 built the same day · the contract between the Endless Cues app and the Endless Cues service.
 
 **Licence.** This document (and only this document) may be used, copied and implemented under the MIT licence.
-Copyright © 2026 Jeshua Bratman, who holds all copyright in it. It is the only thing the app (AGPL-3.0, public)
+Copyright © 2026 Jeshua Bratman, who holds all copyright in it. It is the only thing the app (GPL-3.0, public)
 and the service (private) share: the service is written against this page, not against the app's code, so it
-contains no AGPL code; the app may implement its side of it without taking anything from the service.
+contains no GPL code; the app may implement its side of it without taking anything from the service.
 
 The same text lives in two places and changes in both at once, in one commit each:
 `PROTOCOL.md` in the service repository (`endless_cues_service`), and `docs/specs/17-service-protocol.md` in the

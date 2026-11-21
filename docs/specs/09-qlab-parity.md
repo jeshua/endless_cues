@@ -496,7 +496,7 @@ A Resolume template exists for Network cues, so a media server can be driven too
 |---|---|---|---|
 | macOS | 11 and later | 🟡 | Signed and notarised builds (`node bin/release.js mac`); smoke-run in CI. |
 | Windows, Linux | No | ➕🟡 | Installers are configured and unit tests pass in CI on both. One copy of the app at a time, opening a show from the desktop and the shortcut labels are written for both; the app has still not been launched by a person on either. |
-| Price | Free for stereo audio and basic video; licences for the rest; rent by the day | ➕ | Nothing is locked. AGPL. |
+| Price | Free for stereo audio and basic video; licences for the rest; rent by the day | ➕ | Nothing is locked. GPL. |
 | Demo mode, licence manager, USB and offline licences | Yes | n/a | |
 | Source available | No | ➕ | |
 

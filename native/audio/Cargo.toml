@@ -2,7 +2,7 @@
 name = "ec-audio"
 version = "0.1.0"
 edition = "2021"
-license = "AGPL-3.0-or-later"
+license = "GPL-3.0-or-later"
 description = "Endless Cues' native audio engine: plays what the cue engine says, once per sample."
 publish = false
 

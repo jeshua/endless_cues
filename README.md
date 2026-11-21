@@ -1,6 +1,6 @@
 # Endless Cues
 
-Endless Cues is show control for live theatre and events, in the manner of QLab: a cue list with one GO button, a playhead, and cues that play sound, fade, wait, and send OSC and MIDI to other equipment. It also holds a track in a loop while a scene runs long, lets you change levels and waits while the sound plays, and keeps every saved version of the show as plain text beside it. It runs on macOS, Windows and Linux, with no account and no internet. It is free and open source (AGPL-3.0).
+Endless Cues is show control for live theatre and events, in the manner of QLab: a cue list with one GO button, a playhead, and cues that play sound, fade, wait, and send OSC and MIDI to other equipment. It also holds a track in a loop while a scene runs long, lets you change levels and waits while the sound plays, and keeps every saved version of the show as plain text beside it. It runs on macOS, Windows and Linux, with no account and no internet. It is free and open source (GPL-3.0).
 
 ## Status
 
@@ -97,6 +97,6 @@ That is a request, not a condition of the licence.
 
 ## Licence
 
-AGPL-3.0-or-later ([`LICENSE`](LICENSE)). The show file format is free for anyone to implement. The show's artwork in the app (the icon, its textures, the QIRX drawing) is not under the AGPL and is not licensed for reuse; [`NOTICE`](NOTICE) lists those files. The fonts are under the SIL Open Font License. To contribute, read [`CONTRIBUTING.md`](CONTRIBUTING.md) first.
+GPL-3.0-or-later ([`LICENSE`](LICENSE)). The show file format is free for anyone to implement. The show's artwork in the app (the icon, its textures, the QIRX drawing) is not under the GPL and is not licensed for reuse; [`NOTICE`](NOTICE) lists those files. The fonts are under the SIL Open Font License. To contribute, read [`CONTRIBUTING.md`](CONTRIBUTING.md) first.
 
 QLab is a trademark of Figure 53, LLC. Endless Cues is not affiliated with or endorsed by Figure 53.
