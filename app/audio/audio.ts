@@ -44,6 +44,8 @@ interface Voice {
   el: HTMLAudioElement; dip?: GainNode; url: string; wantExact?: boolean; keepPitch?: boolean; rateRamp?: { from: number; to: number; t: number; d: number } | null;
   buf?: AudioBuffer | null; clk: Clock; srcNode?: AudioBufferSourceNode | null; sub?: Sub | null; moving?: Move | null; region?: Span | null; loopWhole?: boolean;
   released?: boolean; rate0?: number; pausedAt?: number; speech?: [number, number][];
+  held?: boolean;          // the show has paused it (an element can also be paused by the browser on its own: that is not this)
+  rescued?: number;        // times a stream the browser paused by itself was played on
   fx?: BuiltChain | null; swept: string; cutIn?: boolean; tailOf?: string;
   lanes: { env: LanePoint[] | null; pan: LanePoint[] | null; chain: Record<string, LanePoint[]> | null }; panBase: number; rode: Record<string, number | null>;
   env?: GainNode | null; pan?: PanStage | null; noPan?: boolean; under?: GainNode; pre?: AudioNode; patched?: boolean;
@@ -857,6 +859,15 @@ function play({ key, url, gainDb, from, loop, exact, bus, mic, own, rate, preser
   voices.set(key, v);
   follow(v, from || 0);
   el.addEventListener('ended', () => { if (voices.get(key) === v) { finish(key); window.cueAudio.report({ type: 'ended', key }); } });
+  // MEASURED (Chromium on Windows, a CI runner and now and then a PC): the element pauses itself some 10 ms after it
+  // starts playing, with no error and nothing here having asked. The show did not pause it, so it plays on (a few
+  // times at most: a browser that keeps refusing is not argued with). A pause asked for (Pause, a stop, the move to
+  // its buffer, a tail) is the show's, and comes with the voice held, gone, or no longer this element's.
+  el.addEventListener('pause', () => {
+    if (voices.get(key) !== v || v.el !== el || v.held || v.tailOf || el.ended || (v.rescued || 0) >= 3) return;
+    v.rescued = (v.rescued || 0) + 1;
+    el.play().catch(() => { /* the error event, or the next pause, says what it is */ });
+  });
   el.addEventListener('error', () => { if (voices.get(key) === v) { drop(key); window.cueAudio.report({ type: 'error', key, url: url! }); } });
   const start = () => {
     if (from! > 0) el.currentTime = Math.min(from!, (el.duration || from!) - 0.05);
@@ -980,7 +991,9 @@ function upgrade(key: string, v: Voice) {
   const entry = decoded.get(v.url);
   if (!entry || !entry.buf || v.buf || voices.get(key) !== v || v.tailOf) return;
   const { el, src } = v;
-  const paused = el.paused;
+  // held only if the show paused it: the element's own `paused` is also true when the browser paused it by itself
+  // (see play), and a sound the show is playing must not be parked on its buffer waiting for a resume never sent
+  const paused = !!v.held;
   const t = el.currentTime;
   if (!(t < entry.buf.duration - 0.25)) return;              // nearly over: let it stream out
   if (v.keepPitch) return;                                    // a stretched sound has no buffer to move over to
@@ -1137,6 +1150,7 @@ async function sink({ id, fallback }: Cmd<'sink'>) {
 function pause({ key }: Cmd<'pause'>) {
   const v = voices.get(key);
   if (!v || v.mic) return;
+  v.held = true;
   if (v.buf) settle(v);                                      // a move under way: undone, or landed
   // (where it is heard to be, a held loop wrapped; a ramp of its rate stops where it is, and the engine sends what is left of it on resume)
   if (v.buf) { const n = v.srcNode; v.srcNode = null; if (n) { v.pausedAt = posOf(v); v.clk = clockAt(ctx.currentTime, v.pausedAt, rateAt(v)); letGo(n); } }
@@ -1149,6 +1163,7 @@ function pause({ key }: Cmd<'pause'>) {
 function resume({ key, t }: Cmd<'resume'>) {
   const v = voices.get(key);
   if (!v || v.mic) return;
+  v.held = false;
   if (v.buf) { startBuf(key, v, t != null ? t : v.pausedAt); return; }
   ctx.resume(); v.el.play().catch(() => {});
 }

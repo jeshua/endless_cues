@@ -129,10 +129,11 @@ async function audioDepth({ host, win, check, timed = check, until, page, sleep,
       return { master: master.gain.value, voices: voices.size, state: ctx.state, outKey, outs: ctx.destination.maxChannelCount, destCh: ctx.destination.channelCount, fake: FAKE_OUTS,
         mono: monitor.mono ? { gain: monitor.mono.gain.value, ch: monitor.mono.channelCount } : null, tap: !!monitor.tap, limiterOut: q,
         bands: [...voices.values()].map((v) => (v.band && v.band.gain ? v.band.gain.value : null)),
-        // where along its way the sound stops (it fails this way on CI's Windows runner, and now and then on a PC):
-        // each voice's own level after its fader, what it plays from, the buses' faders and peaks, the pairs' inputs
+        // where along its way the sound stops: each voice's own level after its fader, what it plays from, whether the
+        // show holds it paused, the buses' faders and peaks, the pairs' inputs. (It failed here on Windows when the
+        // browser paused the stream by itself and the move to its buffer took that for the show's pause: audio.ts, play.)
         why: (() => { const pk = (an) => { if (!an) return null; const x = new Float32Array(an.fftSize); an.getFloatTimeDomainData(x); let m = 0; for (const s of x) m = Math.max(m, Math.abs(s)); return m; };
-          return { voices: [...voices.values()].map((v) => ({ buf: !!v.buf, source: !!v.srcNode, el: v.el ? { paused: v.el.paused, ready: v.el.readyState, t: v.el.currentTime } : null, gain: v.gain.gain.value, env: v.env ? v.env.gain.value : null, bus: v.onBus || null, own: v.own ? v.own.pairs : null, patched: !!v.patched, peak: pk(v.tap) })),
+          return { voices: [...voices.values()].map((v) => ({ buf: !!v.buf, source: !!v.srcNode, el: v.el ? { paused: v.el.paused, ready: v.el.readyState, t: v.el.currentTime } : null, gain: v.gain.gain.value, env: v.env ? v.env.gain.value : null, bus: v.onBus || null, own: v.own ? v.own.pairs : null, patched: !!v.patched, peak: pk(v.tap), held: !!v.held, rescued: v.rescued || 0 })),
             buses: Object.fromEntries(Object.entries(buses).map(([n, b]) => [n, { fader: b.fader.gain.value, duck: b.duck.gain.value, to: !!b.to, want: b.want, peak: pk(b.tap) }])),
             pairs: pairs.map((p) => (p ? { master: p.master.gain.value, peak: pk(p.tap) } : null)) }; })() };
     })()`) });
