@@ -21,6 +21,7 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **Updates on Windows and Linux.** An installed Windows copy and the Linux AppImage now find, download and install a new version from inside the app, as the Mac does (never in Show mode or while anything plays); a signed Windows copy takes only an update signed by the same publisher. A `.deb` install says when a new version is out and links to the download page: it never installs anything itself. Not yet tried: an update installed on Windows.
 
 ## 0.3.0-alpha.7 · 2026-11-21
 - **Find loops.** On an Audio cue's Time & Loops tab, **Find loops** listens to the sound and adds up to four loop regions that go round cleanly, on its bar lines when it has a tempo, spread over the track. Undo takes them away. It runs only when asked.

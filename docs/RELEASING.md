@@ -65,31 +65,49 @@ orb -m ec-linux -u root bash -c 'apt-get update && apt-get install -y build-esse
 orb -m ec-linux bash -lc 'git clone /path/to/endless_cues ~/ec && cd ~/ec && npm ci && node bin/release.js linux'
 ```
 
-`dist-linux.noindex/` then holds both files and `release.json`; copy that folder back here. Before publishing, put the
-packaged app through the end-to-end run in the VM (`./Endless-Cues-…-linux-x64.AppImage --appimage-extract-and-run
---smoke --no-sandbox` under `xvfb-run`, with `EC_FIXTURES` pointing at the checkout's `test/fixtures`). Not signed
-(an AppImage has no such thing; the page gives the checksums), and no update feed yet: `publish --linux`, then
-`site`, which adds the Linux buttons (`/download/linux`, `/download/linux-deb`).
+`dist-linux.noindex/` then holds both files, the update feed `latest-linux.yml` (`latest-linux-arm64.yml` from an
+Arm computer: electron-updater asks for that name) and `release.json`; copy that folder back here. Before publishing,
+put the packaged app through the end-to-end run in the VM (`./Endless-Cues-…-linux-x64.AppImage
+--appimage-extract-and-run --smoke --no-sandbox` under `xvfb-run`, with `EC_FIXTURES` pointing at the checkout's
+`test/fixtures`). Not signed (an AppImage has no such thing; the page gives the checksums). `publish --linux` (or
+`--channel test`, `--dry-run`) uploads as the Mac's publish does: the AppImage and the `.deb`, each checked by its
+size where it is served, then the feed, uncached and read back, and the test feed moved on; it refuses a build with
+uncommitted changes or a feed that does not name the AppImage. Then `site`, which adds the Linux buttons
+(`/download/linux`, `/download/linux-deb`).
+
+- **The AppImage updates itself** (electron-updater's AppImageUpdater): it downloads the new AppImage beside the old
+  one, and on quit (or Restart now) puts it in the old one's place, under the new version's name, and opens it.
+- **A `.deb` install does not.** electron-updater's own DebUpdater would run `dpkg` as an administrator, which is
+  the package manager's job. A copy that is not an AppImage (there is no `APPIMAGE` in its environment) reads the
+  same feed, and when it offers a newer version says "Version … is out." with **Download page**, which opens
+  endlesscues.com in the browser; nothing is downloaded or installed (`feedReader` in `core/update/updates.ts`).
+  `EC_UPDATE_AS=page` makes any copy behave so, to try it.
 
 ## Windows
 
 Installers to download, built from the same commit as the Mac's (any computer will do: electron-builder makes NSIS
 installers on a Mac without Wine), and signed there too, through Azure Artifact Signing (below). Unsigned, Windows
 SmartScreen says "Windows protected your PC" the first time; the site says how past it (More info ▸ Run anyway).
-**No update feed**: an installed copy checks,
-finds no `latest.yml`, and says the server has no version for this computer yet.
+An installed copy updates from `latest.yml` (below), signed builds only.
 
 1. `node bin/release.js win` builds `dist-win.noindex/Endless-Cues-<version>-win-x64-setup.exe` and
-   `…-win-arm64-setup.exe` (one installer an architecture; a combined one is twice the download) and
-   `dist-win.noindex/release.json`. Each installs for the person alone, without an administrator, under
+   `…-win-arm64-setup.exe` (one installer an architecture; a combined one is twice the download), a `.blockmap`
+   beside each, the feed `latest.yml` and `dist-win.noindex/release.json`. electron-builder writes a `latest.yml`
+   for each architecture's build, each naming only its own installer; `release.ts` writes the one feed from both
+   installers (checked against the hashes electron-builder gave them). One feed serves both, because
+   electron-updater's NsisUpdater takes, of the installers a feed names, the one whose name has its own architecture
+   (`x64` or `arm64`: `findFile` in its `providers/Provider.js`). Each installs for the person alone, without an administrator, under
    `%LOCALAPPDATA%\Programs`. With `EC_WIN_SIGNING` set it signs (below); without it, it says it did not.
 2. Try it on Windows: `endless_cues_service/winbox/winbox install dist-win.noindex/<x64 installer>` installs it on the
    test box and runs the installed app through the end-to-end check.
-3. `node bin/release.js publish --win` (or `--channel test`, `--dry-run`) uploads the installers, each checked by its
-   size where it is served, through Cloudflare's cache as a downloader gets it. It refuses a build with uncommitted
-   changes, or one signed with a test certificate; unsigned is allowed, since nothing installs it unasked. Publishing
-   over files of the same names (the same version signed, say) leaves the old ones in the cache for up to four
-   hours: publish then says so, and Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge clears those addresses.
+3. `node bin/release.js publish --win` (or `--channel test`, `--dry-run`) uploads as the Mac's publish does: the
+   installers, then the blockmaps, each checked by its size where it is served, through Cloudflare's cache as a
+   downloader gets it; then `latest.yml`, uncached and read back; then the test feed moved on. It refuses a build with
+   uncommitted changes, one signed with a test certificate, and a feed that does not name both installers. An
+   **unsigned** build is published as downloads only: the installers go up and no feed is changed, so no installed
+   copy is ever offered it. Publishing over files of the same names (the same version signed, say) leaves the old
+   ones in the cache for up to four hours: publish then says so, and Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom
+   Purge clears those addresses.
 4. `node bin/release.js site --base https://downloads.endlesscues.com/` writes Windows beside the Mac: buttons
    (`/download/windows`, `/download/windows-arm64`), the SmartScreen note, and the checksums (`Get-FileHash`).
    A platform with no build here keeps what the site already offers, so the Mac and Windows can be released apart.
@@ -124,7 +142,17 @@ EC_WIN_SIGNING="eus.codesigning.azure.net <account> <certificate profile>" node 
 ```
 
 It asks `az` for an hour's signing token and gives it to jsign by the variable's name, never on a command line.
-`release.json` then says `"signed": true`, and the site says the installer is signed. A new certificate has no
+`release.json` then says `"signed": true`, and the site says the installer is signed.
+
+**The publisher updates are checked against.** A signed build is given `win.signtoolOptions.publisherName` (the
+certificate's subject name, its CN: `JESHUA ALEXIS BRATMAN`, or `EC_WIN_PUBLISHER`), which electron-builder writes
+into the app's `resources/app-update.yml`. An installed signed copy then asks Windows (`Get-AuthenticodeSignature`)
+about each downloaded installer and refuses one that is not validly signed under that name. Artifact Signing's
+certificates last days, not years, but the name in them stays the same, so the name is what is checked. `release.ts
+win` refuses a signed build whose `app-update.yml` lacks the name, or whose installers' signatures do not contain it.
+If the name ever changes (a new identity validation, an organisation), every signed copy already installed will refuse
+the update: they would need the new installer by hand. An unsigned build has no `publisherName`, so an unsigned copy
+would take any update; that is why an unsigned build is never put on the feed. A new certificate has no
 reputation with SmartScreen yet, so the site still says how past the warning until it has.
 
 To try the signing path without Azure: a certificate of your own (`openssl req -x509 … -addext
@@ -135,7 +163,8 @@ EC_WIN_SIGN_P12_PASS=<its password> node bin/release.js win --x64-only`. Windows
 
 ## Updates
 
-An installed app reads `latest-mac.yml` from `https://downloads.endlesscues.com/`, or from
+An installed app reads its platform's feed (`latest-mac.yml`, `latest.yml` on Windows, `latest-linux.yml` or
+`latest-linux-arm64.yml` on Linux) from `https://downloads.endlesscues.com/`, or from
 `…/test/` with Settings ▸ General ▸ Test versions on: once a day in Edit mode with nothing playing, and on Help ▸
 Check for Updates…. A newer version there is offered in one line in the title bar; nothing is downloaded until the
 person presses Download, and it installs when they quit (or press Restart now). The rules are in
@@ -143,6 +172,11 @@ person presses Download, and it installs when they quit (or press Restart now). 
 
 - **macOS installs only a build signed by the same Developer ID as the one running.** An unsigned build can find and
   download an update and then be refused; never publish one (`publish` will not).
+- **Windows** (NSIS, `latest.yml`): a signed copy takes only an installer signed by the same publisher name (above);
+  the download is refused before anything is installed, and the line says so. Install on quit and Restart now run the
+  installer silently (`/S`, the same folder) and open the new version.
+- **Linux**: the AppImage updates itself from `latest-linux.yml`; a `.deb` install only says a version is out and
+  links to the download page (above, "Linux").
 - The feed's version is compared as semver: `0.3.0-alpha.10` is after `0.3.0-alpha.9`, and `0.3.0` after every
   `0.3.0-…`. An older version on the feed is never offered (no downgrades).
 - Each check is one GET of the feed's file. electron-updater's per-computer id (for staged roll-outs, unused here) is
@@ -150,14 +184,18 @@ person presses Download, and it installs when they quit (or press Restart now). 
 - A version that must not spread: upload the previous version's `latest-mac.yml` over the feed (its files are still
   in the bucket; keep each release's feed file, from `dist.noindex/`, before deleting the folder). Nobody else is
   offered the bad one; whoever has it keeps it until a newer version is published.
-- Windows (NSIS, `latest.yml`) and Linux (AppImage, `latest-linux.yml`) feeds are written by the same configuration,
-  but neither platform is offered, `publish` uploads only the Mac's files, and no update has run on either.
+- No update has yet been installed on Windows. On Linux, an AppImage update from one local build to the next was run
+  in a VM against a local feed (below).
 - To try the updater without publishing: build (`EC_UNSIGNED=1 node bin/release.js mac --arm64-only`), serve a folder
   holding that zip, its blockmap and a copy of `latest-mac.yml` with a higher `version:` (`python3 -m http.server 8765
   --bind 127.0.0.1`), and start a test session with `EC_UPDATE_FEED=http://127.0.0.1:8765/ node bin/ec-user.js
   .scratch/u start`, then Help ▸ Check for Updates… and Download. Run from source, it gets as far as the download
   and macOS's installer then refuses it (the running app is Electron, not the build): that is the end of what can
   be tried without two signed builds.
+- On Linux the whole of it can be tried: build twice in the VM (the second time with a higher `version` in
+  `package.json`), serve the second `dist-linux.noindex/` (`python3 -m http.server 8765 --bind 127.0.0.1`), and open
+  the first AppImage with `EC_UPDATE_FEED=http://127.0.0.1:8765/` (under `xvfb-run`, `--no-sandbox`): it checks by
+  itself after a few seconds, Download fetches the new AppImage, and quitting puts it in place.
 
 ## Signing
 
@@ -203,5 +241,6 @@ it, and an app without it plays on Web Audio.
 
 ## Windows and Linux
 
-`npm run dist:win` and `npm run dist:linux` exist and have never been run to a working app. Neither is offered until a
-person has launched one and run a show's worth of cues on it (`docs/specs/10-cross-platform.md` lists what to check).
+Build them with `node bin/release.js win` and `node bin/release.js linux` (above), not `npm run dist:win` or
+`npm run dist:linux`: those make electron-builder's own files, with a `latest.yml` for one architecture only.
+`docs/specs/10-cross-platform.md` lists what a person must check on each.
