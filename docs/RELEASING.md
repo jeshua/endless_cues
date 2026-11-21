@@ -145,7 +145,7 @@ It asks `az` for an hour's signing token and gives it to jsign by the variable's
 `release.json` then says `"signed": true`, and the site says the installer is signed.
 
 **The publisher updates are checked against.** A signed build is given `win.signtoolOptions.publisherName` (the
-certificate's subject name, its CN: `JESHUA ALEXIS BRATMAN`, or `EC_WIN_PUBLISHER`), which electron-builder writes
+certificate's subject name, its CN: `Jeshua Bratman`, as Azure issues it, or `EC_WIN_PUBLISHER`), which electron-builder writes
 into the app's `resources/app-update.yml`. An installed signed copy then asks Windows (`Get-AuthenticodeSignature`)
 about each downloaded installer and refuses one that is not validly signed under that name. Artifact Signing's
 certificates last days, not years, but the name in them stays the same, so the name is what is checked. `release.ts

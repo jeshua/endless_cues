@@ -322,7 +322,7 @@ const WIN_FEED = 'latest.yml';
 /** Linux's feed for an architecture, as electron-updater asks for it: latest-linux.yml for x64, …-arm64.yml for Arm. */
 const linuxFeed = (arch: string) => `latest-linux${arch === 'x64' ? '' : `-${arch}`}.yml`;
 /** The publisher a signed Windows build's update must be signed by: the Azure certificate's subject name (its CN). */
-const WIN_PUBLISHER = () => process.env.EC_WIN_PUBLISHER || 'JESHUA ALEXIS BRATMAN';
+const WIN_PUBLISHER = () => process.env.EC_WIN_PUBLISHER || 'Jeshua Bratman';
 /** A file's SHA-512, as an update feed gives it (base64). */
 const sha512Of = (file: string) => crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64');
 
