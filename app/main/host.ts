@@ -41,7 +41,7 @@ import * as oscCommands from '../../core/net/commands';
 import { createTransport } from '../../core/timecode/transport';
 import type { LtcCmd } from '../../core/timecode/transport';
 import type { createAssistant, AssistantView } from '../../core/assistant/assistant';
-import type { Cue, CueList, CueType, Modules, ShowDoc } from '../../core/show/types';
+import type { Cue, CueList, CueType, Modules, Region, ShowDoc } from '../../core/show/types';
 import type { Problem } from '../../core/show/show';
 import type { FieldChange } from '../../core/show/diff';
 import type { TriggerRow } from '../../core/show/triggers';
@@ -53,6 +53,9 @@ const MODULES: ModuleDef[] = [require('./modules/osc-control') as typeof import(
 
 const TICK_MS = 100;
 import { tempoMap, editTempo, MIN_CONFIDENCE } from '../../core/audio/tempo';
+import type { TempoIn } from '../../core/audio/tempo';
+import { findLoops } from '../../core/audio/loops';
+import type { FoundLoop } from '../../core/audio/loops';
 import * as clipboard from '../../core/show/clipboard';
 import * as templates from '../../core/show/templates';
 import * as routing from '../../core/audio/routing';
@@ -116,6 +119,7 @@ interface Commands {
   'mark-here': { id: string };
   arm: { id: string };
   'tempo-find': { ids?: string[] | null; again?: boolean };
+  'loops-find': { id: string };
   'tempo-edit': { id: string; edit: Parameters<typeof editTempo>[1] & { do?: string } };
   'tempo-of': { file?: string };
   fire: {};
@@ -199,7 +203,7 @@ export type HostOp = HostCommand['op'];
 /** What a command answers: `{ error }` when it is refused, otherwise what that op says (an IPC payload to the window). */
 export type HostResult = { error?: string; [field: string]: any };
 /** The ops whose answer may come later: they wait for the audio window, a device, a person or a model (a refusal comes at once). */
-type LaterOp = 'tempo-find' | 'osc-learn' | 'midi-learn' | 'media-clean' | 'ask' | 'device-ask' | 'rig-check' | 'import' | 'point' | 'rig-scan';
+type LaterOp = 'tempo-find' | 'loops-find' | 'osc-learn' | 'midi-learn' | 'media-clean' | 'ask' | 'device-ask' | 'rig-check' | 'import' | 'point' | 'rig-scan';
 /** What the audio window says (app/audio/audio.ts `report`), by `type`. */
 export type AudioEvent =
   | { type: 'ready' }
@@ -381,6 +385,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   const mixLevels = new Map<string, number>();        // bus -> the level a Mix cue has taken it to (until Reset, or a hand on its knob)
   const tempos = new Map<string, Found>();         // file -> what was found in it: { bpm, first, confidence, others } | null (kept in a cue only when asked)
   const tempoWaits = new Map<string, ((found: Found) => void)[]>();     // file -> the callers waiting for its sound to come back from the audio window
+  const pcmWaits = new Map<string, ((pcm: { samples: Float32Array; rate: number } | null) => void)[]>();     // file -> the callers waiting for the sound itself (Find loops)
   // every OSC message in or out goes through the hub: one monitor, and each patch knows how it is doing
   const hub = createHub({ log: (l) => log(`[network] ${l}`), changed: () => schedulePush(), dryRun: smoke && !net });
   let triggers: ReturnType<typeof oscTriggers> = [];                // [{ id, address, args }]: cues an incoming OSC message fires
@@ -1026,6 +1031,8 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
         // (what kind of sound it is, from the same reading: asked for when a sound is added)
         if (ev.samples && guessWanted.delete(ev.file)) { try { kindGuess.set(ev.file, kinds.guessKind(ev.samples, ev.rate, { tempo: found })); } catch (err) { log(`[kinds] ${ev.file}: ${(err as Error).message}`); } }
         settleTempo(ev.file, found);
+        for (const done of pcmWaits.get(ev.file) || []) done(ev.samples ? { samples: ev.samples, rate: ev.rate! } : null);
+        pcmWaits.delete(ev.file);
         break;
       }
       case 'peaks': peaks.set(ev.bins && ev.bins !== PEAK_BINS ? `${ev.file}|${ev.bins}` : ev.file, ev.peaks ? { peaks: ev.peaks, rms: ev.rms || null } : null); schedulePush(); break;
@@ -1072,6 +1079,38 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       try { audioCmd({ op: 'pcm', file, bytes: fs.readFileSync(abs) }); } catch { settleTempo(file, null); return; }
       setTimeout(() => { if (tempoWaits.has(file)) { tempoWaits.delete(file); for (const done of waiting) done(null); } }, 90000);
     });
+  }
+  /** A file's sound, as the audio window decodes it for the tempo (mono, 11 kHz): asked for each time, not kept. */
+  function pcmIn(file: string): Promise<{ samples: Float32Array; rate: number } | null> {
+    const abs = playPath(file);
+    if (!abs || !fs.existsSync(abs) || !audioWin) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const waiting = pcmWaits.get(file) || [];
+      waiting.push(resolve); pcmWaits.set(file, waiting);
+      if (waiting.length > 1) return;
+      try { audioCmd({ op: 'pcm', file, bytes: fs.readFileSync(abs) }); } catch { pcmWaits.delete(file); resolve(null); return; }
+      setTimeout(() => { if (pcmWaits.get(file) === waiting) { pcmWaits.delete(file); for (const done of waiting) done(null); } }, 90000);
+    });
+  }
+  /** Find loop regions that go round cleanly in one Audio cue's sound (core/audio/loops.ts), on its beat grid if it
+   *  has one (or one found now, not kept), and add them to its loop regions as one edit. Only when asked. */
+  async function findLoopsIn(id: string) {
+    const cue = show.index(document.doc).byId.get(id);
+    if (!cue || cue.type !== 'audio' || !cue.file) return { error: 'Find loops works on an Audio cue with a file.' };
+    const pcm = await pcmIn(cue.file);
+    if (!pcm) return { error: 'The sound could not be read.' };
+    let tempo: TempoIn | null = cue.tempo || null;
+    if (!tempo) { const t = tempos.get(cue.file) ?? (() => { try { return tempoMap(pcm.samples, pcm.rate); } catch { return null; } })(); tempo = t && t.confidence >= MIN_CONFIDENCE ? t : null; }
+    const own: Region[] = Array.isArray(cue.loops) ? cue.loops : [];
+    const found = findLoops(pcm.samples, pcm.rate, { tempo, from: Number(cue.from) || 0, to: cue.cutAt != null ? Number(cue.cutAt) : null, max: 4 })
+      .filter((g) => !own.some((o) => Math.min(o.end, g.end) - Math.max(o.start, g.start) > 0.25 * Math.min(o.end - o.start, g.end - g.start)));
+    log(`[loops] ${cue.file}: ${found.map((g) => `${g.start}–${g.end} (${g.score})`).join(', ') || 'none'}`);
+    if (!found.length) { notice('No clean loops found in this sound. Draw one on its waveform instead.', 6000); return { found: 0 }; }
+    const name = (g: FoundLoop) => (g.bars ? `${g.bars} bars` : `${Math.round(g.end - g.start)} s`);
+    const loops = [...own, ...found.map((g) => ({ start: g.start, end: g.end, name: name(g) }))].sort((p, q) => p.start - q.start);
+    document.edit([{ op: 'cue.set', id, props: { loops } }], { label: found.length === 1 ? 'loop found' : `${found.length} loops found` });
+    notice(`${found.length} loop${found.length === 1 ? '' : 's'} found${tempo ? ', on the beat grid' : ''}. Hold one with L or a click; undo takes them away.`, 7000);
+    return { found: found.length, loops: found };
   }
   /** Find the tempo of the audio cues named (or of every one that has none), and keep what is found as one edit. */
   async function findTempos({ ids = null, again = false }: { ids?: string[] | null; again?: boolean } = {}) {
@@ -1246,7 +1285,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
 
   // ── commands ──────────────────────────────────────────────────────────
   // What Show mode locks. Riding the mixer and saving are part of running a show, so they are not here.
-  const EDITS = new Set<string>(['fade-from-target', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
+  const EDITS = new Set<string>(['fade-from-target', 'relink', 'edit', 'undo', 'redo', 'import', 'accept', 'restore-version', 'restore-backup', 'settings-import', 'revert', 'unset', 'tempo-find', 'loops-find', 'clip-paste', 'clip-props', 'retarget', 'template', 'tempo-edit', 'media-clean', 'mark-here', 'prop-files', 'agent-guide']);
   const cmdListeners = new Set<CmdListener>();   // told each command once it is done (a module reporting "pause all", "panic")
   function cmd<C extends HostCommand>(c: C): ResultOf<C> {
     const before: Playhead = { playhead: engine.playhead };
@@ -1348,6 +1387,7 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'arm': engine.toggleArm(c.id); break;
       // preview (V): the cue alone, where the playhead is
       case 'tempo-find': return findTempos(c).catch((err) => ({ error: err.message }));
+      case 'loops-find': return findLoopsIn(c.id).catch((err) => ({ error: err.message }));
       // a tempo changed by hand in the Clip view: a section's bpm or beats in a bar, "1 is here", a new section (core/audio/tempo.ts)
       case 'tempo-edit': {
         const cue = show.index(document.doc).byId.get(c.id);

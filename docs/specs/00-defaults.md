@@ -19,6 +19,7 @@ Three rules follow from that:
 `core/audio/tempo.ts` runs only when a person asks, for the sounds they ask about:
 
 - **Time & Loops ▸ Tempo ▸ Find the tempo** on one Audio cue, or **Find the tempo** in the Playing strip while it plays (that sound only).
+- **Time & Loops ▸ Loop regions ▸ Find loops** on one Audio cue (that sound only; what it finds is added as loop regions, one edit).
 
 Nothing looks for a tempo when a sound is added, when a workspace is imported, when a show is opened or when a view
 is opened. What is found is written to the cue (`tempo`) as one undoable edit and travels with the show.
@@ -32,6 +33,7 @@ These are the cue list's own, because a show needs them:
 | The waveform of what is playing | The Playing strip under the list: the longest sound playing, or the selected cue if it is playing (select a running cue to look into it). With a tempo: a light line at each bar, and the bar and beat counted beside the time. Also its Time & Loops tab. |
 | Pause or stop one running cue | Active Cues: each sound has its own ❙❙ and ■ (■ fades it out; again, or with Shift, stops dead). The Playing strip has Pause and Stop for the sound it shows. |
 | Go round from here, with no region drawn (stalling) | The Playing strip's row: **Loop 1 2 4 8 bars** from the beat the track is on, when the sound has a tempo; under **More**, 1 or 2 beats, or 2 4 8 16 seconds for a sound with none. **Let go** in the same place, or **L**. (`op: 'loop', free: true`.) |
+| Go round a stretch dragged on the waveform | A drag across the Playing strip's waveform: it goes round at once, its ends on the nearest beats (⇧: where they were let go), until let go (**Let go**, **L**). **Keep** (Edit mode) makes it one of the sound's loop regions. (`op: 'loop', free: true`.) |
 | Hold a planned loop and let it go | A loop region drawn on Time & Loops: **L**, the "⟳ hold next / let go" chip in Active Cues, or a click on the region's block over the waveform. **H** holds the section the track is in. A Devamp cue lets go from the list. |
 | Move to another place in a track | Click the waveform in the Playing strip to mark a place, then **Skip** (at once) or **Fade to** (a 1.5 s crossfade inside the track). Each marker of the sound has a button in the row (click: skip; Shift: crossfade). **+ here** (More; Edit mode) keeps a marker where the track is. A Jump cue does it from the list. |
 | …on the bar | **On the bar** (More; a sound with a tempo): a skip or a crossfade from the strip leaves on the track's own next bar line and lands on the bar line nearest the place (`seek` / `fadeto` with `on: 'bar'`; `engine.moveOnGrid`). Off as it comes. |
@@ -57,6 +59,7 @@ mode; keeping a marker and finding or correcting a tempo are edits and wait for 
 | "Fade & stop others" on a cue or group | Off (0) | The cue, under More | |
 | A Fade cue stopping its target when it is done | **On for a fade to silence** (to the show's floor or below, not relative, not a voice-band duck), off for any other; the cue's own "Stop target when done" wins when it is set (`stopTarget`; `cue-types.ts` `stopsTarget`) | The Fade cue's switch | QLab leaves a faded sound playing at −∞ unless asked; an imported QLab fade carries QLab's own setting, so it plays as it did there. |
 | Tempo and beat analysis | Never by itself | Find the tempo: Time & Loops, the Playing strip | |
+| Finding loops in a sound | Never by itself | Find loops: Time & Loops ▸ Loop regions | |
 | Quantise on a group | Off (`onBeat` 'now') | The group, under More | |
 | A skip or crossfade from the Playing strip waiting for the bar | Off ("on the bar" unticked; kept by the window, not the show) | The Playing strip, under More | |
 | A new long sound put on the Music bus by its length | **Off** (`settings.editing.longSoundsToMusic`) | Settings ▸ Show ▸ Long sounds go on the Music bus; show | A sound added with no bus chosen goes on the bus every Audio cue starts on (Effects, or the show's Audio template). |

@@ -5,6 +5,8 @@
  *   the Playing strip   go round the next seconds or bars from here with no region drawn, and let go (the button, L);
  *                       bar lines and the bar.beat count once the sound has a tempo; "+ here"; a marker's button,
  *                       at once and on the bar
+ *   …                   a stretch dragged across its waveform goes round at once, and Keep makes it a region
+ *   Find loops          loop regions found in the sound, on its bar lines; one Undo takes them away
  *   Time & Loops        a found tempo corrected where it is found (half, double, beats in a bar, "1 is here", a change of tempo)
  *   a group's Quantise  a GO lands on the playing track's bar line
  *
@@ -145,6 +147,30 @@ async function rescue({ host, win, check, until, page, sleep, shot }: Pick<Smoke
   await click('.inspector [data-tempofix] [data-join]');
   check('…which takes it away', await until(() => !(cueOf(id).tempo!.sections || []).length, 2000), cueOf(id).tempo);
   await shot('21-rescue-tempo-fix');
+
+  // a stretch dragged across the strip's waveform goes round at once (on the beats), Keep makes it a region; Find loops
+  host.cmd({ op: 'panic', hard: true });
+  await sleep(150);
+  const loopsBefore = (cueOf(id).loops || []).length;
+  host.cmd({ op: 'start', id });
+  await until(() => act(id) && has('.playing .wave'), 4000);
+  const drag = (from: number, to: number) => page<boolean>(`(() => { const w = document.querySelector('.playing .wave'); if (!w) return false; const r = w.getBoundingClientRect(), y = r.top + r.height / 2, at = (f) => r.left + r.width * f;
+    const ev = (type, f) => w.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: at(f), clientY: y, button: 0, pointerId: 7, isPrimary: true }));
+    ev('pointerdown', ${from}); ev('pointermove', (${from} + ${to}) / 2); ev('pointermove', ${to}); ev('pointerup', ${to}); return true; })()`);
+  await drag(0.5, 0.6);
+  const total = act(id)!.total;
+  check('a stretch dragged across the Playing strip’s waveform goes round at once, its ends on the beats', await until(() => { const a = act(id); const g = a && a.region; return !!g && (a!.holding || (a!.armed || []).length > 0) && Math.abs(g.start - total * 0.5) < 0.5 && Math.abs(g.end - total * 0.6) < 0.5 && Math.abs(((g.start - 0.25) / 0.5) - Math.round((g.start - 0.25) / 0.5)) < 0.01; }, 3000), act(id) && act(id)!.region);
+  const swept = act(id)!.region!;
+  check('…and Keep (Edit mode) makes it one of the sound’s loop regions', await until(() => has('.playing [data-keep-loop]'), 2000) && await click('.playing [data-keep-loop]') && await until(() => (cueOf(id).loops || []).some((g) => Math.abs(g.start - swept.start) < 0.01 && Math.abs(g.end - swept.end) < 0.01), 2000), cueOf(id).loops);
+  await click('.playing [data-letgo]');
+  host.cmd({ op: 'panic', hard: true });
+  await sleep(150);
+  const found = await host.cmd({ op: 'loops-find', id });
+  check('Find loops adds loop regions that go round cleanly, on the bar lines, named by their length (a steady click: all of it)', !!found && found.found >= 1 && (cueOf(id).loops || []).length === loopsBefore + 1 + found.found && found.loops.every((g: { start: number; end: number; bars?: number }) => g.bars && g.end - g.start >= 6 && Math.abs(((g.start - 0.25) / 0.5) - Math.round((g.start - 0.25) / 0.5)) < 0.01) && (cueOf(id).loops || []).some((g) => /bars$/.test(g.name || '')), { found, loops: cueOf(id).loops });
+  host.cmd({ op: 'undo' });
+  check('…and one Undo takes them all away', await until(() => (cueOf(id).loops || []).length === loopsBefore + 1, 2000), cueOf(id).loops);
+  host.cmd({ op: 'start', id });
+  await until(() => act(id) && has('.playing .wave'), 4000);
 
   // the strip in a narrow window: nothing runs off its edge
   win.setSize(1000, 700);

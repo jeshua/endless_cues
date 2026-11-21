@@ -22,12 +22,15 @@ const peaksCache = new Map<string, Peaks | null>();        // file -> { peaks, r
 
 export interface WaveformProps {
   file?: string; duration: number; position?: number | null; markers?: Marker[]; loops?: Span[]; active?: Sounding | null; from?: number; cutAt?: number;
-  onSeek?: (t: number) => void; onLoop?: (g: Span) => void; small?: boolean; pin?: number | null; bars?: number[]; tall?: boolean; envelope?: Envelope | null;
+  onSeek?: (t: number) => void; onLoop?: (g: Span) => void; onRegion?: (g: Span, fine: boolean) => void; small?: boolean; pin?: number | null; bars?: number[]; tall?: boolean; envelope?: Envelope | null;
 }
 
 /** A sound drawn as loudness (RMS) inside its peaks, with a cursor, markers and — above it — the loop lane. */
-export function Waveform({ file, duration, position, markers = [], loops = [], active, from = 0, cutAt, onSeek, onLoop, small, pin = null, bars = [], tall, envelope = null }: WaveformProps) {
+export function Waveform({ file, duration, position, markers = [], loops = [], active, from = 0, cutAt, onSeek, onLoop, onRegion, small, pin = null, bars = [], tall, envelope = null }: WaveformProps) {
   const canvas = useRef<HTMLCanvasElement>(null), box = useRef<HTMLDivElement>(null);
+  // a drag across the waveform (with onRegion): the stretch to go round, drawn as it is made; a click still seeks
+  const [sweep, setSweep] = useState<{ x0: number; x1: number } | null>(null);
+  const swept = useRef(false), drag = useRef<{ x0: number; x1: number } | null>(null);      // (the drag itself in a ref: its events can come faster than a redraw)
   const [data, setData] = useState<Peaks | null | undefined>(file ? peaksCache.get(file) : undefined);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -91,13 +94,18 @@ export function Waveform({ file, duration, position, markers = [], loops = [], a
         title=${onLoop ? (holding ? 'Holding: click to let go' : 'Click to hold here') : `${clock(g.start)}–${clock(g.end)}`}
         onClick=${() => onLoop && onLoop({ start: g.start, end: g.end })}>${holding ? '⟳ ' : ''}${g.name || `Loop ${i + 1}`}</button>`;
     })}</div>`}
-    <div ref=${box} class=${cx('wave', small && 'small', tall && 'tall')} onClick=${(e: MouseEvent) => { if (!onSeek || !(duration > 0)) return; const r = box.current!.getBoundingClientRect(); onSeek(((e.clientX - r.left) / r.width) * duration); }}>
+    <div ref=${box} class=${cx('wave', small && 'small', tall && 'tall')} onClick=${(e: MouseEvent) => { if (swept.current) { swept.current = false; return; } if (!onSeek || !(duration > 0)) return; const r = box.current!.getBoundingClientRect(); onSeek(((e.clientX - r.left) / r.width) * duration); }}
+      onPointerDown=${(e: PointerEvent) => { if (!onRegion || !(duration > 0) || e.button !== 0) return; const r = box.current!.getBoundingClientRect(); try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* a pointer the page did not see go down */ } drag.current = { x0: e.clientX - r.left, x1: e.clientX - r.left }; setSweep(drag.current); }}
+      onPointerMove=${(e: PointerEvent) => { if (!drag.current) return; const r = box.current!.getBoundingClientRect(); drag.current = { ...drag.current, x1: Math.max(0, Math.min(r.width, e.clientX - r.left)) }; setSweep(drag.current); }}
+      onPointerUp=${(e: PointerEvent) => { const g = drag.current; drag.current = null; setSweep(null); if (!g || !onRegion || Math.abs(g.x1 - g.x0) < 6) return; swept.current = true; const w = box.current!.getBoundingClientRect().width, t = (x: number) => (x / w) * duration; onRegion({ start: t(Math.min(g.x0, g.x1)), end: t(Math.max(g.x0, g.x1)) }, e.shiftKey); }}
+      onPointerCancel=${() => { drag.current = null; setSweep(null); }}>
       <canvas ref=${canvas}></canvas>
       ${duration > 0 ? bars.slice(0, 600).map((t, i) => html`<div class=${cx('barline', i % 4 === 0 && 'four')} style=${`left:${pct(t)}`}></div>`) : null}
       ${markers.map((m) => html`<div class="marker" style=${`left:${pct(m.at)}`}><span>${m.name}</span></div>`)}
       ${envelope && envelope.length && duration > 0 && width ? html`<svg class="envline" width=${width} height="100%" viewBox=${`0 0 ${width} 100`} preserveAspectRatio="none" aria-hidden="true">
         <path d=${Array.from({ length: Math.floor(width / 3) + 1 }, (_, i) => { const x = Math.min(width, i * 3), d = Lanes.envelopeAt(envelope, (x / width) * duration); return `${i ? 'L' : 'M'}${x} ${((1 - toPos(d)) * 92 + 4).toFixed(1)}`; }).join(' ')} /></svg>` : null}
       ${position != null && duration > 0 ? html`<div class="cursor" style=${`left:${pct(position)}`}></div>` : null}
+      ${sweep && Math.abs(sweep.x1 - sweep.x0) >= 6 ? html`<div class="sweep" style=${`left:${Math.min(sweep.x0, sweep.x1)}px;width:${Math.abs(sweep.x1 - sweep.x0)}px`}></div>` : null}
       ${pin != null && duration > 0 ? html`<div class="pin" style=${`left:${pct(pin)}`}><span>${clock(pin)}</span></div>` : null}
       ${!data && file ? html`<div class="nothing" style="padding:0;position:absolute;inset:0;display:grid;place-items:center">${data === null ? 'No waveform for this file' : 'Reading the waveform…'}</div>` : null}
     </div>
@@ -161,6 +169,12 @@ export function Playing({ s, byId, selected }: { s: State; byId: CueIndex; selec
   const nameOf = (g: Span) => { const n = beat ? (g.end - g.start) / beat : 0, bars = n / (sec ? sec.bar : 4); return beat ? (Math.abs(bars - Math.round(bars)) < 0.01 && bars >= 1 ? `${Math.round(bars)} bar${Math.round(bars) === 1 ? '' : 's'}` : `${Math.round(n * 4) / 4} beat${Math.abs(n - 1) < 0.01 ? '' : 's'}`) : `${Math.round((g.end - g.start) * 10) / 10} s`; };
   const lane = [...(a.loops || []), ...free.filter((g, i) => !free.slice(0, i).some((y) => near(y, g))).map((g) => ({ ...g, name: nameOf(g) }))];
   const looping = a.holding || (a.armed || []).length > 0;
+  // a stretch dragged on the waveform goes round at once, its ends on the nearest beats (⇧: where they were let go)
+  const onBeat = (t: number) => { const q = sectionAt(cue.tempo, t); if (!q) return t; const b = 60 / q.bpm; return Math.round((q.first + Math.round((t - q.first) / b) * b) * 1000) / 1000; };
+  const sweepLoop = (g: Span, fine: boolean) => { const s0 = fine ? g.start : onBeat(g.start), e0 = fine ? g.end : onBeat(g.end); if (e0 - s0 >= 0.2) cmd({ op: 'loop', id: a.id, region: { start: Math.round(s0 * 1000) / 1000, end: Math.round(e0 * 1000) / 1000 }, free: true }); };
+  // a stretch going round that is not one of the cue's own regions can be kept as one (Edit mode)
+  const keep = free.find((g) => near(g, a.region)) || null;
+  const keepIt = () => { if (keep && x) setCue(a.id, { loops: [...(cue.loops || []), { start: keep.start, end: keep.end, name: nameOf(keep) }].sort((p, q) => p.start - q.start) }, 'keep loop region'); };
   const loop = (len: number, inBeats: boolean) => { const g = loopFromHere(cue.tempo, a, len, inBeats); if (g) cmd({ op: 'loop', id: a.id, region: g, free: true }); };
   // a move that waits for the bar says so until it lands (nothing is heard to change for up to a bar)
   const went = (r: Reply, name: string) => { if (!r || !(r.wait > 0.2)) return; clearTimeout(timer.current); setGoing({ id: a.id, text: `→ ${name} on the bar` }); timer.current = setTimeout(() => setGoing(null), r.wait * 1000); };
@@ -182,9 +196,9 @@ export function Playing({ s, byId, selected }: { s: State; byId: CueIndex; selec
       <button class="btn small" onClick=${() => cmd({ op: 'stop', id: a.id })}>Stop</button>
     </div>
     <${Waveform} small file=${a.file} duration=${a.total} position=${a.elapsed} markers=${a.markers || []} loops=${lane} active=${a} from=${0} cutAt=${cue.cutAt} pin=${pin.t} envelope=${cue.envelope}
-      bars=${barsOf(cue.tempo, a.total)} onSeek=${(t: number) => pin.place(on ? nearestBar(cue.tempo, t) : t)} onLoop=${(g: Span) => cmd({ op: 'loop', id: a.id, region: g, free: true })} />
+      bars=${barsOf(cue.tempo, a.total)} onSeek=${(t: number) => pin.place(on ? nearestBar(cue.tempo, t) : t)} onLoop=${(g: Span) => cmd({ op: 'loop', id: a.id, region: g, free: true })} onRegion=${a.stretched ? undefined : sweepLoop} />
     <div class="ptools" data-ptools>
-      ${looping ? html`<button class="btn small standby" data-letgo onClick=${() => cmd({ op: 'hold', id: a.id })} title="Plays this pass out (L)">${a.holding ? 'Let go' : 'Will hold · let go'}</button>`
+      ${looping ? html`<button class="btn small standby" data-letgo onClick=${() => cmd({ op: 'hold', id: a.id })} title="Plays this pass out (L)">${a.holding ? 'Let go' : 'Will hold · let go'}</button>${keep && editMode && x ? html`<button class="btn ghost small" data-keep-loop onClick=${keepIt} title="Keep this stretch as one of the sound’s loop regions">Keep</button>` : null}`
         : sec ? html`<span class="lbl">Loop</span>${LOOP_BARS.map((n) => html`<button class="btn small" data-loop-bars=${n} disabled=${!!a.stretched} onClick=${() => loop(n * sec.bar, true)} title=${noLoop || `Loop ${n === 1 ? '1 bar' : `${n} bars`} from here (L lets go)`}>${n}</button>`)}<span class="lbl">bars</span>` : null}
       ${markers.length ? html`${looping || sec ? html`<span class="sep"></span>` : null}${markers.map((mk: Marker) => html`<button class="btn small" data-marker onClick=${(e: MouseEvent) => toMarker(mk, e.shiftKey)} title=${`Skip to ${clock(mk.at)}${on ? ' on the bar' : ''} (⇧: crossfade)`}>${mk.name}</button>`)}` : null}
       ${looping || sec || markers.length ? html`<span class="sep"></span>` : null}

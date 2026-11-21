@@ -260,6 +260,16 @@ function TimeAndLoops({ cue, s, info }: { cue: Cue; s: State; info: AppInfo }) {
     setFinding(false);
     setTempoSaid(!r || r.error ? '' : r.found ? '' : 'No steady tempo found.');
   };
+  // Find loops: the stretches of this sound that go round cleanly, added as regions (one edit; Undo takes them away)
+  const [looking, setLooking] = useState(false);
+  const [loopsSaid, setLoopsSaid] = useState('');
+  useEffect(() => { setLooking(false); setLoopsSaid(''); }, [cue.id]);
+  const findLoops = async () => {
+    setLooking(true); setLoopsSaid('');
+    const r = await cmd({ op: 'loops-find', id: cue.id });
+    setLooking(false);
+    setLoopsSaid(!r || r.error ? (r && r.error) || '' : r.found ? '' : 'No clean loops found.');
+  };
   const where = typed !== null && Number.isFinite(typed) && typed >= 0 ? typed : (pin.t ?? pos ?? 0);
   const addMarker = () => { setCue(cue.id, { markers: [...markers, { at: r2(where), name: name.trim() || `Marker ${markers.length + 1}` }] }, 'add marker'); setName(''); setAt(''); };
   // a region's count: a number goes round that many times; ∞ goes round until let go; empty waits for L
@@ -295,6 +305,8 @@ function TimeAndLoops({ cue, s, info }: { cue: Cue; s: State; info: AppInfo }) {
         <span class="dim">from</span><input type="text" class="mono" data-region-from style="width:70px" placeholder="0:30" value=${reg.from} onInput=${(e: InputEvent) => setReg({ ...reg, from: (e.target as HTMLInputElement).value })} />
         <span class="dim">to</span><input type="text" class="mono" data-region-to style="width:70px" placeholder="0:38" value=${reg.to} onInput=${(e: InputEvent) => setReg({ ...reg, to: (e.target as HTMLInputElement).value })} onKeyDown=${(e: KeyboardEvent) => { if (e.key === 'Enter') addRegion(); }} />
         <button class="btn small" disabled=${!(parseTime(reg.to) > parseTime(reg.from) && parseTime(reg.from) >= 0)} onClick=${addRegion}>Add region</button>
+        <button class="btn small" data-find-loops disabled=${looking || !cue.file || s.mode === 'show'} onClick=${findLoops} title="Listen for stretches of this sound that go round cleanly, and add them as loop regions">${looking ? 'Listening…' : 'Find loops'}</button>
+        ${loopsSaid ? html`<span class="dim">${loopsSaid}</span>` : null}
         ${markers.length >= 2 && html`<button class="btn small" title="One region between each pair of markers" onClick=${() => setCue(cue.id, { loops: markers.slice(0, -1).map((m, i) => ({ start: m.at, end: markers[i + 1].at, name: m.name })) }, 'loops from markers')}>Make from markers</button>`}
       </div></div>
       ${loops.length ? html`<div class="field wide"><label></label><span class="dim"><b>Round:</b> a number, <b>∞</b> until let go (L), or empty: only on L.</span></div>` : null}

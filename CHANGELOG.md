@@ -21,6 +21,8 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **Find loops.** On an Audio cue's Time & Loops tab, **Find loops** listens to the sound and adds up to four loop regions that go round cleanly, on its bar lines when it has a tempo, spread over the track. Undo takes them away. It runs only when asked.
+- **Drag a stretch on the Playing strip to loop it.** While a sound plays, drag across its waveform under the list: that stretch goes round at once (its ends on the beats; ⇧ for exactly where you let go) until you let go. In Edit mode, **Keep** saves it as one of the sound's loop regions.
 - **Licence: GPL-3.0-or-later** (it was the AGPL). The same freedoms; running a changed copy as a service no longer obliges anyone to publish their changes. Versions already published stay under the AGPL.
 
 ## 0.3.0-alpha.6 · 2026-11-18
