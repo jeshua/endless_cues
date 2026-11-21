@@ -48,5 +48,17 @@ async function sign(configuration: { path: string }) {
   if (r.status !== 0) throw new Error(`jsign could not sign ${configuration.path}: ${(r.stderr || r.stdout).trim()}`);
 }
 
+/**
+ * The signature itself (the certificate table's bytes: the signer's certificate and its chain are in it, names as
+ * plain text), or null when there is none. release.ts looks in it for the publisher an update must be signed by.
+ */
+function signatureOf(buf: Buffer) {
+  const size = signatureBytes(buf);
+  if (!size) return null;
+  const pe = buf.readUInt32LE(0x3c), opt = pe + 24, dirs = opt + (buf.readUInt16LE(opt) === 0x20b ? 112 : 96);
+  const at = buf.readUInt32LE(dirs + 4 * 8);
+  return buf.subarray(at, at + size);
+}
+
 export default sign;
-export { jsignArgs, signatureBytes };
+export { jsignArgs, signatureBytes, signatureOf };

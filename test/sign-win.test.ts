@@ -1,7 +1,7 @@
 'use strict';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { jsignArgs, signatureBytes } from '../build/sign-win.js';
+import { jsignArgs, signatureBytes, signatureOf } from '../build/sign-win.js';
 
 test('Windows signing: Azure Artifact Signing by endpoint, account and profile, the token passed by name only', () => {
   const env = { EC_WIN_SIGNING: ' eus.codesigning.azure.net  my-account my-profile ', EC_WIN_SIGN_TOKEN: 'sekrit' };
@@ -42,4 +42,13 @@ test('Windows signing: a program’s signature is found in its header, 64-bit or
   assert.equal(signatureBytes(pe({ size: 4000 })), 0, 'a table running past the end of the file is no signature');
   assert.equal(signatureBytes(Buffer.from('not a program at all, just some words in a file')), 0);
   assert.equal(signatureBytes(Buffer.alloc(0)), 0);
+});
+
+test('Windows signing: the signature’s own bytes, where the publisher’s name is looked for', () => {
+  const buf = pe({ size: 300 });
+  buf.write('CN=A PUBLISHER', 512 + 40, 'latin1');
+  const sig = signatureOf(buf)!;
+  assert.equal(sig.length, 300);
+  assert.ok(sig.includes(Buffer.from('A PUBLISHER')));
+  assert.equal(signatureOf(pe()), null);
 });

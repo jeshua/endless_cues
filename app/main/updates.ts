@@ -9,7 +9,13 @@
  *   update-settings { auto, test }   Settings ▸ General's two switches
  *
  * Which updater:
- *   - an installed app: electron-updater, reading https://downloads.endlesscues.com/ (or …/test/);
+ *   - an installed app: electron-updater, reading https://downloads.endlesscues.com/ (or …/test/): on a Mac its
+ *     MacUpdater (the .zip), on Windows its NsisUpdater (the installer for this computer's architecture, refused
+ *     unless signed by the publisher named in the app's app-update.yml when the running copy was signed), on Linux
+ *     its AppImageUpdater when this is an AppImage (APPIMAGE is set);
+ *   - any other Linux install (a .deb): no updater that installs. It reads the feed's version and, when it is newer,
+ *     says so; its button opens the download page (core/update/updates.ts `feedReader`). electron-updater's own
+ *     DebUpdater would run dpkg as an administrator, which is the person's package manager's job, not this app's;
  *   - run from source: none (it is updated with git), and Help says so;
  *   - a test run: a stand-in in this process that a smoke check scripts (`testHooks`), so no test ever reaches the
  *     network; or, with EC_UPDATE_FEED=http://127.0.0.1:…/, the real electron-updater against that local server
@@ -18,7 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { createUpdates } from '../../core/update/updates';
+import { createUpdates, feedReader, feedFile, PAGE } from '../../core/update/updates';
 import type { Updater, UpdateToken } from '../../core/update/updates';
 import type { App, WebContents } from 'electron';
 import type { Host } from './host';
@@ -40,13 +46,17 @@ export interface AppUpdatesOptions {
   notice?: (text: string, ms?: number) => void;
   quit?: () => Promise<boolean>;
   install?: (updater: Updater) => void;
+  /** opens the download page (a .deb install's one button) */
+  open?: (url: string) => void;
+  /** reads a feed's file (a .deb install's check); null when it is not there */
+  get?: (url: string) => Promise<string | null>;
 }
 /** The test run's stand-in: a feed whose `latest` a smoke check sets, and what it was asked. */
 type StandIn = EventEmitter & Updater & { latest: string; fail: string | null; feeds: string[]; checks: number; installs: number; downloadMs: number };
 /** What is set on electron-updater's own updater before it is used. */
 interface UpdaterKnobs {
   autoDownload?: boolean; autoInstallOnAppQuit?: boolean; allowDowngrade?: boolean; logger?: unknown;
-  forceDevUpdateConfig?: boolean; updateConfigPath?: string | null;
+  forceDevUpdateConfig?: boolean; updateConfigPath?: string | null; disableWebInstaller?: boolean;
 }
 /** The one knob electron-updater's types call protected: the id a check sends for staged roll-outs. */
 interface Staging { stagingUserIdPromise: { value: Promise<string> } }
@@ -78,16 +88,31 @@ function standIn(version: string) {
 }
 const standInToken = (): StandInToken => ({ cancel() { if (this.onCancel) this.onCancel(); } });
 
-function createAppUpdates({ app, host, getConfig, saveConfig, log, version, test = false, views = () => [], notice = () => {}, quit = async () => true, install = () => {} }: AppUpdatesOptions) {
+/**
+ * How this copy updates: 'self' (electron-updater installs over it: a Mac app, a Windows install, an AppImage) or
+ * 'page' (a .deb, or any other Linux install that is not an AppImage: a new version is only said, with a link).
+ */
+function howItUpdates(platform: string, env: { APPIMAGE?: string; EC_UPDATE_AS?: string }) {
+  if (env.EC_UPDATE_AS === 'page' || env.EC_UPDATE_AS === 'self') return env.EC_UPDATE_AS;     // (a test's choice)
+  return platform === 'linux' && !env.APPIMAGE ? 'page' : 'self';
+}
+
+function createAppUpdates({ app, host, getConfig, saveConfig, log, version, test = false, views = () => [], notice = () => {}, quit = async () => true, install = () => {},
+  open = () => {}, get = async () => null }: AppUpdatesOptions) {
   const env = process.env;
   const say = (l: string) => log(`[update] ${l}`);
   let updater: Updater & UpdaterKnobs, token: () => UpdateToken | null = () => null, enabled = true, fake: StandIn | null = null;
+  const how = howItUpdates(process.platform, env);
   if (test && !env.EC_UPDATE_FEED) { updater = fake = standIn(version); token = standInToken; }
   else if (!app.isPackaged && !env.EC_UPDATE_FEED) { updater = new EventEmitter() as unknown as Updater; enabled = false; }      // (never asked: `enabled` is false)
+  else if (how === 'page') updater = feedReader({ version, file: feedFile(process.platform, process.arch), get });
   else {
     const eu = require('electron-updater') as typeof import('electron-updater');
     const { CancellationToken } = require(require.resolve('builder-util-runtime', { paths: [path.dirname(require.resolve('electron-updater'))] }));
-    updater = eu.autoUpdater;
+    // (on Linux, the AppImage's own updater by name: electron-updater would pick its DebUpdater were the build's
+    // resources to carry a "package-type" of deb, and that one installs with dpkg as an administrator)
+    updater = process.platform === 'linux' ? new eu.AppImageUpdater() : eu.autoUpdater;
+    updater.disableWebInstaller = true;           // (Windows: the full installer, never a web installer)
     token = () => new CancellationToken();
     updater.autoDownload = false;                 // never without the person's Download
     updater.autoInstallOnAppQuit = true;          // once downloaded, it goes in when the app quits ("will install when you quit")
@@ -105,8 +130,10 @@ function createAppUpdates({ app, host, getConfig, saveConfig, log, version, test
 
   const tell = (state: Parameters<NonNullable<Parameters<typeof createUpdates>[0]['told']>>[0]) => { for (const wc of views()) { try { wc.send('ec-update', state); } catch { /* closing */ } } };
   const mode = () => { try { return host.snapshot(false).mode; } catch { return 'show'; } };
+  const installs = test && !env.EC_UPDATE_FEED ? env.EC_UPDATE_AS !== 'page' : how === 'self';
+  if (enabled && !installs) say(`this copy is not an AppImage: a new version is said, with a link to ${PAGE}, and never installed from here`);
   const updates = createUpdates({ updater, token, enabled, version, env, mode, sounding: () => host.isSounding(), getConfig, saveConfig: (c) => saveConfig(c),
-    log: say, told: tell, ask: (t) => notice(t, 6000), quit, install: () => install(updater) });
+    log: say, told: tell, ask: (t) => notice(t, 6000), quit, install: () => install(updater), installs, open, page: PAGE });
 
   let timer: ReturnType<typeof setInterval> | undefined;
   const api = {
@@ -138,4 +165,4 @@ function createAppUpdates({ app, host, getConfig, saveConfig, log, version, test
 export type AppUpdates = ReturnType<typeof createAppUpdates>;
 
 const currentOf = () => current;
-export { createAppUpdates, NOBODY, currentOf as current };
+export { createAppUpdates, howItUpdates, NOBODY, currentOf as current };

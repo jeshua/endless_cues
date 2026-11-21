@@ -10,13 +10,16 @@
  *                                                     SHA-256)
  *   node bin/release.js win [--x64-only|--arm64-only] build the Windows installers (NSIS, one each for 64-bit and
  *                                                     Arm; signed through Azure when EC_WIN_SIGNING is set, else
- *                                                     not) into dist-win.noindex/, with its own release.json.
- *                                                     Downloads only: no update feed for Windows yet.
+ *                                                     not) into dist-win.noindex/, with their blockmaps, the update
+ *                                                     feed latest.yml (one for both architectures) and its own
+ *                                                     release.json
  *   node bin/release.js linux                         on Linux: the AppImage and the .deb for this computer's
  *                                                     architecture (with the native engine built here) into
- *                                                     dist-linux.noindex/, with its own release.json. Downloads only.
- *   node bin/release.js publish --win [--channel test] upload those installers, each checked by its size there
- *   node bin/release.js publish --linux [--channel test]   the same for the Linux files
+ *                                                     dist-linux.noindex/, with the feed (latest-linux.yml, or
+ *                                                     latest-linux-arm64.yml) and its own release.json
+ *   node bin/release.js publish --win [--channel test] the same as publish, for those installers and their feed (an
+ *                                                     unsigned build: the installers only, and no feed)
+ *   node bin/release.js publish --linux [--channel test]   the same for the Linux files and their feed
  *   node bin/release.js publish [--channel test]      upload that build to downloads.endlesscues.com (R2): the
  *                                                     binaries first, each checked by its size there, the feed
  *                                                     (latest-mac.yml) last. --channel test puts it all under test/,
@@ -170,8 +173,13 @@ const WIN_OUT = 'dist-win.noindex';
  * their release.json. Signed through Azure Artifact Signing when EC_WIN_SIGNING says which certificate (the app, its
  * uninstaller and the installer, by build/sign-win.ts), with a certificate of your own to try the path when
  * EC_WIN_SIGN_P12 names one (not offered as signed: Windows trusts none), and otherwise not code-signed, so
- * SmartScreen warns the first time. Every signature is checked after. Downloads only: no update feed is written for
- * Windows, and an installed copy says the server has no version for it.
+ * SmartScreen warns the first time. Every signature is checked after.
+ *
+ * The update feed, latest.yml, names both installers (electron-updater's NsisUpdater takes the one whose name has
+ * its own architecture, `findFile`); each build of one architecture writes a latest.yml of its own, so the feed is
+ * written here from the installers, and checked against what electron-builder wrote. A signed build carries, in its
+ * app-update.yml, the publisher an update must be signed by (WIN_PUBLISHER): an installed signed copy then refuses
+ * any installer not signed by the same name. An unsigned build carries none, and is never put on the feed.
  */
 function buildWin(flags: string[]) {
   const v = pkg().version;
@@ -181,7 +189,7 @@ function buildWin(flags: string[]) {
   const out = path.join(ROOT, WIN_OUT);
   fs.rmSync(out, { recursive: true, force: true });
   write('app/build-info.json', JSON.stringify(info, null, 2) + '\n');
-  const { signatureBytes } = require('../build/sign-win') as typeof import('../build/sign-win');
+  const { signatureOf } = require('../build/sign-win') as typeof import('../build/sign-win');
   const how = process.env.EC_WIN_SIGN_P12 ? 'test' : process.env.EC_WIN_SIGNING ? 'azure' : null;
   const env: NodeJS.ProcessEnv = { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' };
   if (how === 'azure') {
@@ -191,7 +199,9 @@ function buildWin(flags: string[]) {
     if (t.status !== 0 || !t.stdout.trim()) fail(`Azure gave no signing token. Sign in (az login) and try again.\n${(t.stderr || '').trim()}`);
     env.EC_WIN_SIGN_TOKEN = t.stdout.trim();
   }
-  const signing = how ? ['-c.win.signtoolOptions.sign=build/sign-win.js'] : [];
+  const publisher = how === 'azure' ? WIN_PUBLISHER() : null;
+  const signing = how ? ['-c.win.signtoolOptions.sign=build/sign-win.js', ...(publisher ? [`-c.win.signtoolOptions.publisherName=${publisher}`] : [])] : [];
+  const written: Record<string, string> = {};         // each architecture's latest.yml, as electron-builder wrote it
   console.log(`Building ${v} (${info.commit}${dirty ? ', with uncommitted changes' : ''}) for Windows ${archs.join(' and ')}, ${how === 'azure' ? 'signed through Azure Artifact Signing' : how === 'test' ? 'signed with a test certificate (not trusted by Windows)' : 'NOT code-signed'}…`);
   try {
     // (one build an architecture, so each installer carries only its own: a combined one is twice the download)
@@ -199,25 +209,51 @@ function buildWin(flags: string[]) {
       const r = spawnSync('npx', ['electron-builder', '--win', 'nsis', `--${a}`, '--publish', 'never', `-c.directories.output=${WIN_OUT}`,
         '-c.nsis.artifactName=Endless-Cues-${version}-win-${arch}-setup.${ext}', ...signing], { cwd: ROOT, stdio: 'inherit', env });
       if (r.status !== 0) fail(`The ${a} build failed.`);
+      const feed = path.join(out, WIN_FEED);
+      if (fs.existsSync(feed)) { written[a] = fs.readFileSync(feed, 'utf8'); fs.rmSync(feed); }
     }
   } finally { fs.rmSync(path.join(ROOT, 'app/build-info.json'), { force: true }); }
-  const files = fs.readdirSync(out).filter((f) => /-win-(x64|arm64)-setup\.exe$/.test(f)).sort().map((f): FileRecord => {
+  const record = (f: string): FileRecord => {
     const bytes = fs.readFileSync(path.join(out, f));
     return { file: f, arch: /arm64/.test(f) ? 'arm64' : 'x64', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
-  });
+  };
+  const files = fs.readdirSync(out).filter((f) => /-win-(x64|arm64)-setup\.exe$/.test(f)).sort().map(record);
   if (files.length !== archs.length) fail(`Expected ${archs.length} installer(s), found ${files.length}.`);
+  // the feed: both installers, by the same hash electron-builder gave each (else the build is not what it described)
+  const installers = files.map((f) => ({ file: f.file, bytes: f.bytes, sha512: sha512Of(path.join(out, f.file)) }));
+  for (const f of installers) {
+    const a = /arm64/.test(f.file) ? 'arm64' : 'x64';
+    if (!written[a]) fail(`electron-builder wrote no ${WIN_FEED} for ${a}: is the \`publish\` entry still in package.json's build?`);
+    if (!written[a].includes(f.sha512)) fail(`${f.file} is not the installer electron-builder's ${WIN_FEED} describes (its SHA-512 differs).`);
+    if (!fs.existsSync(path.join(out, `${f.file}.blockmap`))) fail(`No ${f.file}.blockmap came out of the build.`);
+  }
+  fs.writeFileSync(path.join(out, WIN_FEED), winFeed(v, installers));
+  // the publisher an update must be signed by: in each signed app's app-update.yml, and named by each signature
+  for (const d of fs.readdirSync(out).filter((x) => /^win-.*unpacked$/.test(x))) {
+    const yml = path.join(out, d, 'resources', 'app-update.yml');
+    const said = fs.existsSync(yml) ? fs.readFileSync(yml, 'utf8') : '';
+    if (!said) fail(`${WIN_OUT}/${d} has no resources/app-update.yml: an installed copy could not update.`);
+    if (publisher && !said.includes(publisher)) fail(`${WIN_OUT}/${d}'s app-update.yml does not name the publisher ${publisher}: an installed copy would take an update signed by anyone.`);
+    if (!publisher && /publisherName/.test(said)) fail(`${WIN_OUT}/${d}'s app-update.yml names a publisher, but this build is not signed through Azure: an installed copy of it would refuse every update.`);
+  }
+  if (publisher) for (const f of files) {
+    const bytes = fs.readFileSync(path.join(out, f.file)), sig = signatureOf(bytes);
+    if (!sig || !sig.includes(Buffer.from(publisher))) fail(`${f.file}'s signature does not name ${publisher}: installed copies would refuse it as an update. Set EC_WIN_PUBLISHER to the certificate's subject name (its CN).`);
+  }
+  const update = fs.readdirSync(out).filter((f) => /-setup\.exe\.blockmap$/.test(f) || f === WIN_FEED).sort().map(record);
   if (how) {
     // (the installer, and the program it installs: each must carry a signature, or the build is not offered as signed)
     const apps = fs.readdirSync(out).filter((d) => /^win-.*unpacked$/.test(d)).map((d) => path.join(WIN_OUT, d, `${pkg().build.productName}.exe`));
-    const unsigned = [...files.map((f) => path.join(WIN_OUT, f.file)), ...apps].filter((f) => !signatureBytes(fs.readFileSync(path.join(ROOT, f))));
+    const unsigned = [...files.map((f) => path.join(WIN_OUT, f.file)), ...apps].filter((f) => !signatureOf(fs.readFileSync(path.join(ROOT, f))));
     if (apps.length !== archs.length || unsigned.length) fail(`Not signed: ${unsigned.join(', ') || 'the unpacked app was not found'}`);
   }
-  // (what is not offered goes: the unpacked apps, the blockmaps and the feed electron-builder writes regardless)
-  for (const f of fs.readdirSync(out)) if (!files.some((x) => x.file === f)) fs.rmSync(path.join(out, f), { recursive: true, force: true });
-  const release = { platform: 'win', version: v, date: info.date, commit: info.commit, signed: how === 'azure', ...(how === 'test' ? { testSigned: true } : {}), ...(dirty ? { dirty: true } : {}), files, notes: notesOf(v) };
+  // (what is not offered goes: the unpacked apps, and whatever else electron-builder leaves)
+  for (const f of fs.readdirSync(out)) if (![...files, ...update].some((x) => x.file === f)) fs.rmSync(path.join(out, f), { recursive: true, force: true });
+  const release = { platform: 'win', version: v, date: info.date, commit: info.commit, signed: how === 'azure', ...(how === 'test' ? { testSigned: true } : {}), ...(dirty ? { dirty: true } : {}), files, update, notes: notesOf(v) };
   fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify(release, null, 2) + '\n');
   for (const f of files) console.log(`  ${WIN_OUT}/${f.file}   ${(f.bytes / 1e6).toFixed(1)} MB   sha256 ${f.sha256}`);
-  if (how !== 'azure') console.log(`  ${how ? 'Signed with a test certificate, which Windows does not trust' : 'Not code-signed'}: Windows SmartScreen says "Windows protected your PC" the first time; More info ▸ Run anyway.`);
+  if (how !== 'azure') console.log(`  ${how ? 'Signed with a test certificate, which Windows does not trust' : 'Not code-signed'}: Windows SmartScreen says "Windows protected your PC" the first time; More info ▸ Run anyway. Not offered as an update: publish --win uploads the installers only.`);
+  else console.log(`  Updates: installed copies take only an installer signed by ${publisher}.`);
   console.log(dirty ? '  (built with uncommitted changes: fine for trying, not for publishing)'
     : 'Next: try it on Windows, then node bin/release.js publish --win (or --channel test), then: node bin/release.js site --base https://downloads.endlesscues.com/');
 }
@@ -228,7 +264,9 @@ const LINUX_OUT = 'dist-linux.noindex';
 /**
  * The Linux downloads, into dist-linux.noindex/ with their release.json: built on Linux (a container or a VM will do:
  * docs/RELEASING.md), because the native engine is built for the computer it is on. Not signed: Linux has no such
- * thing for an AppImage, and the checksums are on the page. Downloads only: no update feed for Linux yet.
+ * thing for an AppImage, and the checksums are on the page. The feed electron-builder writes (latest-linux.yml for
+ * x64, latest-linux-arm64.yml for Arm) is kept, with any blockmap: an AppImage updates itself from it, and a .deb
+ * install reads it only to say a new version is out (app/main/updates.ts).
  */
 function buildLinux(flags: string[]) {
   if (process.platform !== 'linux') fail('Build the Linux downloads on Linux (docs/RELEASING.md, "Linux").');
@@ -251,48 +289,26 @@ function buildLinux(flags: string[]) {
     return { file: f, arch, kind: f.endsWith('.deb') ? 'deb' : 'appimage', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
   });
   if (files.length !== 2) fail(`Expected an AppImage and a .deb, found ${files.length} file(s).`);
-  for (const f of fs.readdirSync(out)) if (!files.some((x) => x.file === f)) fs.rmSync(path.join(out, f), { recursive: true, force: true });
-  const release = { platform: 'linux', version: v, date: info.date, commit: info.commit, signed: false, ...(dirty ? { dirty: true } : {}), files, notes: notesOf(v) };
+  const feedName = linuxFeed(arch);
+  if (!fs.existsSync(path.join(out, feedName))) fail(`No ${feedName} came out of the build: is the \`publish\` entry still in package.json's build?`);
+  const appImage = files.find((f) => f.kind === 'appimage')!;
+  if (!readFeed(fs.readFileSync(path.join(out, feedName), 'utf8')).named.includes(appImage.file)) fail(`${feedName} does not name ${appImage.file}.`);
+  const update = fs.readdirSync(out).filter((f) => f === feedName || /-linux-(x64|arm64)\.(AppImage|deb)\.blockmap$/.test(f)).sort().map((f): FileRecord => {
+    const bytes = fs.readFileSync(path.join(out, f));
+    return { file: f, arch, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+  });
+  for (const f of fs.readdirSync(out)) if (![...files, ...update].some((x) => x.file === f)) fs.rmSync(path.join(out, f), { recursive: true, force: true });
+  const release = { platform: 'linux', version: v, date: info.date, commit: info.commit, signed: false, ...(dirty ? { dirty: true } : {}), files, update, notes: notesOf(v) };
   fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify(release, null, 2) + '\n');
   for (const f of files) console.log(`  ${LINUX_OUT}/${f.file}   ${(f.bytes / 1e6).toFixed(1)} MB   sha256 ${f.sha256}`);
   console.log(dirty ? '  (built with uncommitted changes: fine for trying, not for publishing)'
     : 'Next: try it, then node bin/release.js publish --linux (or --channel test), then: node bin/release.js site --base https://downloads.endlesscues.com/');
 }
 
-const CONTENT_TYPES: Record<string, string> = { exe: 'application/vnd.microsoft.portable-executable', AppImage: 'application/octet-stream', deb: 'application/vnd.debian.binary-package' };
-
-/**
- * Publish the Windows installers: each uploaded and checked by the size its address answers with. There is no feed
- * to change, so nothing can be offered a missing file; unsigned is allowed (nothing installs it unasked).
- */
-async function publishDownloads({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, log = () => {}, dryRun = false, platform = 'win' }: PublishOptions & { platform?: 'win' | 'linux' }) {
-  const refuse: (why: string) => never = (why) => { throw new Error(`Not published: ${why}`); };
-  if (!['latest', 'test'].includes(channel)) refuse(`there is no channel "${channel}" (latest or test)`);
-  const out = platform === 'linux' ? LINUX_OUT : WIN_OUT, name = platform === 'linux' ? 'Linux' : 'Windows';
-  if (!r || !r.version) refuse(`there is no ${out}/release.json: build first (node bin/release.js ${platform})`);
-  if (r.platform !== platform) refuse(`that release.json is not a ${name} build.`);
-  if (r.testSigned) refuse('that build is signed with a test certificate, which Windows does not trust. Build it again without EC_WIN_SIGN_P12.');
-  if (r.dirty) refuse('that build was made with uncommitted changes. Commit, build again, then publish.');
-  if (!Array.isArray(r.files) || !r.files.length) refuse('that build has no installers.');
-  for (const f of r.files) {
-    const p = path.join(dir, f.file);
-    if (!fs.existsSync(p)) refuse(`${f.file} is not in ${dir}.`);
-    if (fs.statSync(p).size !== f.bytes) refuse(`${f.file} is not the file that was built (its size has changed).`);
-  }
-  const folder = channel === 'test' ? 'test/' : '';
-  const uploaded: string[] = [];
-  for (const f of r.files) {
-    const key = folder + f.file;
-    log(`  ${dryRun ? 'would upload' : 'uploading'} ${key}`);
-    if (dryRun) { uploaded.push(key); continue; }
-    await upload(key, path.join(dir, f.file), { contentType: CONTENT_TYPES[f.file.split('.').pop()!] || 'application/octet-stream' });
-    uploaded.push(key);
-    const at = `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
-    const got = await size(at);
-    if (got !== f.bytes) refuse(`${at} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}.${got == null ? '' : ' A cache may still hold an older file of that name: purge that address (Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge), then publish again.'}`);
-  }
-  return { uploaded };
-}
+const CONTENT_TYPES: Record<string, string> = {
+  dmg: 'application/x-apple-diskimage', zip: 'application/zip', exe: 'application/vnd.microsoft.portable-executable',
+  AppImage: 'application/octet-stream', deb: 'application/vnd.debian.binary-package', yml: 'text/yaml',
+};
 
 // ── publishing: the downloads and the update feed (docs/RELEASING.md) ───────────────────────────────────────────
 // Everything is served from one Cloudflare R2 bucket at downloads.endlesscues.com: everyone's versions at its top,
@@ -302,6 +318,33 @@ async function publishDownloads({ release: r, dir, channel = 'latest', base = DO
 const DOWNLOADS = 'https://downloads.endlesscues.com/';
 const BUCKET = 'endlesscues-downloads';
 const FEED_FILE = 'latest-mac.yml';
+const WIN_FEED = 'latest.yml';
+/** Linux's feed for an architecture, as electron-updater asks for it: latest-linux.yml for x64, …-arm64.yml for Arm. */
+const linuxFeed = (arch: string) => `latest-linux${arch === 'x64' ? '' : `-${arch}`}.yml`;
+/** The publisher a signed Windows build's update must be signed by: the Azure certificate's subject name (its CN). */
+const WIN_PUBLISHER = () => process.env.EC_WIN_PUBLISHER || 'JESHUA ALEXIS BRATMAN';
+/** A file's SHA-512, as an update feed gives it (base64). */
+const sha512Of = (file: string) => crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64');
+
+/**
+ * Windows' feed: both installers (one an architecture), as electron-builder writes one for each. `path` and
+ * `sha512` at the top (for updaters older than files:) are the 64-bit installer's.
+ */
+function winFeed(version: string, installers: { file: string; bytes: number; sha512: string }[], date = new Date().toISOString()) {
+  const first = installers.find((f) => /-x64-/.test(f.file)) || installers[0];
+  return [`version: ${version}`, 'files:', ...installers.flatMap((f) => [`  - url: ${f.file}`, `    sha512: ${f.sha512}`, `    size: ${f.bytes}`]),
+    `path: ${first.file}`, `sha512: ${first.sha512}`, `releaseDate: '${date}'`, ''].join('\n');
+}
+
+/** What each platform's build is, for publishing it. */
+const PLATFORMS = {
+  mac: { name: 'Mac', out: 'dist.noindex', build: 'mac' },
+  win: { name: 'Windows', out: WIN_OUT, build: 'win' },
+  linux: { name: 'Linux', out: LINUX_OUT, build: 'linux' },
+} as const;
+type PlatformName = keyof typeof PLATFORMS;
+/** The feed a build of that platform is offered by. */
+const feedOf = (platform: PlatformName, r: Release) => (platform === 'mac' ? FEED_FILE : platform === 'win' ? WIN_FEED : linuxFeed((r.files[0] && r.files[0].arch) || 'x64'));
 
 /** What a feed file says: its version and the files it names. (Only what is needed: it is electron-builder's YAML.) */
 function readFeed(text: string) {
@@ -315,35 +358,51 @@ function feedPointingAt(text: string, base: string) {
 }
 
 /**
- * Publish a build: refuse what must not be offered, then upload in an order no client can be caught out by.
- *   release   dist.noindex/release.json, read
+ * Publish a build (the Mac's, Windows' or Linux's: `platform`, which the release.json must be for): refuse what must
+ * not be offered, then upload in an order no client can be caught out by.
+ *   release   dist.noindex/release.json (or dist-win.noindex/'s, dist-linux.noindex/'s), read
  *   dir       the folder its files are in
  *   channel   'latest' (everyone) or 'test'
  *   upload(key, file, { contentType, cacheControl })   puts one file in the bucket (rejects on failure)
  *   size(url)        resolves to the byte count that address answers with, through any cache (null: not there)
  *   text(url)        resolves to what that address answers with, past any cache (null: not there)
- * Resolves to { uploaded: [keys in order] }, or throws an Error whose message says why nothing (more) was sent.
+ * Windows: an unsigned build's installers are published as downloads only, with no feed (an installed copy is never
+ * offered an unsigned version); one signed with a test certificate is refused. Linux: nothing is signed.
+ * Resolves to { uploaded: [keys in order], feed: the feed's key or null }, or throws an Error whose message says why
+ * nothing (more) was sent.
  */
-async function publishRelease({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, text, log = () => {}, dryRun = false }: PublishOptions) {
+async function publishRelease({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, text, log = () => {}, dryRun = false, platform = 'mac' }: PublishOptions & { platform?: PlatformName }) {
   const refuse: (why: string) => never = (why) => { throw new Error(`Not published: ${why}`); };
+  const p = PLATFORMS[platform];
   if (!['latest', 'test'].includes(channel)) refuse(`there is no channel "${channel}" (latest or test)`);
-  if (!r || !r.version) refuse('there is no release.json: build first (node bin/release.js mac)');
+  if (!r || !r.version) refuse(`there is no ${platform === 'mac' ? '' : `${p.out}/`}release.json: build first (node bin/release.js ${p.build})`);
+  if ((r.platform || 'mac') !== platform) refuse(`that release.json is not a ${p.name} build.`);
+  if (r.testSigned) refuse('that build is signed with a test certificate, which Windows does not trust. Build it again without EC_WIN_SIGN_P12.');
   if (r.dirty) refuse('that build was made with uncommitted changes. Commit, build again, then publish.');
-  if (!r.signed) refuse('that build is not signed and notarised. An installed app would refuse it as an update, and macOS would refuse it as a download.');
-  if (!Array.isArray(r.update) || !r.update.length) refuse('that build has no update files (it was made before updates were built): build again.');
-  const feed = r.update.find((f) => f.file === FEED_FILE);
-  if (!feed) refuse(`that build has no ${FEED_FILE}.`);
-  const all = [...r.files, ...r.update];
+  if (platform === 'mac' && !r.signed) refuse('that build is not signed and notarised. An installed app would refuse it as an update, and macOS would refuse it as a download.');
+  if (!Array.isArray(r.files) || !r.files.length) refuse('that build has nothing to download.');
+  // (an unsigned Windows build: downloads only. A signed installed copy would refuse it, an unsigned one would take
+  // it from anyone; neither is offered it)
+  const offered = !(platform === 'win' && !r.signed);
+  if (offered && (!Array.isArray(r.update) || !r.update.length)) refuse('that build has no update files (it was made before updates were built): build again.');
+  const FEED = feedOf(platform, r);
+  const update = offered ? r.update! : [];
+  if (offered && !update.some((f) => f.file === FEED)) refuse(`that build has no ${FEED}.`);
+  const all = [...r.files, ...update];
   for (const f of all) {
-    const p = path.join(dir, f.file);
-    if (!fs.existsSync(p)) refuse(`${f.file} is not in ${dir}.`);
-    if (fs.statSync(p).size !== f.bytes) refuse(`${f.file} is not the file that was built (its size has changed).`);
+    const at = path.join(dir, f.file);
+    if (!fs.existsSync(at)) refuse(`${f.file} is not in ${dir}.`);
+    if (fs.statSync(at).size !== f.bytes) refuse(`${f.file} is not the file that was built (its size has changed).`);
   }
-  const feedText = fs.readFileSync(path.join(dir, FEED_FILE), 'utf8');
-  const said = readFeed(feedText);
-  if (said.version !== r.version) refuse(`${FEED_FILE} is for ${said.version || 'no version'}, the build is ${r.version}.`);
-  for (const n of said.named) if (!all.some((f) => f.file === n)) refuse(`${FEED_FILE} names ${n}, which is not in the build.`);
-  for (const d of r.files) if (!r.update.some((f) => f.file.endsWith('.zip') && f.arch === d.arch)) refuse(`there is no update zip for ${d.arch}.`);
+  const feedText = offered ? fs.readFileSync(path.join(dir, FEED), 'utf8') : '';
+  if (offered) {
+    const said = readFeed(feedText);
+    if (said.version !== r.version) refuse(`${FEED} is for ${said.version || 'no version'}, the build is ${r.version}.`);
+    for (const n of said.named) if (!all.some((f) => f.file === n)) refuse(`${FEED} names ${n}, which is not in the build.`);
+    // what each kind of install updates from: the Mac's zip for each architecture, each Windows installer, the AppImage
+    if (platform === 'mac') { for (const d of r.files) if (!update.some((f) => f.file.endsWith('.zip') && f.arch === d.arch)) refuse(`there is no update zip for ${d.arch}.`); }
+    else for (const d of r.files.filter((f) => !f.file.endsWith('.deb'))) if (!said.named.includes(d.file)) refuse(`${FEED} does not name ${d.file}: that ${p.name} install could not update.`);
+  }
 
   const folder = channel === 'test' ? 'test/' : '';
   const url = (key: string) => `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
@@ -353,42 +412,44 @@ async function publishRelease({ release: r, dir, channel = 'latest', base = DOWN
     if (!dryRun) await upload(key, file, o);
     uploaded.push(key);
   };
-  // 1. the binaries, each checked where it is served before anything names it
-  const kind = (f: string) => (f.endsWith('.dmg') ? 0 : f.endsWith('.zip') ? 1 : 2);
-  const binaries = all.filter((f) => f.file !== FEED_FILE).sort((a, b) => kind(a.file) - kind(b.file) || a.file.localeCompare(b.file));
+  // 1. the binaries, each checked where it is served before anything names it: the downloads (in the build's
+  // order), then what updates are made of (the Mac's zips), then the blockmaps
+  const kind = (f: string) => (f.endsWith('.blockmap') ? 1 : 0);
+  const binaries = [...r.files, ...update.filter((f) => f.file !== FEED).sort((a, b) => kind(a.file) - kind(b.file) || a.file.localeCompare(b.file))];
   for (const f of binaries) {
     const key = folder + f.file;
-    await put(key, path.join(dir, f.file), { contentType: f.file.endsWith('.dmg') ? 'application/x-apple-diskimage' : f.file.endsWith('.zip') ? 'application/zip' : 'application/octet-stream' });
+    await put(key, path.join(dir, f.file), { contentType: CONTENT_TYPES[f.file.split('.').pop()!] || 'application/octet-stream' });
     if (dryRun) continue;
     const got = await size(url(key));
     if (got !== f.bytes) refuse(`${url(key)} answers with ${got == null ? 'nothing' : `${got} bytes`}, not ${f.bytes}.${got == null ? '' : ' A cache may still hold an older file of that name: purge that address (Cloudflare ▸ endlesscues.com ▸ Caching ▸ Custom Purge), then publish again.'} The feed was not changed: no app has been offered this version.`);
   }
+  if (!offered) { log(`  not signed: no feed is changed, so no installed copy is offered ${r.version}`); return { uploaded, feed: null }; }
   // 2. the feed, last; never cached, so a new version is offered as soon as it is there
-  const feedKey = folder + FEED_FILE;
-  await put(feedKey, path.join(dir, FEED_FILE), { contentType: 'text/yaml', cacheControl: 'no-cache' });
+  const feedKey = folder + FEED;
+  await put(feedKey, path.join(dir, FEED), { contentType: 'text/yaml', cacheControl: 'no-cache' });
   if (!dryRun && (await text!(url(feedKey))) !== feedText) refuse(`${url(feedKey)} does not answer with the feed just uploaded.`);
   // 3. everyone's version is a test version too: the test feed is moved on to it, unless it already offers a newer one
   if (channel === 'latest') {
-    const testKey = `test/${FEED_FILE}`;
+    const testKey = `test/${FEED}`;
     const was = dryRun ? null : await text!(url(testKey));
     const wasVersion = was ? readFeed(was).version : '';
     if (wasVersion && parts(wasVersion) && !newer(r.version, wasVersion)) log(`  the test feed offers ${wasVersion}, which is not older: left as it is`);
     else {
       const copy = feedPointingAt(feedText, base);
-      const tmp = path.join(fs.mkdtempSync(path.join((require('os') as typeof import('os')).tmpdir(), 'ec-feed-')), FEED_FILE);
+      const tmp = path.join(fs.mkdtempSync(path.join((require('os') as typeof import('os')).tmpdir(), 'ec-feed-')), FEED);
       fs.writeFileSync(tmp, copy);
       await put(testKey, tmp, { contentType: 'text/yaml', cacheControl: 'no-cache' });
       if (!dryRun && (await text!(url(testKey))) !== copy) refuse(`${url(testKey)} does not answer with the feed just uploaded.`);
     }
   }
-  return { uploaded };
+  return { uploaded, feed: feedKey };
 }
 
 /** `publish` from the command line: wrangler through `cf` (this project's Cloudflare token), and fetch to check. */
 async function publish(flags: string[]) {
   const channel = flags.includes('--channel') ? flags[flags.indexOf('--channel') + 1] : 'latest';
-  const linux = flags.includes('--linux'), win = flags.includes('--win') || linux, platform = linux ? 'linux' : 'win';
-  const file = flags.includes('--release') ? path.resolve(flags[flags.indexOf('--release') + 1] || '') : path.join(ROOT, linux ? LINUX_OUT : flags.includes('--win') ? WIN_OUT : 'dist.noindex', 'release.json');
+  const platform: PlatformName = flags.includes('--linux') ? 'linux' : flags.includes('--win') ? 'win' : 'mac';
+  const file = flags.includes('--release') ? path.resolve(flags[flags.indexOf('--release') + 1] || '') : path.join(ROOT, PLATFORMS[platform].out, 'release.json');
   const r: Release | null = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
   const dryRun = flags.includes('--dry-run');
   const upload = async (key: string, src: string, o: { contentType?: string; cacheControl?: string }) => {
@@ -407,18 +468,11 @@ async function publish(flags: string[]) {
     return whole ? Number(whole[1]) : Number(x.headers.get('content-length'));
   };
   const text = async (u: string) => { const x = await fetch(fresh(u), { headers: { 'cache-control': 'no-cache' } }); return x.ok ? x.text() : null; };
-  console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${linux ? ' for Linux' : win ? ' for Windows' : ''} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
-  if (win) {
-    try {
-      const out = await publishDownloads({ release: r, dir: path.dirname(file), channel, upload, size, log: (l) => console.log(l), dryRun, platform });
-      console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: the ${linux ? 'Linux downloads' : 'Windows installers'} for ${r!.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}.`);
-      if (channel !== 'test') console.log(`Next: node bin/release.js site --base ${DOWNLOADS}`);
-    } catch (err) { fail((err as Error).message); }
-    return;
-  }
+  console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${platform === 'mac' ? '' : ` for ${PLATFORMS[platform].name}`} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
   try {
-    const out = await publishRelease({ release: r, dir: path.dirname(file), channel, upload, size, text, log: (l) => console.log(l), dryRun });
-    console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}${FEED_FILE} offers ${r!.version}.`);
+    const out = await publishRelease({ release: r, dir: path.dirname(file), channel, upload, size, text, log: (l) => console.log(l), dryRun, platform });
+    console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.`
+      : out.feed ? `Published: ${DOWNLOADS}${out.feed} offers ${r!.version}.` : `Published: the ${PLATFORMS[platform].name} downloads for ${r!.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''} (no update feed changed).`);
     console.log(channel === 'test' ? 'Next: in an installed app, Settings ▸ General ▸ Test versions, then Help ▸ Check for Updates….'
       : `Next: node bin/release.js site --base ${DOWNLOADS}`);
   } catch (err) { fail((err as Error).message); }
@@ -561,4 +615,4 @@ else if (what === 'site') site(rest);
 else if (what === 'publish') publish(rest);
 else { console.log(read('bin/release.js').split('*/')[0].split('\n').slice(2).map((l) => l.replace(/^ \* ?/, '')).join('\n')); process.exit(what ? 1 : 0); }
 
-export { parts, newer, publishRelease, publishDownloads, readFeed, feedPointingAt, FEED_FILE };
+export { parts, newer, publishRelease, readFeed, feedPointingAt, winFeed, linuxFeed, FEED_FILE, WIN_FEED };

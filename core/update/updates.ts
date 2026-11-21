@@ -9,6 +9,8 @@
  *   - Nothing is downloaded until the person presses Download, and nothing is installed until they quit or press
  *     Restart now. The app never quits by itself to install.
  *   - "Test versions" reads another feed (…/test/), so a version can be tried before everyone is offered it.
+ *   - A copy that cannot install over itself (a Linux .deb: that needs the package manager and an administrator)
+ *     only says a new version is out, and its one button opens the download page. It never downloads or installs.
  *
  * The updater itself is given (electron-updater's autoUpdater in the app, a fake in the tests): this file never
  * requires Electron. What it needs of one: on(event, fn), setFeedURL({ provider, url }), checkForUpdates(),
@@ -16,6 +18,7 @@
  */
 
 const FEED = 'https://downloads.endlesscues.com/';
+const PAGE = 'https://endlesscues.com/';
 const TEST_FEED = `${FEED}test/`;
 const DAY = 24 * 3600e3;
 const RETRY = 3600e3;             // an automatic check that failed (no connection, most often) is tried again an hour later
@@ -32,14 +35,75 @@ export interface Updater {
   setFeedURL(feed: { provider: 'generic'; url: string; channel?: string }): unknown;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(token?: UpdateToken | null): Promise<unknown>;
-  quitAndInstall(): unknown;
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): unknown;
 }
 /** A version the feed offers, as the updater's events carry it. */
 interface UpdateInfo { version: string }
 export type UpdateStep = 'idle' | 'checking' | 'available' | 'downloading' | 'ready';
 export interface UpdateState { step: UpdateStep; version: string; percent: number; hidden: boolean }
 /** What the window is told: the state, and whether the line shows. */
-export type UpdateView = UpdateState & { visible: boolean };
+export type UpdateView = UpdateState & { visible: boolean; page?: string };
+
+/**
+ * The feed's file for a platform and architecture, named as electron-updater asks for it (its Provider's
+ * getChannelFilePrefix): the Mac's latest-mac.yml, Windows' latest.yml (one file for every architecture: the
+ * updater picks the installer whose name has its own), Linux's latest-linux.yml for x64 and latest-linux-<arch>.yml
+ * for the others.
+ */
+function feedFile(platform: string, arch: string) {
+  if (platform === 'darwin') return 'latest-mac.yml';
+  if (platform === 'win32') return 'latest.yml';
+  return `latest-linux${arch === 'x64' ? '' : `-${arch}`}.yml`;
+}
+
+/** Semantic versions compared (x.y.z, then a pre-release after "-": 0.3.0-alpha.10 after -alpha.9, 0.3.0 after both). */
+function compareVersions(a: string, b: string) {
+  const split = (v: string) => { const [main, pre = ''] = String(v).trim().replace(/^v/, '').split('+')[0].split(/-(.*)/s); return { main: main.split('.').map((n) => Number(n) || 0), pre: pre ? pre.split('.') : [] }; };
+  const x = split(a), y = split(b);
+  for (let i = 0; i < 3; i++) if ((x.main[i] || 0) !== (y.main[i] || 0)) return (x.main[i] || 0) - (y.main[i] || 0);
+  if (!x.pre.length || !y.pre.length) return (x.pre.length ? -1 : 0) + (y.pre.length ? 1 : 0);
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const p = x.pre[i], q = y.pre[i];
+    if (p === undefined) return -1;
+    if (q === undefined) return 1;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p), qn = /^\d+$/.test(q);
+    if (pn && qn) return Number(p) - Number(q);
+    if (pn !== qn) return pn ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
+}
+
+/** What a copy that cannot install over itself is given for an updater: it reads the feed's version, and that is all. */
+export interface FeedReaderOptions { version: string; file: string; get: (url: string) => Promise<string | null> }
+/**
+ * An updater that only looks: one GET of the feed's file, its `version:` compared with this one. It downloads
+ * nothing and installs nothing (downloadUpdate refuses, quitAndInstall does nothing): for a .deb install, whose
+ * update is the person's to make (the download page, or their package manager).
+ */
+function feedReader({ version, file, get }: FeedReaderOptions) {
+  const fns = new Map<string, ((...a: any[]) => void)[]>();
+  const emit = (event: string, ...a: unknown[]) => { for (const fn of fns.get(event) || []) fn(...a); };
+  let url = '';
+  const reader = {
+    installs: false as const,
+    on(event: string, fn: (...a: any[]) => void) { fns.set(event, [...(fns.get(event) || []), fn]); return reader; },
+    setFeedURL(feed: { url: string }) { url = feed.url.replace(/\/*$/, '/'); },
+    async checkForUpdates() {
+      const text = await get(url + file);
+      if (text == null) throw new Error(`ERR_UPDATER_CHANNEL_FILE_NOT_FOUND: ${url}${file}`);
+      const offered = (/^version:\s*['"]?([^'"\s]+)/m.exec(text) || [])[1];
+      if (!offered) throw new Error(`${url}${file} names no version`);
+      const newer = compareVersions(offered, version) > 0;
+      emit(newer ? 'update-available' : 'update-not-available', { version: offered });
+      return { isUpdateAvailable: newer };
+    },
+    async downloadUpdate() { throw new Error('This copy is installed by a package: it is updated from the download page, not from here.'); },
+    quitAndInstall() { /* never: nothing was downloaded */ },
+  };
+  return reader;
+}
 
 /** The feed for this computer's choice: everyone's, or the test versions'. EC_UPDATE_FEED (a test) overrides both. */
 function feedFor(settings: { test?: boolean }, env: { EC_UPDATE_FEED?: string } = {}) {
@@ -68,6 +132,7 @@ function said(err: any) {
   if (/ERR_UPDATER_CHANNEL_FILE_NOT_FOUND|\b404\b/.test(m)) return 'The update server has no version for this computer yet.';
   if (/cancel/i.test(m)) return 'The download was stopped.';
   if (/sha512 checksum mismatch|checksum/i.test(m)) return 'The download was damaged. Try again.';
+  if (/ERR_UPDATER_INVALID_SIGNATURE|not signed by the application owner/i.test(m)) return 'Windows refused the new version: it is not signed by the same publisher as this one.';
   if (/code signature|signature/i.test(m)) return 'macOS refused the new version: its signature did not match this one.';
   if (/update bundle/i.test(m)) return 'macOS could not install it over this copy of the app.';
   const first = String((err && err.message) || err || 'Something went wrong.').split('\n')[0].trim();
@@ -95,10 +160,16 @@ export interface UpdatesOptions {
   quit?: () => Promise<boolean>;
   install?: () => void;
   enabled?: boolean;
+  /** false: this copy cannot install over itself (a .deb); a new version is only said, and Download opens `page` */
+  installs?: boolean;
+  /** opens the download page in the person's browser (installs: false) */
+  open?: (url: string) => void;
+  page?: string;
 }
 
 function createUpdates({ updater, token = () => null, mode = () => 'edit', sounding = () => false, getConfig = () => ({}), saveConfig = () => {},
-  version = '0.0.0', env = {}, log = () => {}, now = Date.now, told = () => {}, ask = () => {}, quit = async () => true, install = () => updater.quitAndInstall(), enabled = true }: UpdatesOptions) {
+  version = '0.0.0', env = {}, log = () => {}, now = Date.now, told = () => {}, ask = () => {}, quit = async () => true, install = () => updater.quitAndInstall(), enabled = true,
+  installs = true, open = () => {}, page = PAGE }: UpdatesOptions) {
   // step: idle | checking | available | downloading | ready
   let state: UpdateState = { step: 'idle', version: '', percent: 0, hidden: false };
   let manual = false;                 // the check under way was asked for: its answer is said, whatever it is
@@ -112,7 +183,7 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
     state = next;
     told(view());
   };
-  const view = (): UpdateView => ({ ...state, visible: !state.hidden && ['available', 'downloading', 'ready'].includes(state.step) });
+  const view = (): UpdateView => ({ ...state, visible: !state.hidden && ['available', 'downloading', 'ready'].includes(state.step), ...(installs ? {} : { page }) });
   const settings = () => settingsOf(getConfig());
   const keep = (change: Partial<UpdateSettings>) => saveConfig({ updates: { ...((getConfig() || {}).updates || {}), ...change } });
 
@@ -137,6 +208,7 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
     updater.on('download-progress', (p: { percent?: number }) => { if (state.step === 'downloading') set({ percent: Math.floor(p.percent || 0) }); });
     updater.on('update-downloaded', (info: UpdateInfo) => {
       download = null;
+      if (!installs) return;          // (never: nothing is downloaded here; and were it, nothing would be installed)
       log(`${info.version} is downloaded: it installs when the app quits`);
       set({ step: 'ready', version: info.version, percent: 100 });
     });
@@ -179,6 +251,8 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
     if (state.step !== 'available') return { error: 'There is nothing to download.' };
     if (!quiet({ mode: mode(), sounding: sounding() })) return { error: 'Download in Edit mode, with nothing playing.' };
     const v = state.version;
+    // a copy that cannot install over itself: the download page, in the browser; the line stays until Not now
+    if (!installs) { log(`${v}: opening the download page (this copy installs from a package)`); open(page); return { ok: true, opened: page }; }
     download = token();
     set({ step: 'downloading', percent: 0 });
     try {
@@ -202,7 +276,7 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
 
   /** Restart now: in Edit mode with nothing playing, after the questions quitting asks. */
   async function restart() {
-    if (state.step !== 'ready') return { error: 'There is nothing to install yet.' };
+    if (!installs || state.step !== 'ready') return { error: 'There is nothing to install yet.' };
     if (!quiet({ mode: mode(), sounding: sounding() })) return { error: 'Restart in Edit mode, with nothing playing.' };
     if (!(await quit())) return { canceled: true };
     // (asked again: the questions may have taken a while, and a GO pressed meanwhile is a show again)
@@ -244,4 +318,4 @@ function createUpdates({ updater, token = () => null, mode = () => 'edit', sound
 
 export type Updates = ReturnType<typeof createUpdates>;
 
-export { createUpdates, feedFor, settingsOf, quiet, due, said, FEED, TEST_FEED, DAY };
+export { createUpdates, feedFor, feedFile, feedReader, compareVersions, settingsOf, quiet, due, said, FEED, TEST_FEED, PAGE, DAY };

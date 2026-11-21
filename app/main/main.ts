@@ -732,7 +732,11 @@ app.whenReady().then(async () => {
   // New versions: one GET of the feed's file a day, in Edit mode with nothing playing; nothing downloaded until asked
   updates = createAppUpdates({ app, host, getConfig: () => config, saveConfig: (c) => { if (TEST) Object.assign(config, c); else saveConfig(c); }, log, version: VERSION, test: TEST,
     views: () => everyWindow().map((w) => w.webContents), notice: (t, ms) => host.notice(t, ms), quit: askToSave,
-    install: (updater) => { quitDecided = true; quitting = true; if (host) host.stage.quitting(); updater.quitAndInstall(); } });
+    // (silent, and opened again after: Windows' installer would otherwise show its pages, and an AppImage would not reopen)
+    install: (updater) => { quitDecided = true; quitting = true; if (host) host.stage.quitting(); updater.quitAndInstall(true, true); },
+    // (a .deb install: its button opens the download page; its check is one GET of the feed's file)
+    open: (url) => { if (!TEST) shell.openExternal(url); },
+    get: async (url) => { const r = await net.fetch(url, { cache: 'no-store' }); return r.ok ? r.text() : null; } });
 
   host.start();
   syncBridge();

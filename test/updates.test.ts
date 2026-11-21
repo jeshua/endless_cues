@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';
-import { createUpdates, feedFor, settingsOf, due, said, FEED, TEST_FEED, DAY } from '../core/update/updates';
+import { createUpdates, feedFor, feedFile, feedReader, compareVersions, settingsOf, due, said, FEED, TEST_FEED, PAGE, DAY } from '../core/update/updates';
 import type { UpdateConfig, UpdateToken, UpdateView } from '../core/update/updates';
 
 /** The stand-in's own counters, beside what the controller needs of an updater. */
@@ -185,4 +185,61 @@ test('a copy run from source never checks, and says so when asked', async () => 
   u.tick();
   await u.check({ manual: true });
   assert.match(said[0], /runs from source/);
+});
+
+test('the feed’s file for each platform, by electron-updater’s names: one for Windows, one per architecture on Linux', () => {
+  assert.equal(feedFile('darwin', 'arm64'), 'latest-mac.yml');
+  assert.equal(feedFile('win32', 'x64'), 'latest.yml');
+  assert.equal(feedFile('win32', 'arm64'), 'latest.yml');
+  assert.equal(feedFile('linux', 'x64'), 'latest-linux.yml');
+  assert.equal(feedFile('linux', 'arm64'), 'latest-linux-arm64.yml');
+});
+
+test('versions compare as releases are ordered', () => {
+  for (const [a, b] of [['0.3.0-alpha.10', '0.3.0-alpha.9'], ['0.3.0-beta.1', '0.3.0-alpha.9'], ['0.3.0', '0.3.0-rc.2'], ['0.3.1-alpha.1', '0.3.0'], ['1.0.0', '0.9.9']]) {
+    assert.ok(compareVersions(a, b) > 0, `${a} is after ${b}`); assert.ok(compareVersions(b, a) < 0, `${b} is before ${a}`);
+  }
+  assert.equal(compareVersions('0.3.0-alpha.7', '0.3.0-alpha.7'), 0);
+});
+
+/** A .deb install: the feed reader over a pretend feed, and the controller told it cannot install. */
+function debRig(feed: string | null) {
+  const gets: string[] = [], opened: string[] = [], said: string[] = [];
+  let installed = 0, quits = 0;
+  const updater = feedReader({ version: '0.3.0-alpha.2', file: 'latest-linux.yml', get: async (url) => { gets.push(url); return feed; } });
+  const u = createUpdates({ updater, version: '0.3.0-alpha.2', installs: false, open: (url) => opened.push(url), ask: (t) => said.push(t),
+    quit: async () => { quits++; return true; }, install: () => { installed++; } });
+  return { u, gets, opened, said, counts: () => ({ installed, quits }) };
+}
+
+test('a .deb install: one GET of the feed, a newer version said with the download page, and nothing ever downloaded or installed', async () => {
+  const { u, gets, opened, counts } = debRig('version: 0.3.0-alpha.3\nfiles:\n  - url: Endless-Cues-0.3.0-alpha.3-linux-x64.AppImage\n');
+  await u.check();
+  assert.deepEqual(gets, [`${FEED}latest-linux.yml`]);
+  assert.deepEqual([u.state().step, u.state().version, u.state().visible, u.state().page], ['available', '0.3.0-alpha.3', true, PAGE]);
+  assert.equal(PAGE, 'https://endlesscues.com/');
+  const r = await u.download();
+  assert.deepEqual(r, { ok: true, opened: PAGE });
+  assert.deepEqual(opened, [PAGE], 'Download opens the download page');
+  assert.equal(u.state().step, 'available', 'nothing is downloading');
+  assert.match((await u.restart()).error!, /nothing to install/);
+  assert.deepEqual(counts(), { installed: 0, quits: 0 });
+  await assert.rejects(Promise.resolve(feedReader({ version: '1.0.0', file: 'x.yml', get: async () => '' }).downloadUpdate()), /download page/);
+});
+
+test('a .deb install: the same version or an older one is not offered; a missing feed says so when asked', async () => {
+  const same = debRig('version: 0.3.0-alpha.2\n');
+  await same.u.check({ manual: true });
+  assert.equal(same.u.state().visible, false);
+  assert.match(same.said[0], /latest version/);
+  const older = debRig('version: 0.3.0-alpha.1\n');
+  await older.u.check();
+  assert.equal(older.u.state().step, 'idle');
+  const none = debRig(null);
+  await none.u.check({ manual: true });
+  assert.match(none.said[0], /has no version for this computer yet/);
+});
+
+test('Windows refusing an installer signed by someone else is said in plain words', () => {
+  assert.match(said(new Error('ERR_UPDATER_INVALID_SIGNATURE: New version 1.0.0 is not signed by the application owner: publisherNames: X')), /^Windows refused the new version: it is not signed by the same publisher/);
 });
