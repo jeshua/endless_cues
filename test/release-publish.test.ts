@@ -136,3 +136,14 @@ test('Windows: refuses a dirty build, a Mac release.json, one signed with a test
   await assert.rejects(publishDownloads({ ...builtWin(), base: BASE, ...c }), /answers with 99 bytes.*purge that address/);
   assert.equal(b.order.length, 1, 'it stops at the first that is not there');
 });
+
+test('Linux: the AppImage and the .deb, each checked where it is served, with their own types; a Windows release.json refused', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-publish-linux-'));
+  const files = ['AppImage', 'deb'].map((ext) => { const file = `Endless-Cues-${V}-linux-x64.${ext}`, body = `${ext} `.repeat(30); fs.writeFileSync(path.join(dir, file), body); return { file, arch: 'x64', bytes: Buffer.byteLength(body), sha256: 'x' }; });
+  const release: Release = { platform: 'linux', version: V, signed: false, files };
+  const b = bucket();
+  const out = await publishDownloads({ release, dir, base: BASE, ...b, platform: 'linux' });
+  assert.deepEqual(out.uploaded, files.map((f) => f.file));
+  assert.deepEqual(b.order.map((o) => o.contentType), ['application/octet-stream', 'application/vnd.debian.binary-package']);
+  await assert.rejects(publishDownloads({ ...builtWin(), base: BASE, ...bucket(), platform: 'linux' }), /not a Linux build/);
+});

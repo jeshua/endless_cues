@@ -69,7 +69,7 @@ All of it is free. There are no tiers and nothing to unlock.
 
 **Everywhere else**
 
-- macOS and Windows builds (signed), and Linux from source. Shortcuts follow the platform.
+- macOS and Windows builds (signed), and Linux (an AppImage and a .deb, 64-bit). Shortcuts follow the platform.
 - Lab, Ocean and Graphite themes.
 - Updates from inside the app (never in Show mode or while anything plays), and Help ▸ Report a Problem.
 - No telemetry and no crash reports. The one thing it sends by itself is a daily check for a new version, which Settings ▸ General turns off.
@@ -91,7 +91,7 @@ Tried for real:
 
 Not yet widely tested:
 
-- Linux, beyond the tests.
+- Linux on a real desktop (its tests and full end-to-end run pass on Ubuntu).
 - Audio interfaces with many outputs.
 - MIDI equipment and timecode.
 - DMX fixtures over Art-Net or sACN, and lighting desks other than the show's.

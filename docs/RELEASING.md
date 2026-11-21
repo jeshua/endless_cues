@@ -53,6 +53,24 @@ only when a person runs `publish`, and never deploys, commits, tags or pushes: t
 7. Tag the commit (`git tag v<version>`), push the tag, keep a copy of `dist.noindex/latest-mac.yml` and
    `release.json` somewhere outside the repository, and delete `dist.noindex/`.
 
+## Linux
+
+An AppImage (runs as it is, on most distributions) and a `.deb` (Debian, Ubuntu), 64-bit, built **on Linux**, so that
+the native engine is built for it too. Any Linux will do; on a Mac, a VM with OrbStack is quickest:
+
+```bash
+orb create --arch amd64 ubuntu:noble ec-linux            # once (Rosetta runs it on Apple silicon)
+orb -m ec-linux -u root bash -c 'apt-get update && apt-get install -y build-essential pkg-config libasound2-dev git curl \
+  xvfb pulseaudio libgtk-3-0 libnss3 libgbm1 libasound2t64 libfuse2t64 rpm'   # and Node 22 (NodeSource) and rustup
+orb -m ec-linux bash -lc 'git clone /path/to/endless_cues ~/ec && cd ~/ec && npm ci && node bin/release.js linux'
+```
+
+`dist-linux.noindex/` then holds both files and `release.json`; copy that folder back here. Before publishing, put the
+packaged app through the end-to-end run in the VM (`./Endless-Cues-…-linux-x64.AppImage --appimage-extract-and-run
+--smoke --no-sandbox` under `xvfb-run`, with `EC_FIXTURES` pointing at the checkout's `test/fixtures`). Not signed
+(an AppImage has no such thing; the page gives the checksums), and no update feed yet: `publish --linux`, then
+`site`, which adds the Linux buttons (`/download/linux`, `/download/linux-deb`).
+
 ## Windows
 
 Installers to download, built from the same commit as the Mac's (any computer will do: electron-builder makes NSIS

@@ -12,14 +12,18 @@
  *                                                     Arm; signed through Azure when EC_WIN_SIGNING is set, else
  *                                                     not) into dist-win.noindex/, with its own release.json.
  *                                                     Downloads only: no update feed for Windows yet.
+ *   node bin/release.js linux                         on Linux: the AppImage and the .deb for this computer's
+ *                                                     architecture (with the native engine built here) into
+ *                                                     dist-linux.noindex/, with its own release.json. Downloads only.
  *   node bin/release.js publish --win [--channel test] upload those installers, each checked by its size there
+ *   node bin/release.js publish --linux [--channel test]   the same for the Linux files
  *   node bin/release.js publish [--channel test]      upload that build to downloads.endlesscues.com (R2): the
  *                                                     binaries first, each checked by its size there, the feed
  *                                                     (latest-mac.yml) last. --channel test puts it all under test/,
  *                                                     for "Test versions" only. Refuses an unsigned or dirty build.
  *                                                     --dry-run says what it would upload and uploads nothing.
  *   node bin/release.js site --base <url>             write the download into the site from the builds here (the
- *                                                     Mac's and Windows' release.json; a platform with no build
+ *                                                     Mac's, Windows' and Linux's release.json; a platform with no build
  *                                                     keeps what the site offers already):
  *                                                     releases.json, _redirects, and the marked parts of index.html
  *                                                     in the site folder. <url> is where the downloads are served from.
@@ -27,7 +31,8 @@
  *
  *   The site is not in this repository: it is the service repository's site/ folder, checked out beside this one
  *   (../endless_cues_service/site). --site-dir <dir> (or EC_SITE_DIR) names another; --release <file> reads
- *   another release.json than dist.noindex/release.json, and --win-release <file> another than dist-win.noindex/'s
+ *   another release.json than dist.noindex/release.json, --win-release <file> another than dist-win.noindex/'s and
+ *   --linux-release <file> another than dist-linux.noindex/'s
  *   (naming either means only what is named is fresh).
  *
  * Only `publish` uploads, and only when a person runs it. Nothing here deploys, commits, tags or pushes: each of
@@ -40,7 +45,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { siteDir } from './site-dir';
 
 /** One file of a build, as release.json records it (and the site, with where it is served from). */
-export interface FileRecord { file: string; arch: string; bytes: number; sha256: string; url?: string; platform?: string }
+export interface FileRecord { file: string; arch: string; bytes: number; sha256: string; url?: string; platform?: string; kind?: string }
 /** release.json: what a build made. */
 export interface Release {
   version: string; date?: string; commit?: string; signed: boolean; dirty?: boolean;
@@ -217,15 +222,54 @@ function buildWin(flags: string[]) {
     : 'Next: try it on Windows, then node bin/release.js publish --win (or --channel test), then: node bin/release.js site --base https://downloads.endlesscues.com/');
 }
 
+// ── Linux: an AppImage (runs as it is) and a .deb (Debian, Ubuntu), built on Linux for that computer's architecture ──
+const LINUX_OUT = 'dist-linux.noindex';
+
+/**
+ * The Linux downloads, into dist-linux.noindex/ with their release.json: built on Linux (a container or a VM will do:
+ * docs/RELEASING.md), because the native engine is built for the computer it is on. Not signed: Linux has no such
+ * thing for an AppImage, and the checksums are on the page. Downloads only: no update feed for Linux yet.
+ */
+function buildLinux(flags: string[]) {
+  if (process.platform !== 'linux') fail('Build the Linux downloads on Linux (docs/RELEASING.md, "Linux").');
+  const v = pkg().version;
+  const dirty = git('status', '--porcelain') !== '';
+  const info = { version: v, commit: git('rev-parse', '--short', 'HEAD'), date: today(), ...(dirty ? { dirty: true } : {}) };
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const out = path.join(ROOT, LINUX_OUT);
+  fs.rmSync(out, { recursive: true, force: true });
+  write('app/build-info.json', JSON.stringify(info, null, 2) + '\n');
+  console.log(`Building ${v} (${info.commit}${dirty ? ', with uncommitted changes' : ''}) for Linux ${arch}: an AppImage and a .deb…`);
+  try {
+    const r = spawnSync('npx', ['electron-builder', '--linux', 'AppImage', 'deb', `--${arch}`, '--publish', 'never', `-c.directories.output=${LINUX_OUT}`,
+      '-c.appImage.artifactName=Endless-Cues-${version}-linux-${arch}.${ext}', '-c.deb.artifactName=Endless-Cues-${version}-linux-${arch}.${ext}', ...flags.filter((f) => f.startsWith('-c.'))], { cwd: ROOT, stdio: 'inherit' });
+    if (r.status !== 0) fail('The Linux build failed.');
+  } finally { fs.rmSync(path.join(ROOT, 'app/build-info.json'), { force: true }); }
+  const files = fs.readdirSync(out).filter((f) => /-linux-(x64|arm64|amd64)\.(AppImage|deb)$/.test(f)).sort().map((f): FileRecord => {
+    const bytes = fs.readFileSync(path.join(out, f));
+    return { file: f, arch, kind: f.endsWith('.deb') ? 'deb' : 'appimage', bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') };
+  });
+  if (files.length !== 2) fail(`Expected an AppImage and a .deb, found ${files.length} file(s).`);
+  for (const f of fs.readdirSync(out)) if (!files.some((x) => x.file === f)) fs.rmSync(path.join(out, f), { recursive: true, force: true });
+  const release = { platform: 'linux', version: v, date: info.date, commit: info.commit, signed: false, ...(dirty ? { dirty: true } : {}), files, notes: notesOf(v) };
+  fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify(release, null, 2) + '\n');
+  for (const f of files) console.log(`  ${LINUX_OUT}/${f.file}   ${(f.bytes / 1e6).toFixed(1)} MB   sha256 ${f.sha256}`);
+  console.log(dirty ? '  (built with uncommitted changes: fine for trying, not for publishing)'
+    : 'Next: try it, then node bin/release.js publish --linux (or --channel test), then: node bin/release.js site --base https://downloads.endlesscues.com/');
+}
+
+const CONTENT_TYPES: Record<string, string> = { exe: 'application/vnd.microsoft.portable-executable', AppImage: 'application/octet-stream', deb: 'application/vnd.debian.binary-package' };
+
 /**
  * Publish the Windows installers: each uploaded and checked by the size its address answers with. There is no feed
  * to change, so nothing can be offered a missing file; unsigned is allowed (nothing installs it unasked).
  */
-async function publishDownloads({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, log = () => {}, dryRun = false }: PublishOptions) {
+async function publishDownloads({ release: r, dir, channel = 'latest', base = DOWNLOADS, upload, size, log = () => {}, dryRun = false, platform = 'win' }: PublishOptions & { platform?: 'win' | 'linux' }) {
   const refuse: (why: string) => never = (why) => { throw new Error(`Not published: ${why}`); };
   if (!['latest', 'test'].includes(channel)) refuse(`there is no channel "${channel}" (latest or test)`);
-  if (!r || !r.version) refuse(`there is no ${WIN_OUT}/release.json: build first (node bin/release.js win)`);
-  if (r.platform !== 'win') refuse('that release.json is not a Windows build.');
+  const out = platform === 'linux' ? LINUX_OUT : WIN_OUT, name = platform === 'linux' ? 'Linux' : 'Windows';
+  if (!r || !r.version) refuse(`there is no ${out}/release.json: build first (node bin/release.js ${platform})`);
+  if (r.platform !== platform) refuse(`that release.json is not a ${name} build.`);
   if (r.testSigned) refuse('that build is signed with a test certificate, which Windows does not trust. Build it again without EC_WIN_SIGN_P12.');
   if (r.dirty) refuse('that build was made with uncommitted changes. Commit, build again, then publish.');
   if (!Array.isArray(r.files) || !r.files.length) refuse('that build has no installers.');
@@ -240,7 +284,7 @@ async function publishDownloads({ release: r, dir, channel = 'latest', base = DO
     const key = folder + f.file;
     log(`  ${dryRun ? 'would upload' : 'uploading'} ${key}`);
     if (dryRun) { uploaded.push(key); continue; }
-    await upload(key, path.join(dir, f.file), { contentType: 'application/vnd.microsoft.portable-executable' });
+    await upload(key, path.join(dir, f.file), { contentType: CONTENT_TYPES[f.file.split('.').pop()!] || 'application/octet-stream' });
     uploaded.push(key);
     const at = `${base}${key.split('/').map(encodeURIComponent).join('/')}`;
     const got = await size(at);
@@ -342,8 +386,8 @@ async function publishRelease({ release: r, dir, channel = 'latest', base = DOWN
 /** `publish` from the command line: wrangler through `cf` (this project's Cloudflare token), and fetch to check. */
 async function publish(flags: string[]) {
   const channel = flags.includes('--channel') ? flags[flags.indexOf('--channel') + 1] : 'latest';
-  const win = flags.includes('--win');
-  const file = flags.includes('--release') ? path.resolve(flags[flags.indexOf('--release') + 1] || '') : path.join(ROOT, win ? WIN_OUT : 'dist.noindex', 'release.json');
+  const linux = flags.includes('--linux'), win = flags.includes('--win') || linux, platform = linux ? 'linux' : 'win';
+  const file = flags.includes('--release') ? path.resolve(flags[flags.indexOf('--release') + 1] || '') : path.join(ROOT, linux ? LINUX_OUT : flags.includes('--win') ? WIN_OUT : 'dist.noindex', 'release.json');
   const r: Release | null = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
   const dryRun = flags.includes('--dry-run');
   const upload = async (key: string, src: string, o: { contentType?: string; cacheControl?: string }) => {
@@ -362,11 +406,11 @@ async function publish(flags: string[]) {
     return whole ? Number(whole[1]) : Number(x.headers.get('content-length'));
   };
   const text = async (u: string) => { const x = await fetch(fresh(u), { headers: { 'cache-control': 'no-cache' } }); return x.ok ? x.text() : null; };
-  console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${win ? ' for Windows' : ''} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
+  console.log(`${dryRun ? 'Would publish' : 'Publishing'} ${r ? r.version : '(no build)'}${linux ? ' for Linux' : win ? ' for Windows' : ''} to ${channel === 'test' ? 'the test versions' : 'everyone'}…`);
   if (win) {
     try {
-      const out = await publishDownloads({ release: r, dir: path.dirname(file), channel, upload, size, log: (l) => console.log(l), dryRun });
-      console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: the Windows installers for ${r!.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}.`);
+      const out = await publishDownloads({ release: r, dir: path.dirname(file), channel, upload, size, log: (l) => console.log(l), dryRun, platform });
+      console.log(dryRun ? `${out.uploaded.length} files would be uploaded. Nothing was.` : `Published: the ${linux ? 'Linux downloads' : 'Windows installers'} for ${r!.version} are at ${DOWNLOADS}${channel === 'test' ? 'test/' : ''}.`);
       if (channel !== 'test') console.log(`Next: node bin/release.js site --base ${DOWNLOADS}`);
     } catch (err) { fail((err as Error).message); }
     return;
@@ -415,13 +459,14 @@ function site(flags: string[]) {
   if (!flags.includes('--base') || !/^https:\/\/[^\s]+$/.test(base || '')) fail('Say where the downloads are served from: --base https://…');
   // A fresh build for each platform (dist.noindex/ for the Mac, dist-win.noindex/ for Windows, or --release and
   // --win-release); a platform with none keeps what the site offers already (its releases.json).
-  const named = flags.includes('--release') || flags.includes('--win-release');
+  const named = flags.includes('--release') || flags.includes('--win-release') || flags.includes('--linux-release');
   const fileOf = (flag: string, dflt: string) => (flags.includes(flag) ? path.resolve(flags[flags.indexOf(flag) + 1] || '') : named ? null : path.join(ROOT, dflt, 'release.json'));
   const fresh = (f: string | null): Release | null => (f && fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null);
-  const macFile = fileOf('--release', 'dist.noindex'), winFile = fileOf('--win-release', WIN_OUT);
+  const macFile = fileOf('--release', 'dist.noindex'), winFile = fileOf('--win-release', WIN_OUT), linuxFile = fileOf('--linux-release', LINUX_OUT);
+  if (flags.includes('--linux-release') && !fs.existsSync(linuxFile!)) fail(`There is no ${path.relative(ROOT, linuxFile!)}: build first (node bin/release.js linux, on Linux)`);
   if (flags.includes('--release') && !fs.existsSync(macFile!)) fail(`There is no ${path.relative(ROOT, macFile!)}: build first (node bin/release.js mac)`);
   if (flags.includes('--win-release') && !fs.existsSync(winFile!)) fail(`There is no ${path.relative(ROOT, winFile!)}: build first (node bin/release.js win)`);
-  let prior: { latest?: Release; windows?: Release } = {}; try { prior = JSON.parse(readSite('releases.json')); } catch { /* nothing offered yet */ }
+  let prior: { latest?: Release; windows?: Release; linux?: Release } = {}; try { prior = JSON.parse(readSite('releases.json')); } catch { /* nothing offered yet */ }
   const url = (f: FileRecord) => `${base.replace(/\/+$/, '')}/${encodeURIComponent(f.file)}`;
   const offer = (r: Release | null, kept: Release | undefined) => {
     if (r && r.dirty) fail('That build was made with uncommitted changes. Commit, build again, then write the site.');
@@ -429,10 +474,11 @@ function site(flags: string[]) {
     if (r) return { ...r, files: r.files.map((f) => ({ ...f, url: url(f) })) };
     return kept && kept.files && kept.files.length ? kept : null;
   };
-  const mac = offer(fresh(macFile), prior.latest), win = offer(fresh(winFile), prior.windows);
-  if (!mac && !win) fail('There is no build to offer: build first (node bin/release.js mac, or win)');
+  const mac = offer(fresh(macFile), prior.latest), win = offer(fresh(winFile), prior.windows), lin = offer(fresh(linuxFile), prior.linux);
+  if (!mac && !win && !lin) fail('There is no build to offer: build first (node bin/release.js mac, win or linux)');
   const arm = mac && mac.files.find((f) => f.arch === 'arm64'), intel = mac && mac.files.find((f) => f.arch === 'x64');
   const pc = win && win.files.find((f) => f.arch === 'x64'), winArm = win && win.files.find((f) => f.arch === 'arm64');
+  const appImage = lin && lin.files.find((f) => /\.AppImage$/.test(f.file)), deb = lin && lin.files.find((f) => /\.deb$/.test(f.file));
   const mb = (f: FileRecord) => `${Math.round(f.bytes / 1e6)} MB`;
   const dateOf = (r: Release) => new Date(`${r.date}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const esc = (s: unknown) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -440,36 +486,43 @@ function site(flags: string[]) {
   writeSite('_redirects', ['# Written by bin/release.js: the addresses the site links to, and where the files are now.',
     ...(arm ? [`/download/mac-arm64 ${arm.url} 302`, `/download/mac ${arm.url} 302`] : []),
     ...(intel ? [`/download/mac-intel ${intel.url} 302`, ...(arm ? [] : [`/download/mac ${intel.url} 302`])] : []),
-    ...(pc ? [`/download/windows ${pc.url} 302`] : []), ...(winArm ? [`/download/windows-arm64 ${winArm.url} 302`] : []), ''].join('\n'));
+    ...(pc ? [`/download/windows ${pc.url} 302`] : []), ...(winArm ? [`/download/windows-arm64 ${winArm.url} 302`] : []),
+    ...(appImage ? [`/download/linux ${appImage.url} 302`] : []), ...(deb ? [`/download/linux-deb ${deb.url} 302`] : []), ''].join('\n'));
   // (the notes are kept here for anything that reads this file; the page links to the changelog instead of listing them)
   const record = (r: Release, platform: string) => ({ version: r.version, date: r.date, commit: r.commit, signed: r.signed, files: r.files.map((f) => ({ ...f, platform })), notes: r.notes });
-  writeSite('releases.json', JSON.stringify({ ...(mac ? { latest: record(mac, 'mac') } : {}), ...(win ? { windows: record(win, 'windows') } : {}) }, null, 2) + '\n');
+  writeSite('releases.json', JSON.stringify({ ...(mac ? { latest: record(mac, 'mac') } : {}), ...(win ? { windows: record(win, 'windows') } : {}), ...(lin ? { linux: record(lin, 'linux') } : {}) }, null, 2) + '\n');
   // the buttons: in the hero by name alone, in the download part with their sizes
   const button = (f: FileRecord, cls: string, href: string, label: string, bits: string[]) => `<a class="cta${cls}" href="${href}">${label}${bits.length ? ` <span class="cta-sub">${bits.join(' · ')}</span>` : ''}</a>`;
   const macButtons = (size: boolean) => [arm && button(arm, ' primary', '/download/mac-arm64', 'Download for Mac', ['Apple silicon', ...(size ? [mb(arm)] : [])]),
     intel && button(intel, arm ? '' : ' primary', '/download/mac-intel', arm ? 'Intel Mac' : 'Download for Mac', [...(arm ? [] : ['Intel']), ...(size ? [mb(intel)] : [])])].filter(Boolean);
   const winButtons = (size: boolean) => [pc && button(pc, mac ? '' : ' primary', '/download/windows', size || !mac ? 'Download for Windows' : 'Windows', size ? ['64-bit', mb(pc)] : []),
     winArm && size && button(winArm, '', '/download/windows-arm64', 'Windows on Arm', [mb(winArm)])].filter(Boolean);
-  html = fill(html, 'hero', `        ${[...macButtons(false), ...winButtons(false)].join('\n        ')}\n        ${WRITE}`);
-  const same = mac && win && mac.version === win.version;
-  const forWhat = [mac && 'macOS 12 or later', win && 'Windows 10 or 11'].filter(Boolean).join(' and ');
+  const linuxButtons = (size: boolean) => [appImage && button(appImage, mac || win ? '' : ' primary', '/download/linux', size || !(mac || win) ? 'Download for Linux' : 'Linux', size ? ['AppImage', mb(appImage)] : []),
+    deb && size && button(deb, '', '/download/linux-deb', 'Linux .deb', ['Debian, Ubuntu', mb(deb)])].filter(Boolean);
+  html = fill(html, 'hero', `        ${[...macButtons(false), ...winButtons(false), ...linuxButtons(false)].join('\n        ')}\n        ${WRITE}`);
+  const builds = [mac, win, lin].filter((r): r is Release => !!r);
+  const same = builds.every((r) => r.version === builds[0].version);
+  const forWhat = [mac && 'macOS 12 or later', win && 'Windows 10 or 11', lin && '64-bit Linux'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1');
   const howTo = (mac && !mac.signed) || win ? 'How to open it, and checksums' : 'Checksums';
-  const versions = !mac || !win || same ? `Version ${esc((mac || win)!.version)}, ${dateOf((mac || win)!)}, for ${forWhat}.`
-    : `Mac: version ${esc(mac.version)}, ${dateOf(mac)}. Windows: version ${esc(win.version)}, ${dateOf(win)}.`;
+  const first = builds[0];
+  const versions = same ? `Version ${esc(first.version)}, ${dateOf(first)}, for ${forWhat}.`
+    : [mac && `Mac: version ${esc(mac.version)}, ${dateOf(mac)}.`, win && `Windows: version ${esc(win.version)}, ${dateOf(win)}.`, lin && `Linux: version ${esc(lin.version)}, ${dateOf(lin)}.`].filter(Boolean).join(' ');
   html = fill(html, 'hero-fine', `      <p class="fine">${versions} <a href="#download">${howTo}</a>. ${MANUAL}.</p>`);
-  const out = !mac || !win || same ? `Version ${esc((mac || win)!.version)} is out${mac && win ? ' for Mac and Windows' : ''}.` : `Version ${esc(mac.version)} is out for the Mac, and ${esc(win.version)} for Windows.`;
+  const names = [mac && 'Mac', win && 'Windows', lin && 'Linux'].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1');
+  const out = same ? `Version ${esc(first.version)} is out${builds.length > 1 ? ` for ${names}` : ''}.` : [mac && `${esc(mac.version)} for the Mac`, win && `${esc(win.version)} for Windows`, lin && `${esc(lin.version)} for Linux`].filter(Boolean).join(', ').replace(/^/, 'Versions out: ') + '.';
   html = fill(html, 'status', `      <p class="lede">${out} It is an early alpha: try it well before a show depends on it.</p>`);
   const sum = (f: FileRecord) => `          <dt>${esc(f.file)}</dt><dd><code>${esc(f.sha256)}</code></dd>`;
   const macOpen = mac && !mac.signed ? `      <p class="open"><b>Opening it the first time.</b> I haven&rsquo;t signed this build with an Apple Developer ID yet, so macOS will refuse to open it and may say it&rsquo;s damaged. It isn&rsquo;t. Drag the app to Applications, then in Terminal run <code>xattr -dr com.apple.quarantine "/Applications/Endless Cues Public Alpha.app"</code> and open it again.</p>\n` : '';
   // (a new certificate has no reputation with SmartScreen yet, so even a signed installer may be warned about at first)
   const winOpen = win && win.signed ? `      <p class="open"><b>Opening it on Windows.</b> The installer is signed, but while it is new to Windows it may still say &ldquo;Windows protected your PC&rdquo;. Click <b>More info</b>, then <b>Run anyway</b>. It installs for you alone and doesn&rsquo;t ask for an administrator.</p>\n`
     : win ? `      <p class="open"><b>Opening it on Windows.</b> I haven&rsquo;t signed the Windows installer yet, so Windows may say &ldquo;Windows protected your PC&rdquo;. Click <b>More info</b>, then <b>Run anyway</b>. It installs for you alone and doesn&rsquo;t ask for an administrator.</p>\n` : '';
+  const linuxOpen = lin ? `      <p class="open"><b>On Linux.</b> The AppImage runs as it is: make it executable (<code>chmod +x</code> and its name) and open it. Or install the <code>.deb</code> with <code>sudo apt install ./</code> and its name. It&rsquo;s newer on Linux than anywhere else, so tell me what you ran it on.</p>\n` : '';
   html = fill(html, 'download', `<section class="sec" id="download" aria-labelledby="h-download">
   <div class="wrap dl">
     <div>
       <p class="kicker"><span class="dot go"></span>Download</p>
-      <h2 id="h-download">Endless Cues ${esc(!mac || !win || same ? (mac || win)!.version : `${mac.version} · ${win.version}`)}</h2>
-      <p class="lede">${dateOf((mac || win)!)}. For ${forWhat}.${mac && mac.signed ? ' The Mac app is signed and notarised by Apple.' : ''}${win && win.signed ? ' The Windows installer is signed through Microsoft.' : ''}</p>
+      <h2 id="h-download">Endless Cues ${esc(same ? first.version : builds.map((r) => r.version).join(' · '))}</h2>
+      <p class="lede">${dateOf(first)}. For ${forWhat}.${mac && mac.signed ? ' The Mac app is signed and notarised by Apple.' : ''}${win && win.signed ? ' The Windows installer is signed through Microsoft.' : ''}</p>
     </div>
     <div>
 ${mac ? `      <div class="cta-row">
@@ -478,12 +531,15 @@ ${mac ? `      <div class="cta-row">
 ` : ''}${win ? `      <div class="cta-row">
         ${winButtons(true).join('\n        ')}
       </div>
-` : ''}${macOpen}${winOpen}      <details class="sums">
+` : ''}${lin ? `      <div class="cta-row">
+        ${linuxButtons(true).join('\n        ')}
+      </div>
+` : ''}${macOpen}${winOpen}${linuxOpen}      <details class="sums">
         <summary>SHA-256 checksums</summary>
         <dl>
-${[arm, intel, pc, winArm].filter((f): f is FileRecord => !!f).map(sum).join('\n')}
+${[arm, intel, pc, winArm, appImage, deb].filter((f): f is FileRecord => !!f).map(sum).join('\n')}
         </dl>
-        <p>${[mac && 'On a Mac, in Terminal: <code>shasum -a 256</code> and the file&rsquo;s name.', win && 'On Windows, in PowerShell: <code>Get-FileHash</code> and the file&rsquo;s name.'].filter(Boolean).join(' ')}</p>
+        <p>${[mac && 'On a Mac, in Terminal: <code>shasum -a 256</code> and the file&rsquo;s name.', win && 'On Windows, in PowerShell: <code>Get-FileHash</code> and the file&rsquo;s name.', lin && 'On Linux: <code>sha256sum</code> and the file&rsquo;s name.'].filter(Boolean).join(' ')}</p>
       </details>
     </div>
   </div>
@@ -491,7 +547,7 @@ ${[arm, intel, pc, winArm].filter((f): f is FileRecord => !!f).map(sum).join('\n
   html = fill(html, 'final', `    <h2 id="h-final">Want to hear about the next version?</h2>
     <p class="lede">Email <a data-link="notify" href="${NOTIFY}"><span data-fill="email">${EMAIL}</span></a> and I&rsquo;ll tell you when there&rsquo;s a new one. If you try this one on a show, tell me how it went: what you ran it on, and what broke.</p>`);
   writeSite('index.html', html);
-  console.log(`The site (${dir}) offers ${[mac && `${mac.version} for the Mac`, win && `${win.version} for Windows`].filter(Boolean).join(' and ')} from ${base}.\nNext, in the service repository: look at it (python3 -m http.server -d site 8788), run node site/stamp.js, commit, then deploy the site (its README.md).`);
+  console.log(`The site (${dir}) offers ${[mac && `${mac.version} for the Mac`, win && `${win.version} for Windows`, lin && `${lin.version} for Linux`].filter(Boolean).join(', ')} from ${base}.\nNext, in the service repository: look at it (python3 -m http.server -d site 8788), run node site/stamp.js, commit, then deploy the site (its README.md).`);
 }
 
 const [what, ...rest] = require.main === module ? process.argv.slice(2) : ['(loaded)'];
@@ -499,6 +555,7 @@ if (what === '(loaded)') { /* required by a test: nothing runs */ }
 else if (what === 'version') setVersion(rest[0] || '');
 else if (what === 'mac') buildMac(rest);
 else if (what === 'win') buildWin(rest);
+else if (what === 'linux') buildLinux(rest);
 else if (what === 'site') site(rest);
 else if (what === 'publish') publish(rest);
 else { console.log(read('bin/release.js').split('*/')[0].split('\n').slice(2).map((l) => l.replace(/^ \* ?/, '')).join('\n')); process.exit(what ? 1 : 0); }
