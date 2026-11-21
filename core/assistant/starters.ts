@@ -137,11 +137,15 @@ function said(plan: Plan) {
 
 // ── the first screen ──────────────────────────────────────────────────
 
-/** The ways to have something answer, each true of this computer (4.6.1). The Endless Cues assistant is first:
- *  nothing to install and no key; choosing it signs in (`signIn`), and nothing contacts the service before that. */
-function setupRows(installed: Record<string, boolean | undefined> = {}) {
+/** Whether the first screen offers the hosted Endless Cues assistant. It is open: free to try, for a limited number
+ *  of asks. (Turned off, Settings ▸ Assistant still offers it.) */
+const HOSTED_OPEN = true;
+
+/** The ways to have something answer, each true of this computer (4.6.1). The Endless Cues assistant, once it is open,
+ *  is first: nothing to install and no key; choosing it signs in (`signIn`), and nothing contacts the service before that. */
+function setupRows(installed: Record<string, boolean | undefined> = {}, { hosted = HOSTED_OPEN }: { hosted?: boolean } = {}) {
   const cli = (id: string, label: string, says: string): SetupRow => ({ id, label, says, found: true, set: id, open: null });
-  const rows: SetupRow[] = [{ id: 'cloud', label: 'Endless Cues assistant', says: 'free during the beta', found: false, set: 'cloud', open: null, signIn: true }];
+  const rows: SetupRow[] = hosted ? [{ id: 'cloud', label: 'Endless Cues assistant', says: 'free to try, limited', found: false, set: 'cloud', open: null, signIn: true }] : [];
   // (Claude Code first when both are there; Codex takes the place when it alone is)
   if (installed['claude-code']) rows.push(cli('claude-code', 'Claude Code', 'uses your Claude plan'));
   else if (installed.codex) rows.push(cli('codex', 'Codex', 'uses your Codex sign-in'));
@@ -267,4 +271,4 @@ function first({ doc, showDir = null, folder = null, rig = null, imported = null
   return { state, line, asks: offered, next, setup: null, helper: false };
 }
 
-export { first, folderPlan, folderOps, nextNumber, said, setupRows, numbersUntidy };
+export { first, folderPlan, folderOps, nextNumber, said, setupRows, numbersUntidy, HOSTED_OPEN };

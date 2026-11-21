@@ -82,8 +82,8 @@ Things may not work. If something breaks, tell me and I'll try to get a fix out 
 
 Tried for real:
 
-- The cue engine, on a real show: the sound, the cues, and the line to the lighting desk over OSC.
-- macOS (Apple silicon). Windows, on a test PC: the app from source, the tests and the end-to-end run.
+- *Endless Forms*, run from one laptop: its sound, a projector on a second display for the video, live microphones, Wi-Fi props (small ESP32 boards) over OSC on the show's own network, and the line to the lighting desk over OSC.
+- macOS (Apple silicon). Windows, on a test PC: the app, the tests and the end-to-end run.
 - The native audio engine, measured on a Mac's own devices.
 - QLab import, checked against what QLab itself says about 53 workspaces.
 - The assistant through Claude Code.
@@ -92,13 +92,13 @@ Tried for real:
 Not yet widely tested:
 
 - Linux, beyond the tests.
-- Audio interfaces with more than two outputs, and microphones.
+- Audio interfaces with many outputs.
 - MIDI equipment and timecode.
-- DMX fixtures, and lighting desks with this version.
-- Projectors, second displays and cameras.
+- DMX fixtures over Art-Net or sACN, and lighting desks other than the show's.
+- Cameras.
 - Remotes made for QLab, and the web remote on a real phone.
 - A main and a backup computer.
-- Devices beyond a stand-in prop, and the prop firmware on a board.
+- The prop kit's own firmware on a board.
 - The effects, the reverb and ducking, by ear.
 - The assistant with your own key, Codex or a local model.
 
@@ -181,7 +181,7 @@ node bin/ec-mcp.js --show My.ecshow                                          # o
 
 The app is complete without the internet, and the assistant is optional. It works through Claude Code or Codex if you have one installed, with your own key from Anthropic, OpenRouter, OpenAI or any OpenAI-compatible service, or with a local model through Ollama. Nothing here costs money.
 
-The code also has a hosted assistant (an Endless Cues account, with no key to manage). It isn't running for everyone yet. If people want it, I'll host it so they can try it and use it for a while. See [`docs/adr/0004-open-core-boundary.md`](docs/adr/0004-open-core-boundary.md).
+There is also a hosted assistant (an Endless Cues account, with no key to manage). You can try it for free, for a limited number of asks: how many, and for how long, I can't promise, since every ask costs me something. See [`docs/adr/0004-open-core-boundary.md`](docs/adr/0004-open-core-boundary.md).
 
 ## Credit
 

@@ -424,7 +424,7 @@ function CloudRows({ s, refreshInfo }: { s: State; refreshInfo: () => unknown })
     return html`<${Row} title="Your code" help="Confirm it in the browser."><span class="mono" data-cloud-code style="font-size:18px;letter-spacing:2px">${c.code}</span>
       <button class="btn ghost small" onClick=${() => ec.app({ op: 'cloud-cancel' })}>Cancel</button><//>`;
   }
-  return html`<${Row} title="Account" help=${c.error || 'Free during the beta.'}>
+  return html`<${Row} title="Account" help=${c.error || 'Free to try, for a limited number of asks.'}>
     <button class="btn" data-cloud-signin disabled=${c.step === 'starting'} onClick=${() => ec.app({ op: 'cloud-sign-in' })}>${c.step === 'starting' ? 'Signing in…' : 'Sign in'}</button><//>`;
 }
 

@@ -2,7 +2,7 @@
 
 *For humans: this file is the instructions coding agents (Claude Code, Codex) follow when they work in this repository. To use or build the app, start at [`README.md`](README.md).*
 
-Endless Cues: a free, open-source, cross-platform show-control app. It works the way QLab does and opens QLab 4 and 5 workspaces. Nothing in it is paid: the assistant runs on the user's own Claude Code, Codex, key or local model, and the code also has an optional hosted assistant that the owner may run if people want it. [`README.md`](README.md) is the map; [`docs/specs/`](docs/specs/README.md) is how it is meant to work. It grew out of the show app in `endless_forms/visuals/stage-app` (also called "Endless Cues", the one in `/Applications`); **that app is the running show's and is never touched from here.**
+Endless Cues: a free, open-source, cross-platform show-control app. It works the way QLab does and opens QLab 4 and 5 workspaces. Nothing in it is paid: the assistant runs on the user's own Claude Code, Codex, key or local model, and there is an optional hosted assistant, free to try for a limited number of asks (no promise of how many). [`README.md`](README.md) is the map; [`docs/specs/`](docs/specs/README.md) is how it is meant to work. It grew out of the show app in `endless_forms/visuals/stage-app` (also called "Endless Cues", the one in `/Applications`); **that app is the running show's and is never touched from here.**
 
 ## Rules
 

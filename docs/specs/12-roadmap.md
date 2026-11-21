@@ -59,5 +59,5 @@ The bar: a sound designer can build and run a real audio-only show on a Mac or a
 
 ## Decisions waiting on the owner
 
-1. **Hosting the assistant**: the code is written; whether to run it for people depends on whether they want it.
+1. **The hosted assistant**: running, free to try for a limited number of asks; whether it grows depends on whether people use it.
 2. **The name collision** with the original show's installed app ([10](10-cross-platform.md)).

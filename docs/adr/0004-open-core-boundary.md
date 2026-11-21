@@ -11,8 +11,8 @@ and its tools. There is no tier, licence check, trial or "pro" switch anywhere i
 
 The code also has a client for a hosted assistant (the `cloud` provider: an Endless Cues account, signed in from the
 app, with no key to manage), and the service it talks to lives in the private `endless_cues_service` repository
-([17](../specs/17-service-protocol.md)). It is optional. It isn't running for everyone yet: if people want it, the
-owner may host it so they can try the assistant and use it for a while without a key of their own.
+([17](../specs/17-service-protocol.md)). It is optional. It is running: anyone can try it free, for a limited
+number of asks, with no promise of how many or for how long (each ask costs the owner money).
 
 The rule, if anything is ever hosted: **only what needs a server is hosted**, and nothing is withheld from the open app
 to make a hosted thing attractive.

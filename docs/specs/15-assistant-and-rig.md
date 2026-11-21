@@ -602,7 +602,7 @@ The drawer shows, under the show's own line, four choices as rows, in this order
 | **The built-in helper** | "No model, no internet, nothing sent anywhere. It does a few jobs: cues from a folder, adding a device, a cue for a command, “is everything ready?”." | Sets the provider to `demo`. Ready at once. |
 
 If Codex is found and Claude Code is not, it takes Claude Code's place. The **Endless Cues
-assistant** ("free during the beta") is the first row; choosing it signs in ([17](17-service-protocol.md)). Under the rows, one line: "Everything else in Endless Cues works without any of
+assistant** ("free to try, limited") is the first row; choosing it signs in ([17](17-service-protocol.md)). Under the rows, one line: "Everything else in Endless Cues works without any of
 these." The provider's id is `demo`; its name on screen is **Built-in helper**.
 
 #### 4.6.2 The built-in helper's turns

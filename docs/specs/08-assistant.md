@@ -190,7 +190,7 @@ The model is reached through a provider, chosen per computer and never stored in
 
 | Provider | |
 |---|---|
-| `cloud` | The Endless Cues assistant: an account, signed in from the app (the device flow). Requests go to the Endless Cues service, which chooses the model (OpenAI's, today) and pays for it. Optional, and not running for everyone yet: the owner may host it if people want it. [17 · The service protocol](17-service-protocol.md). |
+| `cloud` | The Endless Cues assistant: an account, signed in from the app (the device flow). Requests go to the Endless Cues service, which chooses the model (OpenAI's, today) and pays for it. Optional: free to try, for a limited number of asks, with no promise of how many. |
 | `anthropic` | Your own Anthropic key (typed into Settings, or `ANTHROPIC_API_KEY` in the environment). |
 | `openrouter` | Your own OpenRouter key; any model OpenRouter carries. You type the model's id. |
 | `openai` | Your own OpenAI key. |

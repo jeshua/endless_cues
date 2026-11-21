@@ -46,7 +46,7 @@ These decide arguments.
 
 Everything. The whole application, everything needed to build and run a show, on any number of computers, offline, with no account and nothing to unlock. The assistant runs on your own Claude Code or Codex, your own key, or a local model.
 
-The code also holds a hosted assistant (an Endless Cues account, no key to manage). It isn't running for everyone yet; if people want it, the owner may host it so they can try it and use it for a while. Nothing is ever held back from the open app to make a hosted thing look better. [ADR 0004](../adr/0004-open-core-boundary.md).
+There is also a hosted assistant (an Endless Cues account, no key to manage): free to try, for a limited number of asks, with no promise of how many or for how long. Nothing is ever held back from the open app to make a hosted thing look better. [ADR 0004](../adr/0004-open-core-boundary.md).
 
 ## Names
 

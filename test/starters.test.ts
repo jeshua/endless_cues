@@ -122,12 +122,14 @@ test('the first screen with no model: only what the helper can do, and five true
   assert.deepEqual(f.asks.map((a) => a.label), ['Make cues from these 2 sounds'], 'reading the notes needs a model: not offered');
   assert.equal(f.next.label, '', 'nobody answers yet: there is nobody to tell');
   assert.deepEqual(f.setup.rows.map((r) => [r.id, r.set, r.open]), [['cloud', 'cloud', null], ['claude-code', 'claude-code', null], ['key', null, 'anthropic'], ['local', null, 'ollama'], ['helper', 'demo', null]]);
-  assert.deepEqual(f.setup.rows.map((r) => `${r.label} · ${r.says}`), ['Endless Cues assistant · free during the beta', 'Claude Code · uses your Claude plan', 'Your own key · Anthropic, OpenAI…', 'Ollama · free, on this computer', 'Built-in helper · no model, a few jobs']);
+  assert.deepEqual(f.setup.rows.map((r) => `${r.label} · ${r.says}`), ['Endless Cues assistant · free to try, limited', 'Claude Code · uses your Claude plan', 'Your own key · Anthropic, OpenAI…', 'Ollama · free, on this computer', 'Built-in helper · no model, a few jobs']);
   for (const r of f.setup.rows) assert.ok(r.says.split(/\s+/).length <= 5 && !/[()]/.test(r.says), `${r.label}: at most five words, no parentheses`);
   assert.equal(f.setup.foot, '', 'no foot line');
   // Codex takes the second place when it alone is found; neither found, there are four rows and no claim that one was
   assert.equal(starters.setupRows({ codex: true }).rows[1].id, 'codex');
   assert.deepEqual(starters.setupRows({}).rows.map((r) => r.id), ['cloud', 'key', 'local', 'helper']);
+  // with the hosted assistant not offered, it is not on the first screen
+  assert.deepEqual(starters.setupRows({ codex: true }, { hosted: false }).rows.map((r) => r.id), ['codex', 'key', 'local', 'helper']);
   // the helper answering: its own asks only, and it says what it is
   const h = starters.first({ doc, showDir: '/x', folder: listing(['a.wav', 'notes.txt']), provider: 'demo' });
   assert.equal(h.state, 'folder');
