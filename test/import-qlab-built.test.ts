@@ -8,7 +8,7 @@ import * as midi from '../core/net/midi';
 import type { Cue } from '../core/show/types';
 
 // A made-up workspace (test/fixtures/make-qlab-built-fixture.py) whose cues keep each setting under the name, and in
-// the form, that QLab 5.6.3 saved it in workspaces built with QLab itself (test/qlab-compare): each cue one thing the
+// the form, that QLab 5.6.3 saved it in workspaces built with QLab itself: each cue one thing the
 // importer once missed or said wrongly.
 const FILE = path.join(__dirname, 'fixtures', 'qlab-built', 'fields.qlab5');
 const load = () => importQlab(fs.readFileSync(FILE), { file: FILE });

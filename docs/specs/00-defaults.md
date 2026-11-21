@@ -64,11 +64,11 @@ mode; keeping a marker and finding or correcting a tempo are edits and wait for 
 | A skip or crossfade from the Playing strip waiting for the bar | Off ("on the bar" unticked; kept by the window, not the show) | The Playing strip, under More | |
 | A new long sound put on the Music bus by its length | **Off** (`settings.editing.longSoundsToMusic`) | Settings ▸ Show ▸ Long sounds go on the Music bus; show | A sound added with no bus chosen goes on the bus every Audio cue starts on (Effects, or the show's Audio template). |
 | Auto-load (a cue loads the one after it) | Off | The cue, under More | |
-| The safety limiter (a ceiling at −0.3 dBFS on each output pair) | **On** (`settings.audio.limiter`) | Settings ▸ Audio; show | It does nothing to sound that would not clip; left for the owner to decide (QLab has none). |
-| Level limits (−60 … +12 dB) | On | Settings ▸ Audio; show | A range, as QLab has. |
+| The safety limiter (a ceiling at −0.3 dBFS on each output pair) | **On** (`settings.audio.limiter`) | Settings ▸ Audio; show | It does nothing to sound that would not clip; left for the owner to decide. |
+| Level limits (−60 … +12 dB) | On | Settings ▸ Audio; show | A range. |
 | The monitor feed | Off | Settings ▸ Audio; show | |
 | Reverb and delay sends | Off (no send on any bus) | The bus | |
-| Upcoming sounds read into memory ahead of their GO | On | None | This is what makes a GO immediate (QLab's loading). |
+| Upcoming sounds read into memory ahead of their GO | On | None | This is what makes a GO immediate. |
 | A waveform's peaks | Read when a view asks to draw that sound | None | |
 | Falling back to the system output when the chosen device goes away | On | None | The alternative is silence. Said in a notice. |
 | The native audio engine (`ec-audio`, [18](18-native-audio.md)) | **Off**: Web Audio makes the sound (`audio.engine` 'webaudio', computer). Chosen while something plays, it takes over once nothing does; if it stops three times in a minute, or there is no program, Web Audio plays for the rest of the sitting, said in a notice and the show log | Settings ▸ Audio ▸ Audio engine; computer | The status bar names the engine in use beside the output. |
@@ -80,7 +80,7 @@ setting asks for it, or a cue that sends is fired.
 
 | Behaviour | Default | Switch | Notes |
 |---|---|---|---|
-| OSC control (QLab's addresses on 53000, answers on 53001, UDP and TCP) | **Off** (`modules.osc-control.enabled`) | Settings ▸ Integrations ▸ Modules ▸ OSC control; show | Unlike QLab, which listens as it comes: a port that runs the show stays shut until it is asked for. One switch opens it, with QLab's port already filled in. |
+| OSC control (QLab's addresses on 53000, answers on 53001, UDP and TCP) | **Off** (`modules.osc-control.enabled`) | Settings ▸ Integrations ▸ Modules ▸ OSC control; show | A port that runs the show stays shut until it is asked for. One switch opens it, with QLab's port already filled in. |
 | OSC control's "no passcode" row (what a sender with no passcode may do) | View and control, **never edit** (with no passcode set; nothing once there is one) | Settings ▸ Integrations ▸ Modules ▸ OSC control ▸ Who may do what (edit takes a passcode with edit access); show | Nobody may edit without a passcode. QLab's no-passcode row is empty by default. |
 | OSC control's answers over UDP | Only to a sender that has sent `/connect` (`/connect`, `/version`, `/workspaces` to anyone), at most 32 KB a second to an address | None (over TCP everything is answered) | A forged address is never answered. |
 | A show from another computer (not made, saved or turned on here) | **Network features off**: no module, no port, no connection, nothing sent, no device asked, no clock, OSC, MIDI or timecode trigger, no sound on another computer's share opened | The title bar's line ▸ Turn on (remembered for that show on this computer, in config.json `shows`) | |
@@ -126,8 +126,8 @@ setting asks for it, or a cue that sends is fired.
 | Run from here (right-click ▸ Run from Here…, Tools ▸ Run from the Selected Cue…) | Only when asked, in Edit mode, after a preview of what it will start; Show mode refuses it | — | |
 | Keeping the display awake | On while the app is open | None | |
 | Reopening the last show at launch | On | None | |
-| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | QLab comes with 0; an imported workspace takes QLab's value. Left for the owner to decide. It covers every GO (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.ts`). |
-| Numbering new cues; the playhead locked to the selection | On, as QLab comes | Settings ▸ Show; show | |
+| Double-GO protection | 0.3 s (`settings.go.doubleGoProtection`) | Settings ▸ General; show | An imported QLab workspace keeps its own value. Left for the owner to decide. It covers every GO (the button and Space, the web remote, OSC, MIDI and MSC GOs, remotes built for QLab), **and a cue's own trigger repeating** (the same hotkey, OSC or MIDI message, clock, cart button or remote start for the same cue within the time); a trigger is not a GO, so it neither locks GO nor is locked by it. Each one ignored is a line in the show log (`core/engine/go-guard.ts`). |
+| Numbering new cues; the playhead locked to the selection | On | Settings ▸ Show; show | |
 | Cue templates | None | "Start like this one" in the inspector | |
 | The side panel's Network section (the last messages sent) | **Hidden** | ⋯ ▸ Network in the Side Panel (also View ▸ Network and MIDI Monitor for the full monitor); this window's storage, per viewer | |
 | A list column nothing in the list fills (Target, Pre-wait, Duration, Post-wait) | Not drawn; back with the first cue that has a value. Held as it was through Show mode | None | |
@@ -151,7 +151,7 @@ Yes: **every integration is in the open-source app, with no key, account or lice
 | The web remote (a phone or tablet on the same network) | Yes | Nothing. |
 | QLab 4 and 5 import | Yes | Nothing: QLab need not be installed. |
 | Main and backup | Yes | A second computer. |
-| The assistant | Yes, the whole agent and its tools | **Someone's model.** It runs on the user's own Claude Code or Codex sign-in, their own Anthropic or OpenAI-compatible key, or a local model server. Or the Endless Cues assistant: an account on the Endless Cues service, which holds the model key ([17](17-service-protocol.md)); free during the beta, and the only thing meant to cost money later. Nothing contacts the service until a person chooses it. |
+| The assistant | Yes, the whole agent and its tools | **Someone's model.** It runs on the user's own Claude Code or Codex sign-in, their own Anthropic or OpenAI-compatible key, or a local model server. Or the Endless Cues assistant: an account on the Endless Cues service, which holds the model key ([17](17-service-protocol.md)); optional, and not running for everyone yet (the owner may host it if people want it). Nothing contacts the service until a person chooses it. |
 
-None of these has been proven on real equipment unless `CLAUDE.md`'s "Not verified yet" list says otherwise: free
-is not the same as field-tested.
+Free is not the same as field-tested: much of this has been tried against stand-ins more than real equipment so far.
+`CLAUDE.md`'s "Not verified yet" list says exactly what.

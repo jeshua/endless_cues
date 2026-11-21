@@ -1,6 +1,6 @@
 # The native audio engine on a Mac, 2026-11-17
 
-What `ec-audio` ([spec 18](../../specs/18-native-audio.md)) really does on real CoreAudio devices, measured on one
+What `ec-audio` ([spec 18](../specs/18-native-audio.md)) really does on real CoreAudio devices, measured on one
 MacBook Pro (Apple silicon) with no audio interface: **BlackHole 2ch** (a virtual device, 48 kHz, whose output comes
 back on its input, digitally), **RØDE Connect Virtual** (virtual, 48 kHz, no loopback) and the **built-in speakers**
 (44.1 kHz, every signal at −40 dB or lower). Web Audio (the audio window) was measured the same way, beside it.

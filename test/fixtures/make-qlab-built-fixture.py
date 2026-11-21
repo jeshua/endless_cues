@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes test/fixtures/qlab-built/fields.qlab5: a made-up workspace whose cues keep each setting under the name,
 and in the form, that QLab 5.6.3 saved it in workspaces built with QLab itself for the purpose (by AppleScript, from
-nothing: test/qlab-compare). One cue per thing the importer once missed. Nothing here comes from a real show.
+nothing). One cue per thing the importer once missed. Nothing here comes from a real show.
 
     python3 test/fixtures/make-qlab-built-fixture.py
 """

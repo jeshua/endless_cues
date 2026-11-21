@@ -87,7 +87,7 @@ Only fields named in `core/show/cue-types.ts` survive `normalise()`, so only tho
 
 What does not follow on: `panic()`, `fadeAll()`, `reset()` and `stopCue()` remove the pending follow, and a group's `fadeOthers` removes every other cue's. A disarmed cue still passes its continue on (it is never live, so an auto-follow from it fires at the next change).
 
-A caveat found while documenting: a Fade cue is not live while its fade runs (the fade's target is the audio cue, elsewhere in the list), so `auto-follow` on a Fade cue fires the next cue immediately, not when the fade lands. QLab waits for the fade's duration.
+A caveat found while documenting: a Fade cue is not live while its fade runs (the fade's target is the audio cue, elsewhere in the list), so `auto-follow` on a Fade cue fires the next cue immediately, not when the fade lands. It should wait for the fade's duration (section 14).
 
 ### 4.1 Second triggers, and cues that duck the others
 
@@ -286,9 +286,9 @@ An audio cue with no `bus` plays on `effects` (`busOf`); `toEngineDoc` always se
 - sound: `{ id, kind: 'audio', type: 'audio', name, number, parent, elapsed, total, loop, loops, loopOptions, region, exact, holds, holding, armed, db, fadingTo, paused, file, gainDb, markers, duck, topNumber }`. `duck` is the dB a cue that ducks the others is holding it at. `elapsed` is the position in the file; `total` the file's duration (0 if unknown); `holding` is true while the track is inside the section it loops; `armed` is `[{ start, end }]`, next first.
 - fade: `{ id, kind: 'fade', type: 'fade', name, number, parent, elapsed, total, paused }`. Fades the engine makes itself (panic, fade-others, tails, fade-ins, level moves) have ids like `panic:<id>`, `others:<id>`, `tail:<id>`, `level:<id>` and the name `'fade out'`.
 
-## 14. Not yet implemented (vs QLab)
+## 14. Not yet implemented
 
-The engine lacks the following; `09-qlab-parity.md` has the full matrix.
+The engine lacks the following.
 
 - A Devamp's "start next" landed to the sample (it is a timer). (A cue cart is the host's and the window's: its buttons start cues by id, whichever list is being run.)
 - Group modes other than timeline (start-first-and-enter, start-first, start-random, playlist, cue-list).

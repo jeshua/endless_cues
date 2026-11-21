@@ -32,7 +32,7 @@
  * others" with its reach; double-GO protection, the panic time and the network patches. A Script cue is AppleScript,
  * which nothing here runs: it is kept as a Memo with its script in its notes.
  *
- * Checked field by field against what QLab 5.6.3 itself reports for workspaces it saved (test/qlab-compare).
+ * Checked field by field against what QLab 5.6.3 itself reports for workspaces it saved.
  */
 import * as path from 'path';
 import * as fs from 'fs';
@@ -80,7 +80,7 @@ const UNSUPPORTED: Record<string, string> = {
 };
 // a cue's second trigger in QLab (its dictionary: nothing 0, panic 1, stop 2, hard stop 3, hard stop and restart 4,
 // devamp 5, playlist plays next 6, playlist plays previous 7) → ours. QLab's "nothing", its default, leaves a running
-// cue playing on when it is started again (measured: test/sound-compare); a cue here restarts unless told otherwise.
+// cue playing on when it is started again (measured against QLab 5.6.3); a cue here restarts unless told otherwise.
 const SECOND_TRIGGER: Record<number, 'nothing' | 'panic' | 'stop' | 'restart' | 'devamp'> = { 0: 'nothing', 1: 'panic', 2: 'stop', 3: 'stop', 4: 'restart', 5: 'devamp' };
 // fade and stop others: peers 1, list 2, all 3
 const FADE_OTHERS: Record<number, 'peers' | 'list' | 'all'> = { 1: 'peers', 2: 'list', 3: 'all' };
@@ -147,7 +147,7 @@ function panOfMatrix(matrix: Rows) {
 }
 
 // QLab's fade curves (FadeShape `type`, as QLab 5.6 saves them): its S-curve (the default) and its linear curve, each
-// along its "slider" domain, which is a fader's travel (core/audio/curves.ts, measured: test/sound-compare)
+// along its "slider" domain, which is a fader's travel (core/audio/curves.ts, measured against QLab 5.6.3)
 const FADE_SHAPE: Record<number, 'fader' | 'fader-linear'> = { 0: 'fader-linear', 1: 'fader' };
 /**
  * A Fade cue's curves for a level going up and down (QLab 5 keeps them under the fade's `shapes`, QLab 4 on the fade
@@ -557,7 +557,7 @@ function importQlab(buffer: Buffer, { file = '' }: { file?: string } = {}) {
       }
       if ((q.effects || []).length) note(q, `had ${q.effects.length} audio effect${q.effects.length === 1 ? '' : 's'}: not carried over`);
       ownOutputs(q, cue, note);
-      // a mono file left on QLab's default crosspoints plays on cue output 1 alone (measured: test/sound-compare); on a
+      // a mono file left on QLab's default crosspoints plays on cue output 1 alone (measured against QLab 5.6.3); on a
       // bus here it would play in the middle, so it is panned hard left, with the pan's own lift taken off its level
       if (!cue.outputs && cue.pan === undefined && cue.file && routing.wavChannels(cue.file) === 1) {
         const x = (r: number, c: number) => { const e = Object.values<Archived>((q.levels && q.levels.entries) || {}).find((k) => k && k.row === r && k.column === c); return e ? Number(e.initialLevel) : 0; };

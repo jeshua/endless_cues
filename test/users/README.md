@@ -61,7 +61,7 @@ Each user writes `report.md` and `report.json`. The shape is in [`brief.md`](bri
 
 1. Read `summary.md`. Findings that two people reported separately come first.
 2. Reproduce each bug before believing it. An agent can misread a screen.
-3. Each finding that stands becomes a line in [`docs/qlab-tracker.md`](../../docs/qlab-tracker.md) or a fix. Something that was hard to see twice becomes a check in `app/main/smoke.ts`.
+3. Each finding that stands becomes a line in the owner's to-do list or a fix. Something that was hard to see twice becomes a check in `app/main/smoke.ts`.
 4. Run it again after the fixes, under a new run name, and compare the two summaries.
 
 ## What this is not

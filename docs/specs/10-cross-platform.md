@@ -2,7 +2,7 @@
 
 Endless Cues is one codebase for macOS, Windows and Linux. This says what differs between them, how it is packaged, and what is still unproven.
 
-**State of play:** developed and run on macOS (Apple silicon) only. The unit tests are platform-neutral. An unpacked macOS build has been made with `electron-builder` and passes the end-to-end run. **Nothing has been run on Windows or Linux yet.** The CI workflow (`.github/workflows/ci.yml`) runs the tests on all three and builds installers on a tag, but has never executed.
+**State of play:** developed and run on macOS (Apple silicon). The unit tests are platform-neutral and run on all three in CI (`.github/workflows/ci.yml`). An unpacked macOS build has been made with `electron-builder` and passes the end-to-end run. On Windows, the app has been launched from source on one Windows 10 PC, where the tests and the end-to-end run pass; it has not yet been used there for a show. Linux has run the tests only. The lists below are what to look at on each.
 
 ## What is the same everywhere
 

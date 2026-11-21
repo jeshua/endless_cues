@@ -67,7 +67,7 @@ The stage's **corner pin** (`settings.video.pin`: four corners as fractions of t
 
 ## Formats
 
-The picture is drawn by Chromium's media stack as Electron ships it. That decides what plays, and it is narrower than QLab's AVFoundation.
+The picture is drawn by Chromium's media stack as Electron ships it. That decides what plays, and it is narrower than what a native player (AVFoundation on a Mac) reads.
 
 | | macOS | Windows | Linux |
 |---|---|---|---|
@@ -80,14 +80,14 @@ The picture is drawn by Chromium's media stack as Electron ships it. That decide
 
 Only VP8 + Opus in WebM and PNG are exercised by the tests. The rest of the table is what Chromium documents for the Electron this is built on, and has not been tried file by file here.
 
-A `.mov` plays when what is inside it is H.264 or HEVC; a `.mov` holding ProRes or Hap (what a QLab show is usually made of) does not. The cue is flagged ("its file cannot be played here") when the audio window cannot open it. **What to convert to**: H.264 in mp4 for ordinary footage; VP9 in WebM for footage with transparency. With ffmpeg:
+A `.mov` plays when what is inside it is H.264 or HEVC; a `.mov` holding ProRes or Hap (common in shows made on a Mac) does not. The cue is flagged ("its file cannot be played here") when the audio window cannot open it. **What to convert to**: H.264 in mp4 for ordinary footage; VP9 in WebM for footage with transparency. With ffmpeg:
 
 ```
 ffmpeg -i in.mov -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 256k out.mp4
 ffmpeg -i in-with-alpha.mov -c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf 24 -c:a libopus out.webm
 ```
 
-Long-GOP codecs (H.264, VP9) skip and loop less crisply than ProRes or Hap do in QLab. That is the price of no native code.
+Long-GOP codecs (H.264, VP9) skip and loop less crisply than ProRes or Hap do in a native player. That is the price of no native code.
 
 ## What is not here, and what it would take
 

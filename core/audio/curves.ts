@@ -31,8 +31,8 @@ export interface Limits { min: number; max: number }
 
 const SHAPES: readonly string[] = ['linear', 's-curve', 'fader', 'fader-linear'];
 /**
- * A fader's travel, as a gain to this power. Measured against QLab 5.6.3 played through a digital loopback
- * (docs/internal/sound-compare.md): with it, QLab's S-curve and linear fades between 0 and −20 dB are matched to
+ * A fader's travel, as a gain to this power. Measured against QLab 5.6.3 played through a digital loopback:
+ * with it, QLab's S-curve and linear fades between 0 and −20 dB are matched to
  * within 0.1 dB at every moment, and a fade from −10 dB to silence to within 0.25 dB. A fade to silence goes to −60 dB
  * along the fader (where QLab's travel ends too), then stops.
  */

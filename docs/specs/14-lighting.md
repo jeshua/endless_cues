@@ -5,7 +5,7 @@ Two ways a show reaches its lights, and a show may use either or both:
 - **A lighting desk runs the lights**, and the cue list calls its cues: a Light cue with a *desk cue number*, fired on the desk by the Lighting desk module ([06 · Control surfaces](06-control-surfaces.md#8-module-lighting-desk)).
 - **The app runs the lights itself**: a Light cue with *levels*, faded by the app and sent as DMX over the network. This document is about that, and ends with the test scripts for both.
 
-**No fixture has ever been lit by this code.** The packets are built from the published Art-Net 4 and ANSI E1.31 specifications and tested byte by byte and on loopback sockets; no node, dimmer or light has received one. Section 9 is the script for the first time.
+**Not yet widely tested on real fixtures.** The packets are built from the published Art-Net 4 and ANSI E1.31 specifications and tested byte by byte and on loopback sockets. Section 9 is the script for trying it on real gear.
 
 ## 1. The pieces
 

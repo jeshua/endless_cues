@@ -13,13 +13,12 @@ What the product is, how it is built, and why. The code is the source of truth f
 | 06 | [Control surfaces](06-control-surfaces.md) | Writing a module, or driving the show from outside: host commands, OSC, the web remote. |
 | 07 | [Design system](07-design-system.md) | Before touching `app/renderer/`. |
 | 08 | [The assistant](08-assistant.md) | Before touching `core/assistant/`. What it may and may not do. |
-| 09 | [QLab parity](09-qlab-parity.md) | Deciding what to build next. |
 | 10 | [Cross-platform](10-cross-platform.md) | Packaging, signing, and what differs per OS. |
 | 11 | (not here) | The service's design lives with the service, in the private `endless_cues_service` repository. |
-| 12 | [Roadmap](12-roadmap.md) | The order things are meant to happen in. |
+| 12 | [Roadmap](12-roadmap.md) | The order things are meant to happen in. Deciding what to build next. |
 | 13 | [Video and the stage](13-video.md) | Before touching `app/stage/` or `core/video/`. The output window, why a video is a sound with a picture, what formats play. |
 | 14 | [Lighting](14-lighting.md) | Before touching `core/light/`. DMX out, the patch, Light cues that hold levels, and the test scripts for real equipment. |
-| 15 | [The assistant and the rig](15-assistant-and-rig.md) | Before building devices, Device cues, the Rig page (the pre-show check), the assistant's folder, script, equipment and prop tools, or the hand-over to coding agents. A design with its build plan; not built yet. |
+| 15 | [The assistant and the rig](15-assistant-and-rig.md) | Before building devices, Device cues, the Rig page (the pre-show check), the assistant's folder, script, equipment and prop tools, or the hand-over to coding agents. The design and its build plan. |
 | 16 | (not here) | The hosted assistant's design and costs live with the service, in the private `endless_cues_service` repository; what the app sends it is in 17. |
 | 17 | [The service protocol](17-service-protocol.md) | Before the app talks to endlesscues.com's service: reports ("Report a problem"), sign-in and device tokens, the admin API, the hosted assistant's endpoints. A copy of `PROTOCOL.md` in the private service repository (change both together); usable under the MIT licence. |
 

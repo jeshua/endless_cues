@@ -319,7 +319,7 @@ Cue events are worked out after each push of the host's state, by comparing with
 
 ### 6.6 Trying it against real remotes
 
-None of the three has been run. Each script below is what to set, what to press and what should happen; where the outcome differs, the monitor (Window ▸ Monitor) shows what the remote actually sent, which is the thing to write down. Use the demo show (File ▸ Open the Demo Show), in Edit mode, OSC control on (Settings ▸ Integrations ▸ Modules), input port 53000, and no copy of QLab running on any computer in the test (it would take port 53000 or answer the remote itself).
+None of the three has been widely tried yet. Each script below is what to set, what to press and what should happen; where the outcome differs, the monitor (Window ▸ Monitor) shows what the remote actually sent, which is the thing to write down. Use the demo show (File ▸ Open the Demo Show), in Edit mode, OSC control on (Settings ▸ Integrations ▸ Modules), input port 53000, and no copy of QLab running on any computer in the test (it would take port 53000 or answer the remote itself).
 
 **A. Bitfocus Companion (its "Figure 53: QLab" connection).** Companion on the same computer or another on the network.
 
@@ -611,4 +611,4 @@ plus `/connect <passcode>` at the start and every half minute, and `/thump` ever
 3. **The same show, kept the same.** Edits are not mirrored and media is not synced: the backup has what was last copied to it. Mirroring edits means sending the operations (`core/show/ops.ts` batches are already the wire format) and comparing `show.hash` in the heartbeat; the heartbeat does not carry the hash yet, so a backup on an older show is not detected.
 4. **State that is not a command.** A backup started mid-show does not learn what is already playing (there is no "catch up" message; `/runningCues` could seed one). Triggers that fire cues inside the main (OSC, MIDI, clock) are not commands and are not mirrored. The mixer, a seek, a loop held by hand and Show mode are not mirrored.
 5. **Clocks.** Each engine runs its own waits and follows from the moment it hears the command. Network delay (a millisecond on a wire) is the offset between them; nothing measures or corrects it, and a mirrored GO that arrives early by more than the slack in double-GO protection would be dropped by the backup (the next GO re-aims the playhead, so it is one cue behind, not adrift). An exemption for mirrored commands needs an authenticated sender.
-6. **Proof.** Tested with two engines in one process (`test/backup-link.test.ts`), including a lost message. Never run on two computers.
+6. **Proof.** Tested with two engines in one process (`test/backup-link.test.ts`), including a lost message. Not yet run on two computers.

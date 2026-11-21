@@ -16,7 +16,7 @@ The code is TypeScript (`strict`). `build/compile.mjs` writes the `.js` beside e
 
 ## 2. The contributor agreement
 
-Endless Cues is licensed under the GPL-3.0-or-later. So that the project can also offer it under other terms (for example a commercial licence to someone who cannot use GPL software, which is one of the ways the project pays for itself), contributors keep their copyright and grant the project a broad licence to their contribution.
+Endless Cues is licensed under the GPL-3.0-or-later. So that the project can also offer it under other terms if that is ever needed (for example to someone who cannot use GPL software), contributors keep their copyright and grant the project a broad licence to their contribution.
 
 By submitting a contribution you agree that:
 
@@ -33,4 +33,4 @@ Say so in your first pull request with the line:
 
 ## 3. What is welcome
 
-Bug reports with a show file that reproduces the problem are the most useful thing you can send. For features, look at `docs/specs/09-qlab-parity.md` and `docs/specs/12-roadmap.md` first, and open an issue before building anything large.
+Bug reports with a show file that reproduces the problem are the most useful thing you can send. For features, look at `docs/specs/12-roadmap.md` first, and open an issue before building anything large.

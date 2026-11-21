@@ -134,14 +134,16 @@ each answered in under a minute with a short, true reply and a change to review:
 - "I also need the show to switch on a projector that only speaks HTTP" (it says the app cannot, and offers
   the hand-over)
 
-## What is not real yet
+## What hasn't been tried much yet
 
-- **No board has ever run the kit's firmware.** It compiles for ESP32 and ESP32-C3 with `arduino-cli`; it has
-  never been flashed. The steps in each prop's `README.md` are written, not walked.
-- **Devices have met only the stand-in prop, on this computer.** No lighting desk, mixer or real prop has
-  answered an "are you there?" or received a Device cue from this app.
-- **Look for props on a real network is untried**: whether the one broadcast hello reaches a prop through a
-  given router (many keep Wi-Fi clients apart).
+This walk uses a stand-in, so it works on any computer. With real gear, some of it is still new:
+
+- **The kit's firmware on a board.** It compiles for ESP32 and ESP32-C3 with `arduino-cli`, but it hasn't been
+  tried much on a real board yet. The steps in each prop's `README.md` are written, not yet walked.
+- **Devices beyond the stand-in prop.** A lighting desk, a mixer or a real prop as a device is not yet widely
+  tested.
+- **Look for props on a real network**: whether the one broadcast hello reaches a prop through a given router
+  (many keep Wi-Fi clients apart) is not yet known.
 - The hand-over's command lines from an installed app were run against an unsigned test build only.
 - The built-in helper understands a short list of phrasings and nothing else. Asked anything outside it, it
   says what it does.

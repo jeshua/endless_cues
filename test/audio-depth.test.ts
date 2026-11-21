@@ -99,7 +99,7 @@ test('a shaped fade that is paused goes on along what is left of its shape', () 
   assert.equal(last[1], 0); near(last[2], 3); assert.equal(last[4], 's-curve'); near(last[5]!, 0.25);
 });
 
-// QLab's S-curve fade from 0 to −20 dB, as it came out of QLab 5.6.3 (test/sound-compare: the level in dB along the
+// QLab's S-curve fade from 0 to −20 dB, as it came out of QLab 5.6.3 (the level in dB along the
 // fade at each tenth of its time, as read off the recording, to 0.1 dB)
 const QLAB_DOWN_20 = [0, -0.33, -1.37, -3.04, -5.23, -8.06, -11.08, -14.37, -17.2, -19.23, -20];
 test('a shape on a fader: QLab’s S-curve and linear curve, which move along a fader’s travel, not along the dB', () => {

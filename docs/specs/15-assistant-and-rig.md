@@ -1262,8 +1262,8 @@ ports, so the rule about not running `theo` beside a running show covers `june` 
 
 In `CLAUDE.md`'s list since the merge (as corrected there):
 
-- **The prop kit's firmware has never been flashed or run.** It compiles with arduino-cli for `esp32` and
-  `esp32c3`; no board has been flashed with it. Every rule in 6.2 is a rule the sketch was written to, not one
+- **The prop kit's firmware has not been flashed or run yet.** It compiles with arduino-cli for `esp32` and
+  `esp32c3`. Every rule in 6.2 is a rule the sketch was written to, not one
   that was watched. The protocol has been spoken only by this app and its own stand-in (`bin/ec-fake-prop.ts`).
 - *Look for props* on a real network: whether a broadcast hello reaches a prop through a given router (many
   isolate clients), and on a computer with two networks.

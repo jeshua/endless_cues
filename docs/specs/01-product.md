@@ -2,34 +2,34 @@
 
 ## What it is
 
-**A free, QLab-compatible cue list for running a show** (a puppet show, a play, a comedy night, a piece of digital art), with an assistant that helps build the show and connect its equipment.
+**A free cue list for running a show** (a puppet show, a play, a comedy night, a piece of digital art), with an assistant that helps build the show and connect its equipment.
 
 It is a show-control application for live performance. An operator sits in a booth with a list of cues and a GO button; pressing GO does the next thing: plays a sound, fades one, tells the lighting desk to go, starts a sequence. Endless Cues is that list, the engine that runs it, and the tools for building it.
 
-It is deliberately in QLab's family. QLab's model (one GO, a playhead, cues that target other cues, composition through groups and continue modes) is the industry's shared language, and a stage manager who has called a show from QLab should be able to sit down here and run one. Where QLab already got something right, we copy the behaviour and the keys.
+It works the way QLab does, and it opens QLab 4 and 5 workspaces. QLab's model (one GO, a playhead, cues that target other cues, composition through groups and continue modes) is the shared language of the people who run shows, so someone who has called a show from QLab can sit down here and run one. Where that model already works, the behaviour and the keys are the same.
 
 ## Who it is for
 
-1. **The sound designer / operator of a small or mid-sized production** who knows QLab, or will learn it from a tutorial written for QLab, and who needs one or more of: a computer that is not a Mac, a price that is not $1,399, a show file they can put in git, or a way to hand the show to someone else without licences.
+1. **The person who runs the sound on a small show**, who needs one or more of: a computer that is not a Mac, a show file they can put in git, a way to hand the show to someone else without licences, or simply no budget for show control.
 2. **The person whose show has music under it that must bend on the night**: a scene runs long, an entrance is late, an actor skips a page. The music tools are for designing a sound (a cue's chain of tools) and for rescuing a show that goes off script (go round from here, skip or crossfade to a marker on the bar), in the cue list itself. They are not for performing music.
-3. **The production with a developer near it**: people who want to script, extend and integrate. An open file format, a documented command surface and a module interface are for them.
+3. **The show with a programmer near it**: people who want to script, extend and integrate. An open file format, a documented command surface and a module interface are for them.
 
 Not for (yet): large video shows (Watchout, disguise), lighting programmers (a console), broadcast playout.
 
-## What makes it different
+## What it does
 
-| | QLab 5 | Endless Cues |
-|---|---|---|
-| Platforms | macOS | macOS, Windows, Linux |
-| Show file | Binary document | A folder of plain text (`show.json`) and media; diffs line by line |
-| History | Snapshots | Named versions beside the show; compare any two as a readable diff; restore is undoable |
-| Music | Plays files; loops and slices set in advance | Hold a playing track in a section, let go, jump inside it on the bar with a crossfade or a DJ blend |
-| Ducking | Absolute fades | Relative fades (survive a re-trim) and voice-band ducks (music keeps its bass and air under speech) |
-| Remote | iOS app | A web page on the show network; QLab-compatible OSC for Companion and Stream Deck |
-| Editing by description | — | The assistant proposes; you review a diff and accept |
-| Price | $599–$1,399, or rent | Free and open source; the hosted assistant is paid |
+The whole list is in the [README](../../README.md#what-it-does). The things that shape the rest of these specs:
 
-It is behind QLab on much else: see [09 · QLab parity](09-qlab-parity.md) and the [tracker](../qlab-tracker.md). Video, lighting, MIDI and timecode have first slices that no real equipment has confirmed.
+- **Every platform**: macOS, Windows and Linux from one codebase ([10](10-cross-platform.md)).
+- **The show is a folder of plain text** (`show.json`) and its media, so it diffs line by line ([03](03-show-file.md)).
+- **History**: named versions beside the show; compare any two as a readable diff; restoring one is undoable.
+- **Music that bends**: hold a playing track in a section, let go, jump inside it on the bar with a crossfade ([05](05-audio.md)).
+- **Relative fades and ducks**: a fade survives a re-trim, and a voice-band duck keeps the music's bass and air under speech (off until switched on, [00](00-defaults.md)).
+- **Remotes**: a web page on the show network, and OSC control in QLab's addresses for Companion and a Stream Deck ([06](06-control-surfaces.md)).
+- **Editing by description**: the assistant proposes; you review a diff and accept ([08](08-assistant.md)).
+- **Free**: all of it, open source, with no account.
+
+It is an alpha. Video, lighting, MIDI and timecode are first slices, and much of what talks to equipment has so far been tried against stand-ins more than the real thing.
 
 ## Principles
 
@@ -42,11 +42,11 @@ These decide arguments.
 5. **Change is reviewable.** Every edit is an operation; operations make diffs; diffs make versions and proposals. Nothing edits the show that cannot be shown, undone and named.
 6. **A sound designer's ear over a programmer's convenience.** Fades are in dB. A duck is relative. A loop is sample-exact or it is not offered. Numbers measured in a room beat numbers that look tidy.
 
-## The two tiers
+## What is free
 
-**Open source**: the whole application. Everything needed to build and run a show, on any number of computers, forever, offline.
+Everything. The whole application, everything needed to build and run a show, on any number of computers, offline, with no account and nothing to unlock. The assistant runs on your own Claude Code or Codex, your own key, or a local model.
 
-**Paid**: the hosted assistant (and, later, things that genuinely need a server: cloud version history, sharing a show with a collaborator, main/backup pairing across sites). The rule for what is paid: it costs us money to run each time it is used. Features are never held back from the open app to make the paid tier look better. [ADR 0004](../adr/0004-open-core-boundary.md).
+The code also holds a hosted assistant (an Endless Cues account, no key to manage). It isn't running for everyone yet; if people want it, the owner may host it so they can try it and use it for a while. Nothing is ever held back from the open app to make a hosted thing look better. [ADR 0004](../adr/0004-open-core-boundary.md).
 
 ## Names
 

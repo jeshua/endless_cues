@@ -1,7 +1,7 @@
 {
   "name": "endless-cues",
   "version": "0.3.0-alpha.6",
-  "description": "Endless Cues: open show control. QLab's cue list, a sound designer's tools, an open show file.",
+  "description": "Endless Cues: free, open-source show control. A cue list with one GO for sound, video, lights and the network.",
   "main": "app/main/main.js",
   "scripts": {
     "build": "node build/compile.mjs",
@@ -12,7 +12,6 @@
     "start": "node build/compile.mjs && electron .",
     "test": "node build/compile.mjs && tsc -p . && node --enable-source-maps --test \"test/*.test.js\"",
     "smoke": "node build/compile.mjs && electron . --smoke",
-    "tracker": "node bin/tracker.js",
     "users:prepare": "node build/compile.mjs && node test/users/prepare.js",
     "users:collect": "node test/users/collect.js",
     "postinstall": "node -e \"if(process.platform==='darwin')require('child_process').spawnSync('xattr',['-cr','node_modules/electron/dist/Electron.app'])\"",

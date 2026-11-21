@@ -9,7 +9,7 @@ only when a person runs `publish`, and never deploys, commits, tags or pushes: t
   It is `MAJOR.MINOR.PATCH`, with `-alpha.N`, `-beta.N` or `-rc.N` after it for a version that is not yet a release:
   `0.2.0-alpha.1`, `0.2.0-alpha.2`, `0.2.0-beta.1`, `0.2.0`.
   - Until 1.0: MINOR goes up for a version with new things in it, PATCH for one that only repairs. Anything may change.
-  - `alpha`: parts of it have not met the equipment they are for (see `docs/qlab-tracker.md` and CLAUDE.md's
+  - `alpha`: parts of it have not met the equipment they are for (see the README's "Where it stands" and CLAUDE.md's
     "Not verified yet"). `beta`: everything in it has been run by a person on a real show's equipment. `rc`: a beta
     nobody has found a fault in for a fortnight of use.
   - The product is called "Endless Cues Public Alpha" until the first beta; then the name in `package.json`
