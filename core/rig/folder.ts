@@ -79,6 +79,10 @@ function listing(showDir: string | null | undefined, doc: Pick<ShowDoc, 'lists'>
     }
     for (const name of dirs) go([...parts, name], left - 1);
   };
+  // the folder asked about is reached through no link either (a link, or a junction on Windows, may point anywhere)
+  for (let i = 1; i <= start.length; i++) {
+    try { if (fs.lstatSync(path.join(showDir, ...start.slice(0, i))).isSymbolicLink()) return []; } catch { return []; }
+  }
   go(start, depth);
   return out;
 }

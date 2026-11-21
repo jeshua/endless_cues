@@ -21,6 +21,8 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **The assistant cannot list a folder outside the show through a link in it.** Asked for a folder by a path that goes through a link (or a junction on Windows) pointing out of the show folder, it now lists nothing; before, it listed the names and sizes of the files there (it never read them).
+- **Run and tested on Windows.** The app was launched from source on a Windows 10 PC, and the tests and the end-to-end run pass there; the tests no longer fail on a Windows checkout (line endings, paths, and links that only an administrator may make).
 - **Licence: GPL-3.0-or-later** (it was the AGPL). The same freedoms; running a changed copy as a service no longer obliges anyone to publish their changes. Versions already published stay under the AGPL.
 
 ## 0.3.0-alpha.6 · 2026-11-18

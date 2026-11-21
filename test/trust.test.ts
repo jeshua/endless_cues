@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as trust from '../core/show/trust';
+import { linkFolder } from './helpers';
 import { ShowDocument } from '../core/show/document';
 import { createHub } from '../core/net/hub';
 import type { HubPatch, MonitorEntry } from '../core/net/hub';
@@ -30,7 +31,7 @@ test('trust: a show is this computer’s when its folder is in the record with i
 
 test('trust: a folder reached through a link is the same folder, and case does not matter where the system ignores it', () => {
   const base = tmp(), dir = path.join(base, 'Real.ecshow'), link = path.join(base, 'Link.ecshow');
-  fs.mkdirSync(dir); fs.symlinkSync(dir, link);
+  fs.mkdirSync(dir); linkFolder(dir, link);
   const rec = trust.remember({}, link, 'x');
   assert.equal(trust.isMine(rec, dir, 'x'), true);
   assert.equal(trust.keyOf('C:\\Shows\\A.ecshow', 'win32'), trust.keyOf('c:\\shows\\a.ecshow', 'win32'));

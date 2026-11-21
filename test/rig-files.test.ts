@@ -8,6 +8,7 @@ import * as files from '../core/show/files';
 import { ShowDocument } from '../core/show/document';
 import type { FilesChecked } from '../core/show/files';
 import type { Op } from '../core/show/ops';
+import { linkFolder } from './helpers';
 
 type Passed = Extract<FilesChecked, { ok: true }>;
 type Refused = Extract<FilesChecked, { ok: false }>;
@@ -50,7 +51,7 @@ test('every refusal has its sentence, and nothing outside the folder can be name
   no([{ path: 'props/a/x.h', text: '1' }, { path: 'props/a/X.h', text: '2' }], /is in the list twice/);
   // a link inside the folder that points out of it is not a way out
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ec-outside-'));
-  fs.symlinkSync(outside, path.join(d.showDir!, 'props'));
+  linkFolder(outside, path.join(d.showDir!, 'props'));
   no(f('props/lantern/a.h'), /would be written outside the show folder \(a link in it points elsewhere\)/);
   assert.deepEqual(fs.readdirSync(outside), []);
   assert.throws(() => files.write(d.showDir!, f('props/lantern/a.h')), /outside the show folder/);

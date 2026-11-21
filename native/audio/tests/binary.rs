@@ -154,7 +154,8 @@ fn what_is_not_a_command_is_said_and_nothing_breaks() {
     p.raw("[1, 2, 3]\n{\"key\": \"x\"}\n{\"op\": \"frobnicate\", \"key\": \"x\"}\n");
     let e = p.wait(2.0, |e| e["type"] == "operror" && e["op"] == "frobnicate");
     assert_eq!(e["detail"], "not a command this engine knows");
-    let big = format!("{{\"op\": \"play\", \"key\": \"big\", \"file\": \"{}\", \"pad\": \"{}\"}}", file, "x".repeat(10 << 20));
+    // (written by serde_json, so a Windows path's backslashes are escaped)
+    let big = json!({ "op": "play", "key": "big", "file": file, "pad": "x".repeat(10 << 20) }).to_string();
     p.raw(&format!("{big}\n"));
     let mut junk = "y".repeat(10 << 20);
     junk.push('\n');
