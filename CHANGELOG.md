@@ -21,6 +21,8 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+
+## 0.3.0-alpha.9 · 2026-11-24
 - **USB DMX.** A universe can go out of a USB DMX interface instead of the network: an Enttec DMX USB Pro (or DMXking), or a plain Open DMX cable. Settings ▸ Integrations ▸ Light ▸ a universe ▸ USB. Written from the interfaces' specifications and not yet tried on one: if you have one, please say how it goes (Help ▸ Report a Problem).
 
 ## 0.3.0-alpha.8 · 2026-11-21
