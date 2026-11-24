@@ -244,24 +244,36 @@ It is worked out on every request; nothing a client sends can change it.
 For the owner's tools (the `worker/bin/reports.js` CLI). An admin's device token, or the admin's session cookie on
 the account site. Anyone else: `404` (and `401` with no credentials at all).
 
+The list holds two kinds of report, told apart by `source`: `app` (section 3) and `email`, a message about the
+app that someone wrote to the owner and the owner forwarded to the service's feedback address. The app has no part
+in the second kind. An `email` report has a `subject`, the message's words as `comment`, the first writer's address
+as `email` when it could be read, `client_id` `"email"`, empty `app_version` and `os`, `category` `other` until an
+admin changes it, and its pictures as `attachments`.
+
 | Call | |
 |---|---|
-| `GET /v1/admin/reports?status=open,in_progress&category=bug&limit=50&offset=0` | Newest first. `status` is one, several comma-separated, or `all` (the default); `limit` at most 200. `{ "items": [ … ], "total": 12, "counts": { "open": 9, "in_progress": 2, "fixed": 1, "wont_fix": 0 } }`. Items have everything but `context` (a `summary` instead) and `has_screenshot`, `has_thumbnail`. |
+| `GET /v1/admin/reports?status=open,in_progress&category=bug&source=email&limit=50&offset=0` | Newest first. `status` is one, several comma-separated, or `all` (the default); `source` is `app` or `email` (both when left out); `limit` at most 200. `{ "items": [ … ], "total": 12, "counts": { "open": 9, "in_progress": 2, "fixed": 1, "wont_fix": 0 } }`. Items have everything but `context` (a `summary` instead) and `has_screenshot`, `has_thumbnail`, `source`, `subject` (`null` for `app`) and `attachments` (`[ { "n": 1, "name": "rig.png", "content_type": "image/png", "bytes": 48213 } ]`, empty for `app`). |
 | `GET /v1/admin/reports/<id>` | One in full, `context` included. |
-| `PATCH /v1/admin/reports/<id>` `{ "status": "fixed", "note": "Fixed in 0.2.1." }` | Either or both. Statuses: `open`, `in_progress`, `fixed`, `wont_fix`. Returns the report. |
+| `PATCH /v1/admin/reports/<id>` `{ "status": "fixed", "note": "Fixed in 0.2.1.", "category": "idea" }` | Any of the three. Statuses: `open`, `in_progress`, `fixed`, `wont_fix`. Categories: `bug`, `idea`, `other`. Returns the report. |
 | `GET /v1/admin/reports/<id>/screenshot[?thumb=1]` | `image/webp` (the thumbnail falls back to the picture). Served with `nosniff` and a sandboxing CSP. |
+| `GET /v1/admin/reports/<id>/attachments/<n>` | One picture of an `email` report: `image/png`, `image/jpeg`, `image/gif` or `image/webp`, as its own first bytes say. Served the same way. |
 
 ## 6. Privacy
 
 - **Reports**: what the person typed, the context above, the screenshot they saw, their app version and system,
   and an email address only if they gave one. Kept until the owner deletes them. Read only by the owner.
+- **Emails forwarded by the owner**: when someone writes to the owner about the app by email, he may forward the
+  message to the service, where it is kept as a report: its subject and words, the writer's address and name, and
+  any pictures attached. The service's feedback address keeps mail from the owner only; anything else sent to it
+  is refused and not stored. Kept until the owner deletes them. Read only by the owner.
 - **Network addresses** are never stored: rate limits count a keyed hash (HMAC) of the address, in windows of an
   hour or a day, deleted after three days.
 - **Accounts**: the email address, when it was made and last signed in, each computer's name and last use (to the
   hour). Tokens only as SHA-256 hashes.
 - **Email** is sent through Cloudflare Email Service for sign-in links only. No newsletters from this.
 - **No logs of content.** The service writes no request or response body, token, email address or network address
-  to any log; Workers Logs are off. A test fails if a report's words or an address appear in the console.
+  to any log; Workers Logs are off. A test fails if a report's or an email's words or an address appear in the
+  console.
 - To delete an account and everything linked to it: email the owner. (A self-serve button is planned.)
 
 ## 7. The hosted assistant
