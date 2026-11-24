@@ -29,12 +29,12 @@ export function engineOf(config: { audio?: { engine?: unknown } } | null | undef
 
 // ── which commands and events are whose ─────────────────────────────────
 
-/** What stays with the audio window while the native engine plays: what is not sound (Web MIDI), and reading a
+/** What stays with the audio window while the native engine plays: what is not sound (Web MIDI, a USB DMX interface), and reading a
  *  file's peaks and samples for the waveform and the tempo. Every other command goes to the engine that plays. */
-export const WINDOW_OPS: ReadonlySet<string> = new Set(['midi', 'peaks', 'pcm']);
+export const WINDOW_OPS: ReadonlySet<string> = new Set(['midi', 'peaks', 'pcm', 'dmx', 'dmx-close']);
 /** What the audio window says that still counts while the native engine plays: the answers to its own commands, and
  *  a failure it reports. Its devices, its context, its levels and the rest are about a sound it is not making. */
-export const WINDOW_EVENTS: ReadonlySet<string> = new Set(['midi-ports', 'midi-in', 'peaks', 'pcm', 'operror']);
+export const WINDOW_EVENTS: ReadonlySet<string> = new Set(['midi-ports', 'midi-in', 'peaks', 'pcm', 'operror', 'dmx-usb']);
 
 /** Where a command goes. */
 export function routeOf(op: string, engine: AudioEngine): 'window' | 'native' {
@@ -46,7 +46,7 @@ export function routeOf(op: string, engine: AudioEngine): 'window' | 'native' {
 const EVENT_TYPES: Record<AudioEvent['type'], true> = {
   ready: true, duration: true, mode: true, decoded: true, ir: true, missing: true, ended: true, where: true, error: true,
   devices: true, sink: true, outputs: true, outch: true, 'midi-ports': true, 'midi-in': true, 'tc-in': true, ltc: true,
-  'ltc-in': true, rec: true, recording: true, operror: true, ctx: true, level: true, pcm: true, peaks: true, monitor: true,
+  'ltc-in': true, 'dmx-usb': true, rec: true, recording: true, operror: true, ctx: true, level: true, pcm: true, peaks: true, monitor: true,
 };
 
 /** A command as the native engine is given it: the window's, with paths for URLs and no bytes. */

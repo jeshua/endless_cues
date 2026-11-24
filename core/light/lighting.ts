@@ -2,7 +2,7 @@
  * Lighting, put together: the patch from the show file, the rig that holds the levels, the cue
  * engine that says when a Light cue goes, and the output that puts DMX on the network.
  *
- *   show file (settings.light) ──▶ configure() ──▶ rig (levels) ──▶ render ──▶ output ──▶ Art-Net / sACN
+ *   show file (settings.light) ──▶ configure() ──▶ rig (levels) ──▶ render ──▶ output ──▶ Art-Net / sACN / USB
  *   cue engine: a Light cue goes ──▶ rig.run … and every refresh asks the engine how far that fade has got
  *   dashboard: cmd({ op: 'light-…' }) ──▶ a hand on the levels; record them into a cue (an edit, like any other)
  *
@@ -30,7 +30,7 @@ import * as fixtures from './fixtures';
 import * as commands from './commands';
 import { createRig } from './rig';
 import { createLightOutput } from './output';
-import type { LightOutput } from './output';
+import type { LightOutput, UsbDmx } from './output';
 import type { LightInput } from './patch';
 import type { Cue } from '../show/types';
 import type { Op } from '../show/ops';
@@ -58,11 +58,11 @@ export interface LightContext {
   locked?: boolean;
 }
 
-function createLighting({ log = () => {}, changed = () => {}, dryRun = false, clock = () => Date.now() / 1000, output = null, timers = { setInterval, clearInterval } as LightTimers }: {
-  log?: (line: string) => void; changed?: () => void; dryRun?: boolean; clock?: () => number; output?: LightOutput | null; timers?: LightTimers;
+function createLighting({ log = () => {}, changed = () => {}, dryRun = false, clock = () => Date.now() / 1000, output = null, timers = { setInterval, clearInterval } as LightTimers, usb = null }: {
+  log?: (line: string) => void; changed?: () => void; dryRun?: boolean; clock?: () => number; output?: LightOutput | null; timers?: LightTimers; usb?: UsbDmx | null;
 } = {}) {
   const rig = createRig();
-  const out = output || createLightOutput({ dryRun, log, changed });
+  const out = output || createLightOutput({ dryRun, log, changed, usb });
   let engine: LightEngine | null = null;
   let light: LightInput = patchLib.defaults();
   let patch = rig.patch();

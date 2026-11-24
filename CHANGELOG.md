@@ -13,7 +13,7 @@ The whole app, as it is now (what changed in each version follows).
 - **Sound**: Audio, Fade, Mic, Mix and Jump cues on named buses, with loops and loop regions, markers, tempo and bar lines, lines drawn over a sound (volume, pan, any effect setting), a rack of effects per cue (filters, eq, gate, compressor, drive, pitch, chorus, delay, reverb…), fade shapes, ducking by kind (off until switched on), a matrix of outputs with trims, a monitor feed and recording. The Playing strip steers a running track: hold a loop, skip or fade on the bar.
 - **The native audio engine** (experimental, off until chosen in Settings ▸ Audio): `ec-audio`, in Rust, opens the output device itself; anything it cannot do yet stays with Web Audio.
 - **Video, Text and Camera cues** on a stage window on a second display, with geometry that fades.
-- **Lighting**: Light cues with levels by command line, a patch, groups and fixtures, sent as Art-Net or sACN; or cues fired on an ETC Eos or grandMA3 desk.
+- **Lighting**: Light cues with levels by command line, a patch, groups and fixtures, sent as Art-Net or sACN, or out of a USB DMX interface; or cues fired on an ETC Eos or grandMA3 desk.
 - **Network and devices**: OSC and MIDI cues (with faded values), MIDI files, MSC in and out, MTC and LTC in and out, timecode triggers, raw network messages, OSC control from remotes built for QLab (passcodes with levels), a web remote for a phone, show feedback, and a main and backup link.
 - **The rig**: the show's equipment on one page, each device with named commands, asked whether it is there; Device cues; a prop kit with firmware for ESP32 boards; a show from another computer opens with its network features off until turned on.
 - **The assistant** (off until set up): reads the show, proposes changes as one reviewable edit, and shows where things are in the window. It works through Claude Code or Codex, your own key (Anthropic, OpenAI, OpenRouter, any OpenAI-compatible service, Ollama), or an Endless Cues account if the hosted assistant is running (it is optional, and nothing in the app is paid). It never edits or plays a show by itself.
@@ -21,6 +21,7 @@ The whole app, as it is now (what changed in each version follows).
 - **macOS, Windows and Linux**; signed builds for the Mac, updates from inside the app, Report a Problem from Help.
 
 ## Unreleased
+- **USB DMX.** A universe can go out of a USB DMX interface instead of the network: an Enttec DMX USB Pro (or DMXking), or a plain Open DMX cable. Settings ▸ Integrations ▸ Light ▸ a universe ▸ USB. Written from the interfaces' specifications and not yet tried on one: if you have one, please say how it goes (Help ▸ Report a Problem).
 
 ## 0.3.0-alpha.8 · 2026-11-21
 - **Windows: a sound could go silent as it started.** Chromium on Windows sometimes paused a sound's stream by itself just after it began; the app then took it for a pause and the sound stayed silent while the cue showed it playing. Fixed: a stream the browser pauses on its own is started again.

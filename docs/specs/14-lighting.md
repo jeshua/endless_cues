@@ -3,7 +3,7 @@
 Two ways a show reaches its lights, and a show may use either or both:
 
 - **A lighting desk runs the lights**, and the cue list calls its cues: a Light cue with a *desk cue number*, fired on the desk by the Lighting desk module ([06 · Control surfaces](06-control-surfaces.md#8-module-lighting-desk)).
-- **The app runs the lights itself**: a Light cue with *levels*, faded by the app and sent as DMX over the network. This document is about that, and ends with the test scripts for both.
+- **The app runs the lights itself**: a Light cue with *levels*, faded by the app and sent as DMX over the network (or out of a USB DMX interface, section 8). This document is about that, and ends with the test scripts for both.
 
 **Not yet widely tested on real fixtures.** The packets are built from the published Art-Net 4 and ANSI E1.31 specifications and tested byte by byte and on loopback sockets. Section 9 is the script for trying it on real gear.
 
@@ -94,6 +94,21 @@ Not built: parking, subcontrollers, an audition (blind) tab, undo of dashboard c
 - **sACN** (`sacn.ts`): E1.31 data packets, priority 100, a CID made from the computer's name, multicast or unicast; three stream-terminated packets when a universe stops being sent. No synchronisation packets, no universe discovery, no per-address priority, and the multicast interface is the operating system's choice.
 - **A test run sends nothing.** `createLighting({ dryRun })`, set by the host for `--smoke` and for a driven session without network ports, exactly as `core/net/hub.ts` takes it: every packet is built and the last one kept (`output.last(id)`), and no socket is opened. The unit tests use loopback sockets or bytes only.
 
+## 8. USB DMX
+
+A universe can go out of a USB DMX interface instead of the network: for a rig with a few lights and no node. Settings ▸ Integrations ▸ Light ▸ a universe ▸ **USB**, then which kind of interface it is. **No interface has ever been plugged in: all of this is written from the published specifications and tested against a pretended port.** Section 9b is the script for the first time.
+
+- **The port is Chromium's.** A USB interface is a serial port (an FTDI chip), and Node has none of its own; the native `serialport` module would be a dependency built per platform and signed with the app. Chromium has Web Serial, so the port is opened in the hidden audio window, where Web MIDI already is, and the levels go to it as MIDI does (`dmx`, `dmx-close`; the events `dmx-usb`). Nothing new is installed or packaged.
+- **Two kinds, and a person says which** (`device`), because both are the same FTDI chip with the same USB numbers and cannot be told apart from outside:
+  - **`pro`**: the Enttec DMX USB Pro and what speaks its language (the Pro Mk2, DMXking's ultraDMX family). It makes the DMX signal itself and repeats the last frame, so a message (label 6, "send DMX") is written only when the levels change.
+  - **`open`**: an Open DMX cable (Enttec's Open DMX USB and the cheap FTDI cables like it). There is no processor: the serial line is the DMX line (250000 baud, two stop bits), and this computer makes every frame: a break, a mark, the start code and 512 levels, over and over. The break is made with timers, so it is a millisecond or more where a desk's is a tenth of that (DMX allows it), the frames come about 30 a second, and their timing is only as steady as the program's timers. A dimmer or an LED par will follow it. It is the cheap way in, not a signal for a moving head's fast chase.
+- **Which port** (`port`): empty means the first interface found (a port with FTDI's vendor number, or named as an FTDI cable is: `cu.usbserial-…`, `ttyUSB0`); a second USB universe gets the next one. Or a port's name, with or without `/dev/` (`ttyUSB0`, `COM3`), or the interface's serial number. A port that is not a USB serial one (a Mac lists its Bluetooth devices as serial ports) is only ever opened when it is named outright. The kind and the port are in the show file, as the MIDI output's name is: a show moved to another computer may need the port named again.
+- **How the port is chosen.** The audio window asks the system for "a port" (`navigator.serial.requestPort`, which needs a click's standing, so the host calls the window's `dmxOpen` itself); the system's list, with the ports' names, is handed to the main process only (`select-serial-port`), which answers with the one for the universe being opened (`choosePort` in `core/light/usb.ts`). The list does not say who asked, so universes are opened one at a time. No other window is ever given a serial port.
+- **Unplugged and back.** A universe whose interface is not there, would not open, or has gone says so on its row and is looked for again every 2 s for as long as Send DMX is on: plugging it in is enough. If the audio window restarts, its ports are opened again.
+- **Off, held, a test run.** With Send DMX off no port is open. Held back for a rehearsal (the DMX override, or a show from another computer not yet turned on) the port stays open and no levels are handed to it, so the lights stay where they were. A test run opens no port, ever (`dryRun`; and the audio window, `?silent`, refuses).
+- **What is not there**: DMX in, RDM, more than one universe from an interface that has two (the Pro Mk2's second output), the uDMX and other interfaces that are not a serial port, and choosing the kind by asking the interface.
+- **On Linux** the user must be allowed to open serial ports (the `dialout` group on Debian and Ubuntu, `uucp` on Arch); **on Windows** the FTDI driver must give the interface a COM port (the Virtual COM Port driver, not D2XX alone).
+
 ## 8. USB DMX: what it would take
 
 Not supported. A USB interface is a serial port, and Node has none of its own: it needs the native `serialport` module, built per platform and architecture, unpacked from the asar and signed with the app. That is the first native dependency in an app that has none, so it waits for a decision rather than being slipped in. What is ready: `core/light/usb.ts` builds the Enttec DMX USB Pro "send DMX" message (label 6; also spoken by the Pro Mk2 and DMXking's ultraDMX family), tested to the byte. What remains: the dependency and its packaging; listing ports and choosing one (this computer's setting, not the show's); a third `protocol` for a universe (`usb`); writing a frame only when it changes (the widget repeats the last one itself) and reopening the port when the cable comes back. The cheap "Open DMX" cables have no processor and need break timing JavaScript cannot give: they are out of scope.
@@ -118,6 +133,22 @@ Needs: an Art-Net or sACN node (or a fixture that takes either directly), one di
 14. With an RGB fixture: patch it as RGB (or Dimmer + RGB, per its chart). `x = 100`, then `x.colour = #ff0000`, `#00ff00`, `#0000ff`. Expect red, green, blue: if the order is wrong the fixture's chart differs from the definition (make one under Fixtures).
 15. With a moving head: patch as the 16-bit mover only if its chart is intensity, pan, pan fine, tilt, tilt fine in that order; otherwise write its definition. `x.pan = 0`, `x.pan = 100` over 10 s. Expect a smooth sweep with no stepping.
 16. If another Art-Net controller or monitor is available (a desk, a node's diagnostic page, a monitoring program on a second computer): expect "Endless Cues" in its device list as a controller.
+
+## 9b. Test script: the first USB interface
+
+Needs: a USB DMX interface (say which: a Pro kind or an Open DMX cable), one dimmer or LED fixture whose DMX chart you have, a DMX cable (and a terminator if you have one). Write down the interface's make and model with the results.
+
+1. Plug the interface in. New show. Settings ▸ Integrations ▸ Light ▸ Add a universe ▸ **USB**. Choose the interface's kind. Leave Port empty.
+2. Add an instrument: Dimmer, universe 1, the fixture's address. Rename it `test`.
+3. Switch **Send DMX** on. Expect: within 2 s the universe's row names the port (`cu.usbserial-…`, `ttyUSB0`, `COM3`) and its dot is green. *If it says no interface was found, note the port's name as the system has it (macOS: `ls /dev/cu.*`; Linux: `ls /dev/ttyUSB*`; Windows: Device Manager ▸ Ports), type that name into Port, and say so in the report. On Linux, "would not open" usually means the user is not in the `dialout` group.*
+4. Open Lights (⇧⌘D). Drag `test` to 100, then slowly from 0 to 100 and back. Expect: the light follows with no visible steps. **With an Open DMX cable, watch for flicker and note it either way: this is the least certain part.**
+5. Set "over" to 5 and type `test = 0`. Expect: a smooth five-second fade.
+6. Leave it at 50 for ten minutes while using the computer for something else (play a sound cue, open a large show). Expect: steady. With an Open DMX cable, note any flicker and what the computer was doing.
+7. Pull the USB cable. Expect: within a few seconds the row says the interface was unplugged. Note what the light does. Plug it back. Expect: within about 2 s the row names the port again and the light is at 50.
+8. Switch Send DMX off. Note what the light does (a Pro goes on repeating its last frame; an Open DMX cable goes quiet, and the fixture does what it does with no signal).
+9. Quit the app with the light on. Note what the light does. Start the app again and open the show: expect the light back at its level once Send DMX is on.
+10. With a second interface, if there is one: add a second USB universe. Expect each row to name a different port.
+11. Wrong kind on purpose: set a Pro to "Open DMX cable", and a cable to "Pro". Note what happens (expected: nothing lights, nothing crashes).
 
 ## 10. The Lighting desk module: review, and a test script at a desk
 

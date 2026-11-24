@@ -3,6 +3,7 @@
 declare const Timecode: typeof import('../../core/timecode/timecode');
 declare const Chain: typeof import('../../core/audio/chain');
 declare const Lanes: typeof import('../../core/audio/lanes');
+declare const Usb: typeof import('../../core/light/usb');
 // What the host sends (a command, by its op) and what this window says: app/audio/preload.ts.
 type Cmd<K extends import('./preload').AudioOp> = import('./preload').AudioCommands[K];
 type Own = import('./preload').Own;
@@ -11,6 +12,16 @@ type LanePoint = import('../../core/show/types').LanePoint;
 type Timer = ReturnType<typeof setTimeout>;
 // (Chromium's, not yet in the DOM types: the output device a context plays to)
 declare global { interface AudioContext { readonly sinkId: string | { type: 'none' }; setSinkId(id: string): Promise<void> } }
+// Web Serial, as much of it as a USB DMX interface needs (TypeScript's DOM library does not have it yet).
+declare global {
+  interface SerialPort extends EventTarget {
+    readonly writable: WritableStream<Uint8Array> | null;
+    open(options: { baudRate: number; dataBits?: number; stopBits?: number; parity?: string; flowControl?: string }): Promise<void>;
+    setSignals(signals: { break?: boolean }): Promise<void>;
+    close(): Promise<void>;
+  }
+  interface Navigator { readonly serial?: { requestPort(): Promise<SerialPort> } }
+}
 /** A place in a file a loop is held between, in seconds. */
 type Span = { start: number; end: number };
 /** A pair of the device's outputs: where a bus plays in (`inp`, metered by `tap`), its master and limiter, and its split
@@ -1421,6 +1432,48 @@ function midiSend({ bytes, port, events }: Cmd<'midi'>) {
   for (const e of events) { const when = perfOfWall(e.at); for (const o of outs) o.send(e.bytes, when); }
 }
 
+// ── USB DMX ───────────────────────────────────────────────────────────────
+// A USB DMX interface is a serial port, and this window has them (Web Serial), as it has the MIDI ports. The host
+// says which universe wants one; the port itself is chosen by the host as this window asks for "a port" (the
+// system's list, with the ports' names, is only given to the main process). What is written to the port, and when,
+// is core/light/usb.ts. A test run (`?silent`) opens nothing.
+type DmxLine = { port: SerialPort; writer: WritableStreamDefaultWriter<Uint8Array>; sender: import('../../core/light/usb').UsbSender };
+const dmxLines = new Map<number, DmxLine>();
+const dmxSay = (id: number, state: 'open' | 'failed' | 'lost', detail = '') => window.cueAudio.report({ type: 'dmx-usb', id, state, detail });
+async function dmxLetGo(id: number) {
+  const l = dmxLines.get(id);
+  if (!l) return;
+  dmxLines.delete(id);
+  l.sender.stop();
+  try { l.writer.releaseLock(); } catch { /* a write is still on its way: closing waits for it */ }
+  try { await l.port.close(); } catch { /* gone with its cable */ }
+}
+/** Called by the host with a click's standing (asking for a port needs one): open universe `id`'s interface. */
+async function dmxOpen({ id, kind }: { id: number; kind: import('../../core/light/usb').UsbKind }) {
+  if (SILENT) { dmxSay(id, 'failed', 'a test run opens no port'); return; }
+  await dmxLetGo(id);
+  if (!navigator.serial) { dmxSay(id, 'failed', 'this build has no serial ports'); return; }
+  let port: SerialPort;
+  try { port = await navigator.serial.requestPort(); } catch { dmxSay(id, 'failed'); return; }           // (the host knows why: it found no port to give)
+  try {
+    await port.open(Usb.SERIAL[Usb.kindOf(kind)]);
+    const writer = port.writable!.getWriter();
+    const sender = Usb.createUsbSender({
+      kind: Usb.kindOf(kind),
+      port: { write: (bytes) => writer.write(bytes), setBreak: (on) => port.setSignals({ break: on }) },
+      failed: (why) => { if (dmxLines.get(id)?.port === port) { void dmxLetGo(id); dmxSay(id, 'lost', `the USB DMX interface stopped answering (${why})`); } },
+    });
+    dmxLines.set(id, { port, writer, sender });
+    port.addEventListener('disconnect', () => { if (dmxLines.get(id)?.port === port) { void dmxLetGo(id); dmxSay(id, 'lost', 'the USB DMX interface was unplugged'); } });
+    dmxSay(id, 'open');
+  } catch (err) {
+    try { await port.close(); } catch { /* never opened */ }
+    dmxSay(id, 'failed', `the port would not open: ${String((err as Error).message || err).replace(/^Failed to execute 'open' on 'SerialPort': /, '')}`);
+  }
+}
+function dmxLevels({ id, levels }: Cmd<'dmx'>) { const l = dmxLines.get(id); if (l) l.sender.set(levels); }
+function dmxClose({ id }: Cmd<'dmx-close'>) { void dmxLetGo(id); }
+
 // ── LTC ───────────────────────────────────────────────────────────────────
 // Out: one worklet per running Timecode cue, writing the signal a block at a time and to the sample (so the frames
 // are as steady as the audio device's own clock, which is the clock the device reading them hears). In: one
@@ -1527,6 +1580,7 @@ function where({ keys }: Cmd<'where'>) {
   }
 }
 ops.where = where;
+ops.dmx = dmxLevels; ops['dmx-close'] = dmxClose;        // (the host calls dmxOpen itself)
 navigator.mediaDevices.addEventListener('devicechange', devices);
 // The output going away under the sound (the interface's USB cable): the context says so, or stops.
 // The host hears both.

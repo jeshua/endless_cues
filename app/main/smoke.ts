@@ -543,6 +543,13 @@ async function run({ host, win, log, makeDemo }: { app?: App; host: Host; win: B
       await page(`(async () => { for (let i = 0; i < 40 && !document.querySelector('.modal'); i++) await new Promise((r) => setTimeout(r, 50)); document.querySelector('.modal nav [data-section="integrations"]').click(); await new Promise((r) => setTimeout(r, 0)); const b = document.querySelector('.modal .settings-subtabs [data-section="light"]'); if (b) b.click(); })()`);
       check('Settings ▸ Integrations ▸ Light draws the universes and the patch', await until(() => page(`document.querySelectorAll('.modal .lx-patch:not(.head):not(.group)').length === 3 && document.querySelectorAll('.modal .lx-patch.group').length === 1 && /Universe 2/.test(document.querySelector('.modal').textContent)`), 3000));
       await shot('9-light-settings');
+      // a universe out of a USB DMX interface: chosen in the window, its frame made, and no port opened (a test run has none)
+      await page(`document.querySelectorAll('.modal [data-light-protocol="usb"]')[1].click()`);
+      check('a universe set to USB asks which interface and which port', await until(() => page(`!!document.querySelector('.modal [data-light-usb-kind]') && document.querySelector('.modal [data-light-usb-kind]').options.length === 2`), 3000) && snap().doc.settings.light.universes[1].protocol === 'usb', snap().doc.settings.light.universes[1]);
+      const usbFrame = () => host.lighting.output.last(2);
+      check('…and its levels are made into the frame an Enttec Pro takes', await until(() => { const f = usbFrame(); return !!f && f.length === 518 && f[0] === 0x7e && f[1] === 6 && f[6] === 0x40 && f[517] === 0xe7; }, 3000), usbFrame() && [...usbFrame()!.subarray(0, 8)]);
+      await shot('9-light-settings-usb');
+      host.cmd({ op: 'edit', ops: [{ op: 'show.set', path: 'settings.light.universes', value: snap().doc.settings.light.universes.map((u) => (u.id === 2 ? { id: 2, protocol: 'sacn', address: 1, host: '127.0.0.1' } : u)) }], label: 'universe' });
       await page(`document.querySelector('.modal .close').click()`);
       win.webContents.send('ec-menu', 'lights');
       host.cmd({ op: 'edit', ops: [{ op: 'show.set', path: 'settings.light.on', value: false }] });

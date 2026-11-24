@@ -3,10 +3,12 @@
  *
  * It is part of the show file (`settings.light`), so it is versioned, undoable and travels with the show:
  *
- *   universes    [{ id: 1, protocol: 'artnet' | 'sacn', address: 0, host: '' }]
+ *   universes    [{ id: 1, protocol: 'artnet' | 'sacn' | 'usb', address: 0, host: '' }]
  *                `id` is the number an instrument names; `address` is the universe as the protocol
  *                counts it (Art-Net from 0, sACN from 1); `host` empty means broadcast (Art-Net) or
- *                the universe's multicast group (sACN)
+ *                the universe's multicast group (sACN). A 'usb' universe goes out of a USB DMX
+ *                interface instead (core/light/usb.ts): `device` says which kind ('pro' | 'open'),
+ *                `port` which serial port (empty: the first interface found); it has no address
  *   instruments  [{ name: 'front', fixture: 'dimmer', universe: 1, address: 1, note: '' }]
  *                `address` is the first DMX channel (1–512); a fixture of several channels takes the next ones
  *   groups       [{ name: 'wash', members: ['front', 'side L', 'another group'] }]
@@ -21,9 +23,11 @@
  */
 import * as fixtures from './fixtures';
 import type { FixtureDef, FixtureSource } from './fixtures';
+import { kindOf } from './usb';
+import type { UsbKind } from './usb';
 
 /** A universe as the patch keeps it. */
-export interface LightUniverse { id: number; protocol: 'artnet' | 'sacn'; address: number; host?: string }
+export interface LightUniverse { id: number; protocol: 'artnet' | 'sacn' | 'usb'; address: number; host?: string; device?: UsbKind; port?: string }
 /** An instrument as the patch keeps it (with no universe or address: not patched yet). */
 export interface LightInstrument { name: string; fixture: string; universe?: number; address?: number; note?: string }
 export interface LightGroup { name: string; members: string[] }
@@ -35,7 +39,7 @@ export interface LightSettings {
 /** A patch as it may arrive (a show file, an edit, a test): read forgivingly by `compile`. */
 export interface LightInput {
   on?: unknown; rate?: unknown; panicBlackout?: unknown;
-  universes?: { id?: unknown; protocol?: unknown; address?: unknown; host?: unknown }[];
+  universes?: { id?: unknown; protocol?: unknown; address?: unknown; host?: unknown; device?: unknown; port?: unknown }[];
   instruments?: { name?: unknown; fixture?: unknown; universe?: unknown; address?: unknown; note?: unknown }[];
   groups?: { name?: unknown; members?: unknown }[];
   fixtures?: FixtureSource[];
@@ -68,12 +72,14 @@ function compile(light?: LightInput | null) {
   const problems: PatchProblem[] = [];
   const instruments = new Map<string, PatchedInstrument>();     // key -> { key, name, def, universe, address, patched, note }
   const groups = new Map<string, { key: string; name: string; members: string[]; direct: string[] }>();          // key -> { key, name, members: [instrument keys] }
-  const universes: { id: number; protocol: 'artnet' | 'sacn'; address: number | null; host: string }[] = [];
+  const universes: { id: number; protocol: 'artnet' | 'sacn' | 'usb'; address: number | null; host: string; device?: UsbKind; port?: string }[] = [];
   const seenU = new Set<number>();
   for (const u of Array.isArray(src.universes) ? src.universes : []) {
     const id = Math.round(Number(u && u.id));
     if (!(id >= 1) || seenU.has(id)) { problems.push({ where: `universe ${u && u.id}`, why: seenU.has(id) ? 'is there twice' : 'needs a number from 1' }); continue; }
     seenU.add(id);
+    // (a USB interface is one universe and has no number of its own on the wire)
+    if (u.protocol === 'usb') { universes.push({ id, protocol: 'usb', address: 0, host: '', device: kindOf(u.device), port: String(u.port || '').trim() }); continue; }
     const protocol = u.protocol === 'sacn' ? 'sacn' : 'artnet';
     const address = Math.round(Number(u.address));
     const max = protocol === 'sacn' ? 63999 : 32767, min = protocol === 'sacn' ? 1 : 0;
