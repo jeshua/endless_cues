@@ -1,12 +1,14 @@
 // DMX on the wire: Art-Net, sACN and the Enttec USB frame checked byte by byte against the published
-// specifications, and the sender checked on loopback sockets. Nothing here reaches a real network.
+// specifications, and the sender checked on loopback sockets. Nothing here reaches a real network. USB DMX is
+// checked against a pretended port and a pretended host: no serial port is opened.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as dgram from 'dgram';
 import * as artnet from '../core/light/artnet';
 import * as sacn from '../core/light/sacn';
 import * as usb from '../core/light/usb';
-import { createLightOutput, broadcastAddresses, cidFor } from '../core/light/output';
+import { createLightOutput, broadcastAddresses, cidFor, USB_RETRY_MS } from '../core/light/output';
+import * as patchLib from '../core/light/patch';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 interface Listener { sock: dgram.Socket; got: { b: Buffer; from: dgram.RemoteInfo }[]; port: number; close: () => void }
@@ -124,7 +126,7 @@ test('sACN: a universe’s multicast group is 239.255.<high>.<low>', () => {
   assert.equal(sacn.multicastAddress(63999), '239.255.249.255');
 });
 
-test('USB (not wired in): an Enttec DMX USB Pro “send DMX” frame', () => {
+test('USB: an Enttec DMX USB Pro “send DMX” frame', () => {
   const f = usb.enttecProFrame(Buffer.alloc(512, 1));
   assert.equal(f.length, 518);
   assert.deepEqual([...f.subarray(0, 5)], [0x7e, 0x06, 0x01, 0x02, 0x00]);       // start, label 6, length 513 low byte first, DMX start code
@@ -249,4 +251,198 @@ test('on loopback: another controller’s ArtPoll is answered, and a node’s re
   assert.ok(await until(() => out.status().nodes.length === 1), 'the node is listed');
   assert.deepEqual(out.status().nodes[0], { ip: '127.0.0.1', name: 'Dimmer rack', outputs: [3] });
   out.close(); other.close();
+});
+
+// ── USB DMX ─────────────────────────────────────────────────────────────
+
+test('USB: an Open DMX frame is the start code and all 512 levels', () => {
+  const f = usb.openDmxFrame([255, 128]);
+  assert.equal(f.length, 513);
+  assert.deepEqual([...f.subarray(0, 4)], [0, 255, 128, 0]);
+  assert.throws(() => usb.openDmxFrame(new Uint8Array(513)), /512/);
+  assert.equal(usb.SERIAL.open.baudRate, 250000);
+  assert.equal(usb.SERIAL.open.stopBits, 2);
+});
+
+test('USB: the port is the one named, or the first FTDI interface; never a port that is not one', () => {
+  const list = [
+    { portId: 'a', portName: 'cu.Bluetooth-Incoming-Port' },
+    { portId: 'b', portName: 'cu.debug-console' },
+    { portId: 'c', portName: 'cu.usbserial-EN123456', vendorId: '1027', productId: '24577', serialNumber: 'EN123456' },
+    { portId: 'd', portName: 'COM4', vendorId: '1027', productId: '24577' },
+  ];
+  assert.equal(usb.choosePort(list).port!.portId, 'c');
+  assert.equal(usb.choosePort(list, '', new Set(['c'])).port!.portId, 'd', 'a second universe gets the next interface');
+  assert.equal(usb.choosePort(list, 'com4').port!.portId, 'd');
+  assert.equal(usb.choosePort(list, '/dev/cu.usbserial-EN123456').port!.portId, 'c', 'with or without /dev/');
+  assert.equal(usb.choosePort(list, 'EN123456').port!.portId, 'c', 'or by its serial number');
+  assert.equal(usb.choosePort(list, 'cu.debug-console').port!.portId, 'b', 'a port named outright is taken at its word');
+  assert.match(usb.choosePort(list, 'ttyUSB9').why, /no serial port named ttyUSB9 \(found: cu\.usbserial-EN123456, COM4\)/);
+  assert.match(usb.choosePort(list, 'COM4', new Set(['d'])).why, /another universe/);
+  assert.match(usb.choosePort(list.slice(0, 2)).why, /no USB DMX interface found/);
+  assert.equal(usb.choosePort([{ portId: 'x', portName: 'ttyUSB0' }]).port!.portId, 'x', 'Linux: an FTDI cable’s name is enough');
+  assert.match(usb.choosePort(null).why, /no USB DMX interface found/);
+});
+
+/** A port that keeps what it is given; `gate` holds each write until it is let through. */
+function fakePort({ gated = false } = {}) {
+  const log: (string | Uint8Array)[] = [];
+  let let_: (() => void) | null = null, fail = '';
+  return {
+    log,
+    port: {
+      write: (b: Uint8Array) => { if (fail) return Promise.reject(new Error(fail)); log.push(b); return gated ? new Promise<void>((r) => { let_ = r; }) : Promise.resolve(); },
+      setBreak: (on: boolean) => { if (fail) return Promise.reject(new Error(fail)); log.push(on ? 'break' : 'mark'); return Promise.resolve(); },
+    },
+    pass() { const f = let_; let_ = null; if (f) f(); },
+    break_(why: string) { fail = why; },
+    frames: () => log.filter((x): x is Uint8Array => typeof x !== 'string'),
+  };
+}
+const tick = () => new Promise((r) => setImmediate(r));
+
+test('USB, a Pro: a frame is written when the levels change, one write at a time, and only the newest of what waited', async () => {
+  const p = fakePort({ gated: true });
+  const s = usb.createUsbSender({ kind: 'pro', port: p.port });
+  s.set(Buffer.alloc(512));                    // the first look goes out even though it is all zeros
+  await tick();
+  assert.equal(p.frames().length, 1);
+  assert.deepEqual([...p.frames()[0].subarray(0, 5)], [0x7e, 6, 0x01, 0x02, 0]);
+  s.set(Buffer.alloc(512, 10)); s.set(Buffer.alloc(512, 20)); s.set(Buffer.alloc(512, 30));      // while the first is still being written
+  await tick();
+  assert.equal(p.frames().length, 1, 'nothing more until the write is done');
+  p.pass(); await tick();
+  assert.equal(p.frames().length, 2);
+  assert.equal(p.frames()[1][5], 30, 'the newest levels, not each in turn');
+  p.pass(); await tick();
+  s.set(Buffer.alloc(512, 30));                // the same again: the widget is repeating it already
+  await tick();
+  assert.equal(p.frames().length, 2);
+  assert.equal(s.frames(), 2);
+  assert.ok(!p.log.includes('break'), 'a Pro makes its own break');
+});
+
+test('USB, an Open DMX cable: break, mark, the frame, over and over with the newest levels, until stopped', async () => {
+  const p = fakePort();
+  const slept: number[] = [];
+  let go: (() => void) | null = null;
+  const sleep = (ms: number) => { slept.push(ms); return ms === usb.OPEN_TIMING.frameMs ? new Promise<void>((r) => { go = r; }) : Promise.resolve(); };
+  const s = usb.createUsbSender({ kind: 'open', port: p.port, sleep });
+  await tick();
+  assert.deepEqual(p.log.map((x) => (typeof x === 'string' ? x : `frame ${x.length}`)), ['break', 'mark', 'frame 513']);
+  assert.deepEqual(slept, [usb.OPEN_TIMING.breakMs, usb.OPEN_TIMING.markMs, usb.OPEN_TIMING.frameMs]);
+  s.set([1, 2, 3]);
+  go!(); await tick();
+  assert.equal(p.frames().length, 2);
+  assert.deepEqual([...p.frames()[1].subarray(0, 4)], [0, 1, 2, 3]);
+  s.stop(); go!(); await tick();
+  assert.equal(p.frames().length, 2, 'nothing after it is stopped');
+});
+
+test('USB: a port that fails is said once, and nothing more is written to it', async () => {
+  const p = fakePort();
+  const said: string[] = [];
+  const s = usb.createUsbSender({ kind: 'pro', port: p.port, failed: (why) => said.push(why) });
+  s.set([1]); await tick();
+  p.break_('The device has been lost.');
+  s.set([2]); await tick();
+  s.set([3]); await tick();
+  assert.deepEqual(said, ['The device has been lost.']);
+  assert.equal(s.running(), false);
+  assert.equal(p.frames().length, 1);
+});
+
+test('USB: a universe in the patch has a kind of interface and a port, and no address to get wrong', () => {
+  const c = patchLib.compile({ on: true, universes: [{ id: 1, protocol: 'usb', device: 'open', port: ' ttyUSB0 ', address: 99999 }, { id: 2, protocol: 'usb' }], instruments: [{ name: 'a', fixture: 'dimmer', universe: 1, address: 1 }] });
+  assert.deepEqual(c.problems, []);
+  assert.deepEqual(c.universes, [{ id: 1, protocol: 'usb', address: 0, host: '', device: 'open', port: 'ttyUSB0' }, { id: 2, protocol: 'usb', address: 0, host: '', device: 'pro', port: '' }]);
+});
+
+/** Whoever has the serial ports, pretended: what it was asked, in order. */
+function fakeUsb() {
+  const asked: string[] = [];
+  return { asked, usb: { open: (id: number, w: { kind: string; port: string }) => { asked.push(`open ${id} ${w.kind} ${w.port || '-'}`); }, levels: (id: number, d: Buffer) => { asked.push(`levels ${id} ${d[0]}`); }, close: (id: number) => { asked.push(`close ${id}`); } } };
+}
+
+test('USB out: the interface is opened when DMX is on, given levels when they change and once a second, and let go', () => {
+  const f = fakeUsb();
+  let t = 0;
+  const out = createLightOutput({ usb: f.usb, now: () => t });
+  const u = [{ id: 1, protocol: 'usb', address: 0, device: 'open', port: 'ttyUSB0' }];
+  out.configure(u, { on: false });
+  assert.deepEqual(f.asked, [], 'nothing is opened while Send DMX is off');
+  out.configure(u, { on: true });
+  assert.deepEqual(f.asked, ['open 1 open ttyUSB0']);
+  out.send(new Map([[1, Buffer.alloc(512, 5)]]));
+  assert.equal(f.asked.length, 1, 'no levels until the port is open');
+  out.usbState(1, { state: 'open', name: 'ttyUSB0' });
+  assert.equal(out.status().universes[0].to, 'ttyUSB0');
+  out.send(new Map([[1, Buffer.alloc(512, 5)]]));
+  out.send(new Map([[1, Buffer.alloc(512, 5)]]));                 // the same: not handed over again
+  t += 500; out.send(new Map([[1, Buffer.alloc(512, 6)]]));
+  t += 1000; out.send(new Map([[1, Buffer.alloc(512, 6)]]));      // a second on: said again, changed or not
+  assert.deepEqual(f.asked.slice(1), ['levels 1 5', 'levels 1 6', 'levels 1 6']);
+  assert.equal(out.last(1)!.length, 513, 'the frame as an Open DMX cable takes it is kept for a test to see');
+  out.configure(u, { on: true });
+  assert.equal(f.asked.length, 4, 'the same patch again changes nothing');
+  out.configure([{ ...u[0], device: 'pro' }], { on: true });
+  assert.deepEqual(f.asked.slice(4), ['close 1', 'open 1 pro ttyUSB0'], 'another kind of interface: let go, and opened as that');
+  assert.equal(out.status().universes[0].to, '', 'and the row no longer names the port it had');
+  out.configure(u, { on: false });
+  assert.equal(f.asked.at(-1), 'close 1');
+  out.close();
+});
+
+test('USB out: an interface that is not there, or goes, is said and looked for again every 2 s', () => {
+  const f = fakeUsb();
+  let t = 0;
+  const out = createLightOutput({ usb: f.usb, now: () => t });
+  out.configure([{ id: 1, protocol: 'usb', address: 0 }], { on: true });
+  out.usbState(1, { state: 'failed', detail: 'no USB DMX interface found: is it plugged in?' });
+  assert.match(out.status().universes[0].error, /is it plugged in/);
+  const frame = new Map([[1, Buffer.alloc(512)]]);
+  t += USB_RETRY_MS - 1; out.send(frame);
+  assert.equal(f.asked.length, 1, 'not before 2 s');
+  t += 1; out.send(frame);
+  assert.deepEqual(f.asked, ['open 1 pro -', 'open 1 pro -']);
+  out.usbState(1, { state: 'open', name: 'COM3' });
+  assert.equal(out.status().universes[0].error, '');
+  out.send(frame);
+  out.usbState(1, { state: 'lost', detail: 'the USB DMX interface was unplugged' });
+  assert.match(out.status().universes[0].error, /unplugged/);
+  out.send(frame);
+  assert.equal(f.asked.at(-1), 'levels 1 0', 'nothing is handed to a port that has gone');
+  t += USB_RETRY_MS; out.send(frame);
+  assert.equal(f.asked.at(-1), 'open 1 pro -');
+  out.usbGone('the audio window restarted');
+  assert.match(out.status().universes[0].error, /restarted/);
+  out.usbState(7, { state: 'open' });                             // (about a universe nobody asked for: ignored)
+  out.close();
+});
+
+test('USB out: a test run and a rehearsal hold open no port and hand over no levels; with nobody to open one it says so', () => {
+  const f = fakeUsb();
+  const dry = createLightOutput({ usb: f.usb, dryRun: true });
+  dry.configure([{ id: 1, protocol: 'usb', address: 0 }], { on: true });
+  assert.equal(dry.send(new Map([[1, Buffer.alloc(512, 9)]])), 1);
+  assert.deepEqual(f.asked, []);
+  assert.deepEqual([...dry.last(1)!.subarray(0, 6)], [0x7e, 6, 0x01, 0x02, 0, 9]);
+  dry.close();
+
+  const out = createLightOutput({ usb: f.usb });
+  out.configure([{ id: 1, protocol: 'usb', address: 0 }], { on: true });
+  out.usbState(1, { state: 'open', name: 'COM3' });
+  out.hold(true);
+  out.send(new Map([[1, Buffer.alloc(512, 9)]]));
+  assert.deepEqual(f.asked, ['open 1 pro -'], 'held back: nothing is handed over');
+  out.hold(false);
+  out.send(new Map([[1, Buffer.alloc(512, 9)]]));
+  assert.equal(f.asked.at(-1), 'levels 1 9');
+  out.close();
+
+  const alone = createLightOutput({});
+  alone.configure([{ id: 1, protocol: 'usb', address: 0 }], { on: true });
+  alone.send(new Map([[1, Buffer.alloc(512)]]));
+  assert.match(alone.status().universes[0].error, /needs the app/);
+  alone.close();
 });

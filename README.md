@@ -34,7 +34,7 @@ All of it is free. There are no tiers and nothing to unlock.
 **Video and lights**
 
 - Video, Text and Camera cues on a stage window on a second display, with position, scale, opacity and a four-corner pin, all of which can fade. H.264, VP8, VP9 and AV1; not ProRes.
-- Light cues written as text (`front = 80`), with a patch, groups and fixtures, sent as DMX over Art-Net or sACN. Or Light cues that fire cues on an ETC Eos or grandMA3 desk.
+- Light cues written as text (`front = 80`), with a patch, groups and fixtures, sent as DMX over Art-Net, sACN or a USB DMX interface. Or Light cues that fire cues on an ETC Eos or grandMA3 desk.
 
 **Other equipment**
 
@@ -95,7 +95,7 @@ Not yet widely tested:
 - Linux on a real desktop (its tests and full end-to-end run pass on Ubuntu).
 - Audio interfaces with many outputs.
 - MIDI equipment and timecode.
-- DMX fixtures over Art-Net or sACN, and lighting desks other than the show's.
+- DMX fixtures over Art-Net, sACN or a USB DMX interface (no USB interface has been plugged in yet), and lighting desks other than the show's.
 - Cameras.
 - Remotes made for QLab, and the web remote on a real phone.
 - A main and a backup computer.

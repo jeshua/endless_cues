@@ -89,7 +89,7 @@ setting asks for it, or a cue that sends is fired.
 | Show feedback (OSC out as cues run) | Off | Settings ▸ Integrations ▸ Modules; show | |
 | Lighting desk (OSC to an Eos or grandMA, a ping, a reply port) | Off | Settings ▸ Integrations ▸ Modules; show | |
 | Main and backup | Off | Settings ▸ Integrations ▸ Modules; show | |
-| The app's own lighting: Art-Net (UDP 6454, with ArtPoll every 3 s) and sACN | Off (`settings.light.on`, and nothing is sent with no instrument patched) | Settings ▸ Integrations ▸ Light; show | |
+| The app's own lighting: Art-Net (UDP 6454, with ArtPoll every 3 s), sACN, and a USB DMX interface's serial port | Off (`settings.light.on`, and nothing is sent, and no port opened, with no instrument patched) | Settings ▸ Integrations ▸ Light; show | |
 | Network cues (OSC, text, hex) | Sent when the cue is fired, to its patch. A new show has no patches | The cue | |
 | MIDI out (MIDI, MSC, MIDI File cues; MTC) | Sent when a cue that sends is fired | The cue | |
 | MIDI in | The computer's MIDI inputs are opened at launch (Web MIDI) and what arrives is shown in the monitor. It acts on nothing until a cue has a MIDI trigger, a MIDI show command is set, or a control is mapped | The cue's Triggers tab; Settings ▸ Integrations ▸ Network ▸ MIDI | Opening the inputs sends nothing. |
@@ -142,7 +142,7 @@ Yes: **every integration is in the open-source app, with no key, account or lice
 |---|---|---|
 | Audio to many outputs (buses to pairs, a cue's own matrix, trims, a monitor feed) | Yes | An audio interface. |
 | Video, text and camera on a second display | Yes | A display. Codecs are Chromium's: H.264, VP8/9, AV1; not ProRes or HAP (`13-video.md`). |
-| Lighting: DMX over Art-Net and sACN, a patch, fixtures, Light cues | Yes | A node on the network. USB DMX widgets are not wired in (the framing is written, `core/light/usb.ts`; nothing opens a serial port). |
+| Lighting: DMX over Art-Net and sACN or a USB DMX interface, a patch, fixtures, Light cues | Yes | A node on the network, or a USB interface (an Enttec DMX USB Pro kind, or an Open DMX cable: `core/light/usb.ts`, [14](14-lighting.md) section 8). No serial port is opened until a universe is set to USB and Send DMX is on. |
 | A lighting desk fired from Light cues (ETC Eos, grandMA3) | Yes | The desk. |
 | MIDI cues, MIDI Show Control in and out, MIDI File cues | Yes | A MIDI port. |
 | Timecode: MTC and LTC, out and in (chase, timecode triggers) | Yes | A MIDI port, or an audio output or input for LTC. |

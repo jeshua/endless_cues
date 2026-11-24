@@ -142,11 +142,11 @@ test('a command for the native engine names its files by path: no bytes, no file
   assert.deepEqual(fromNative({ type: 'ended', key: 'c' }, names), { type: 'ended', key: 'c' });
 });
 
-test('which engine a command goes to: with the native engine, everything but MIDI, peaks and samples', () => {
-  const ops = ['play', 'stop', 'stopAll', 'fade', 'decode', 'keep', 'probe', 'devices', 'sink', 'outputs', 'masterDb', 'buses', 'limiter', 'ducker', 'design', 'ltc', 'record', 'where', 'midi', 'peaks', 'pcm'];
+test('which engine a command goes to: with the native engine, everything but MIDI, USB DMX, peaks and samples', () => {
+  const ops = ['play', 'stop', 'stopAll', 'fade', 'decode', 'keep', 'probe', 'devices', 'sink', 'outputs', 'masterDb', 'buses', 'limiter', 'ducker', 'design', 'ltc', 'record', 'where', 'midi', 'peaks', 'pcm', 'dmx', 'dmx-close'];
   for (const op of ops) assert.equal(routeOf(op, 'webaudio'), 'window', op);
-  assert.deepEqual(ops.filter((op) => routeOf(op, 'native') === 'window'), ['midi', 'peaks', 'pcm']);
-  assert.deepEqual([...WINDOW_OPS].sort(), ['midi', 'pcm', 'peaks']);
+  assert.deepEqual(ops.filter((op) => routeOf(op, 'native') === 'window'), ['midi', 'peaks', 'pcm', 'dmx', 'dmx-close']);
+  assert.deepEqual([...WINDOW_OPS].sort(), ['dmx', 'dmx-close', 'midi', 'pcm', 'peaks']);
   // the setting: native only when it says so
   assert.deepEqual([engineOf({}), engineOf(null), engineOf({ audio: { engine: 'native' } }), engineOf({ audio: { engine: 'rust' } })], ['webaudio', 'webaudio', 'native', 'webaudio']);
   assert.equal(binaryPath({ packaged: true, resourcesPath: '/App/Contents/Resources', root: '/src', platform: 'darwin' }), path.join('/App/Contents/Resources', 'ec-audio'));

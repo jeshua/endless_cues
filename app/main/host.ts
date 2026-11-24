@@ -36,6 +36,9 @@ import { oscTriggers, firedBy } from '../../core/net/triggers';
 import { createStage } from './stage';
 import { mediaKind } from '../../core/video/stage';
 import { createLighting } from '../../core/light/lighting';
+import { choosePort, portLabel } from '../../core/light/usb';
+import type { SerialPortInfo, UsbKind } from '../../core/light/usb';
+import type { UsbDmx } from '../../core/light/output';
 import type { LightCmd } from '../../core/light/lighting';
 import * as oscCommands from '../../core/net/commands';
 import { createTransport } from '../../core/timecode/transport';
@@ -224,6 +227,7 @@ export type AudioEvent =
   | { type: 'tc-in'; frame: Parameters<Transport['ltcIn']>[0]; at?: number }
   | { type: 'ltc'; ok: boolean; key?: string; detail?: string }
   | { type: 'ltc-in'; ok: boolean; detail?: string }
+  | { type: 'dmx-usb'; id: number; state: 'open' | 'failed' | 'lost'; detail?: string }
   | { type: 'rec'; rate: number; at?: number; pcm: ArrayBufferView }
   | { type: 'recording'; rate: number }
   | { type: 'operror'; op: string; key?: string; detail?: string }
@@ -596,8 +600,41 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
   const stage = createStage({ BrowserWindow, screen, ipcMain, getConfig, saveConfig, log, test: smoke, engine, fileUrl, audioCmd: (c) => audioCmd(c), notice: (t, ms) => notice(t, ms), changed: () => schedulePush(),
     operatorWindow: () => { for (const wc of views) { const w = !wc.isDestroyed() && BrowserWindow.fromWebContents(wc); if (w) return w; } return null; } });
   engine.video = stage.hooks;
-  // the app's own lights: the patch, the levels, DMX out. A test run makes every packet and sends none.
-  const lighting = createLighting({ log: (l) => log(`[light] ${l}`), changed: () => schedulePush(), dryRun: smoke && !net });
+  // the app's own lights: the patch, the levels, DMX out.
+  // A USB DMX interface is a serial port, and the audio window has those (Web Serial): the levels go to it as MIDI does.
+  // The window asks the system for "a port" and this process is handed the list to choose from (`select-serial-port`,
+  // in startAudio). The list does not say who asked, so one universe is opened at a time: `usbNow` is the one being
+  // opened, `usbWaiting` those after it, `usbHeld` who has which port.
+  type UsbWant = { id: number; port: string; kind: UsbKind };
+  const usbWaiting: UsbWant[] = [];
+  let usbNow: UsbWant | null = null;
+  const usbHeld = new Map<number, { portId: string; name: string }>();
+  const usbWhy = new Map<number, string>();               // why a universe was given no port, until the window says it got none
+  function usbNext() {
+    if (usbNow || !usbWaiting.length) return;
+    const w = usbNow = usbWaiting.shift()!;
+    const failed = (detail: string) => onAudioEvent({ type: 'dmx-usb', id: w.id, state: 'failed', detail });
+    if (!audioWin || audioWin.isDestroyed()) { failed('the audio window is not ready yet'); return; }
+    // (asking the system for a serial port needs a click's standing, which only this way of calling the window gives)
+    audioWin.webContents.executeJavaScript(`dmxOpen(${JSON.stringify({ id: w.id, kind: w.kind })})`, true).catch(() => { if (usbNow === w) failed('the audio window is not ready yet'); });
+  }
+  const usbForget = (id: number) => { for (let i = usbWaiting.length - 1; i >= 0; i--) if (usbWaiting[i].id === id) usbWaiting.splice(i, 1); };
+  const usbDmx: UsbDmx = {
+    open(id, { kind, port }) { usbHeld.delete(id); usbForget(id); usbWaiting.push({ id, port, kind }); usbNext(); },
+    levels(id, levels) { audioCmd({ op: 'dmx', id, levels }); },
+    close(id) { usbHeld.delete(id); usbWhy.delete(id); usbForget(id); audioCmd({ op: 'dmx-close', id }); },
+  };
+  /** The system's serial ports, as the audio window asks for one: the universe being opened gets the one it named, or the first interface. */
+  function chooseSerial(list: SerialPortInfo[]): string {
+    const want = usbNow;
+    if (!want) return '';
+    const r = choosePort(list, want.port, new Set([...usbHeld].filter(([id]) => id !== want.id).map(([, h]) => h.portId)));
+    if (!r.port) { usbWhy.set(want.id, r.why); return ''; }
+    usbHeld.set(want.id, { portId: r.port.portId, name: portLabel(r.port) });
+    return r.port.portId;
+  }
+  // A test run makes every packet and sends none (and opens no port).
+  const lighting = createLighting({ log: (l) => log(`[light] ${l}`), changed: () => schedulePush(), dryRun: smoke && !net, usb: usbDmx });
   lighting.attach(engine);
   if (overrides.dmx) lighting.hold(true);
   /** What goes out, held or let go: OSC (and the devices) and DMX, for a rehearsal or for a show from elsewhere. */
@@ -952,10 +989,18 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
     audioWin.webContents.on('render-process-gone', (_e, d) => {
       log(`[audio] the audio window died (${d.reason}); making a new one`);
       router.windowGone();          // (what it was playing is gone with it, if it was the one playing)
+      usbNow = null; usbWaiting.length = 0; usbHeld.clear(); usbWhy.clear(); lighting.output.usbGone('the audio window restarted');      // (its serial ports went with it: each is opened again)
       audioWin = null;
       setTimeout(startAudio, 500);
     });
     audioWin.on('closed', () => { audioWin = null; });
+    // (only this window is ever given a serial port, and only one a universe is waiting for)
+    audioWin.webContents.session.on('select-serial-port', (e, list, wc, pick) => {
+      e.preventDefault();
+      let id = '';
+      try { if (audioWin && !audioWin.isDestroyed() && wc === audioWin.webContents) id = chooseSerial(list); } catch (err) { log(`[light] USB DMX: ${(err as Error).stack || err}`); }
+      pick(id);
+    });
   }
   // (through the router: while the native engine plays, only what is still the window's counts of what it says)
   ipcMain.on('audio-event', (_e: IpcMainEvent, ev: AudioEvent) => { try { router.fromWindow(ev); } catch (err) { log(`[audio] event ${ev && ev.type}: ${(err as Error).stack || err}`); } });
@@ -995,6 +1040,15 @@ function createHost({ BrowserWindow, ipcMain, getConfig, saveConfig, log, smoke 
       case 'outch': state.outCh = ev.ch || []; break;
       case 'midi-ports': state.midi = { inputs: ev.inputs || [], outputs: ev.outputs || [], error: ev.error || '' }; schedulePush(); break;
       case 'midi-in': midiIn(ev.bytes, ev.port, ev.at); break;
+      // a USB DMX interface: opened on the port chosen for it, not found, or gone with its cable
+      case 'dmx-usb': {
+        const held = usbHeld.get(ev.id), why = usbWhy.get(ev.id);
+        usbWhy.delete(ev.id);
+        if (ev.state !== 'open') usbHeld.delete(ev.id);
+        lighting.output.usbState(ev.id, { state: ev.state, name: held ? held.name : '', detail: ev.detail || why || '' });
+        if (usbNow && usbNow.id === ev.id && ev.state !== 'lost') { usbNow = null; usbNext(); }
+        break;
+      }
       // LTC: a frame heard on the input (and when its last bit ended); and an output that could not carry it
       case 'tc-in': transport.ltcIn(ev.frame, clockOf(ev.at)); break;
       case 'ltc': if (!ev.ok) { log(`[timecode] LTC ${ev.key || ''}: ${ev.detail}`); notice(`LTC is not going out: ${ev.detail}`, 8000); } break;

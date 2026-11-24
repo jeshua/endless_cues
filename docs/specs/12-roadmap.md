@@ -45,7 +45,7 @@ The bar: a sound designer can build and run a real audio-only show on a Mac or a
 - **Scripting with state**: show variables and conditional cues. If a Script cue ever runs more than a list of commands, it runs in a sandbox with the same command surface and no other power; it never becomes "run this code".
 - **The web remote grown up**: editing, carts, HTTPS.
 - **Video and projection past the first slice**: several stages and regions, masks, edge blending, mesh warps; NDI and Syphon/Spout, which need native code.
-- **Lighting beyond the first slice**: USB DMX, a fixture library, cue lists synced both ways with Eos and MA.
+- **Lighting beyond the first slice**: a fixture library, cue lists synced both ways with Eos and MA.
 - **Collaboration**: several people editing one show live, with per-person selection. The operations are already the wire format; what is missing is a relay and conflict rules.
 - **A headless engine**: a show on a small computer with no screen, driven by the web remote and OSC.
 - **Motion capture and generative visuals** as a module.

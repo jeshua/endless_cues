@@ -7,6 +7,7 @@ import { html, useState, cmd, edit, cx, keys } from './lib.js';
 import { TextBox } from './Inspector.js';
 import type { State, CueIndex } from './lib.js';
 import type { LightUniverse, LightInstrument, LightGroup } from '../../core/light/patch';
+import { KINDS as USB_KINDS, kindOf as usbKindOf } from '../../core/light/usb.js';
 
 /** The lights as the host has them now (core/light/lighting.ts `snapshot`). */
 type LightState = State['light'];
@@ -133,26 +134,29 @@ export function LightPane({ s }: { s: State }) {
     if (r && r.error) setDraft({ ...draft!, why: r.error }); else setDraft(null);
   };
 
-  return html`<h2>Light</h2><p class="lede">DMX over Art-Net or sACN, played by Light cues. Works beside a lighting desk.</p>
+  return html`<h2>Light</h2><p class="lede">DMX over Art-Net, sACN or a USB interface, played by Light cues. Works beside a lighting desk.</p>
     <div class="problem warning" style="margin-bottom:12px">Public alpha: no fixture has ever been lit by this. Try it on your rig before a show depends on it.</div>
 
     <div class="card">
       <div class="ch"><b>Output</b><span class="st"><span class=${cx('dot', l.sending && !l.dryRun && !l.held ? 'go' : '')}></span>${l.dryRun && l.on ? 'test run: nothing is sent' : l.held && l.on ? 'held back: nothing is sent' : l.sending ? `sending, ${l.rate} times a second` : cfg.on ? 'on, with nothing to send yet' : 'off'}</span></div>
       <div class="cfg">
-        <div title="Off: levels are kept; nothing goes on the network"><label>Send DMX</label><${Switch} on=${!!cfg.on} onChange=${(on: boolean) => set('on', on, on ? 'DMX on' : 'DMX off')} /></div>
+        <div title="Off: levels are kept; nothing is sent"><label>Send DMX</label><${Switch} on=${!!cfg.on} onChange=${(on: boolean) => set('on', on, on ? 'DMX on' : 'DMX off')} /></div>
         <div title="Off: Esc holds the lights. On: Esc fades them home too"><label>Esc also takes the lights out</label><${Switch} on=${!!cfg.panicBlackout} onChange=${(on: boolean) => set('panicBlackout', on, 'panic and lights')} /></div>
       </div>
       ${universes.map((u, i) => { const st: Partial<LightState['universes'][number]> = l.universes.find((x) => x.id === Number(u.id)) || {}; return html`<div class="patch" key=${i}>
         <div class="row-flex">
           <span class=${cx('dot', st.error ? 'danger' : l.sending && !l.dryRun ? 'go' : '')}></span><b style="width:92px">Universe ${u.id}</b>
-          <div class="seg">${([['artnet', 'Art-Net'], ['sacn', 'sACN']] as const).map(([x, label]) => html`<button class=${cx((u.protocol || 'artnet') === x && 'on')} onClick=${() => updU(i, { protocol: x, address: x === 'sacn' ? Math.max(1, Number(u.address) || 1) : Number(u.address) || 0 })}>${label}</button>`)}</div>
+          <div class="seg">${([['artnet', 'Art-Net'], ['sacn', 'sACN'], ['usb', 'USB']] as const).map(([x, label]) => html`<button data-light-protocol=${x} class=${cx((u.protocol || 'artnet') === x && 'on')} onClick=${() => updU(i, { protocol: x, address: x === 'sacn' ? Math.max(1, Number(u.address) || 1) : Number(u.address) || 0 })}>${label}</button>`)}</div>
           <span class="grow dim" style="font-size:11.5px;text-align:right">${st.error || (st.packets ? `${st.to || ''}` : '')}</span>
           <button class="btn ghost small icon" title="Remove this universe" onClick=${() => set('universes', universes.filter((_, j) => j !== i), 'remove universe')}>×</button>
         </div>
-        <div class="pgrid">
+        ${u.protocol === 'usb' ? html`<div class="pgrid">
+          <div style="grid-column: span 2" title="A Pro makes the DMX signal itself. An Open DMX cable is fed by this computer: slower, and less steady"><label>Interface</label><select data-light-usb-kind value=${usbKindOf(u.device)} onChange=${(e: Typed) => updU(i, { device: usbKindOf(e.target.value) })}>${USB_KINDS.map((k) => html`<option value=${k.id}>${k.name}</option>`)}</select></div>
+          <div style="grid-column: span 2" title="Empty: the first interface found. Or a port’s name (ttyUSB0, COM3, cu.usbserial-…)"><label>Port</label><${TextBox} mono value=${u.port || ''} placeholder="the first one found" onCommit=${(v: string) => updU(i, { port: v.trim() })} /></div>
+        </div>` : html`<div class="pgrid">
           <div title=${u.protocol === 'sacn' ? '1 to 63999' : '0 to 32767; the first is 0'}><label>${u.protocol === 'sacn' ? 'sACN universe' : 'Art-Net universe'}</label><${TextBox} mono value=${u.address} onCommit=${(v: string) => { const x = Math.round(Number(v)); if (Number.isFinite(x)) updU(i, { address: x }); }} /></div>
           <div style="grid-column: span 3" title=${u.protocol === 'sacn' ? 'Empty: multicast. An address: that receiver only' : 'Empty: broadcast. An address: that node only'}><label>Send to</label><${TextBox} mono value=${u.host || ''} placeholder=${u.protocol === 'sacn' ? 'multicast' : 'broadcast'} onCommit=${(v: string) => updU(i, { host: v.trim() })} /></div>
-        </div>
+        </div>`}
       </div>`; })}
       <div class="row-flex" style="margin-top:10px"><button class="btn small" data-light-add-universe onClick=${addU}>Add a universe</button>
         ${l.nodes.length ? html`<span class="dim" style="font-size:11.5px">Art-Net nodes answering: ${l.nodes.map((n) => `${n.name} (${n.ip})`).join(', ')}</span>` : l.outputError ? html`<span class="dim" style="font-size:11.5px">${l.outputError}</span>` : null}</div>
@@ -201,5 +205,5 @@ export function LightPane({ s }: { s: State }) {
         <div class="row-flex" style="margin-top:8px"><button class="btn primary small" data-fixture-save onClick=${saveFixture}>Save fixture</button><button class="btn small" onClick=${() => setDraft(null)}>Cancel</button></div>
       </div>` : html`<div class="row-flex" style="margin-top:10px"><button class="btn small" data-fixture-new onClick=${() => setDraft({ id: '', name: '', text: '', why: '' })}>New fixture…</button></div>`}
     </div>
-    <p class="dim" style="font-size:12px">${keys('No USB DMX yet: use an Art-Net or sACN node. Dashboard: ⇧⌘D.')}</p>`;
+    <p class="dim" style="font-size:12px">${keys('Dashboard: ⇧⌘D.')}</p>`;
 }

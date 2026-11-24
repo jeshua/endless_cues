@@ -59,6 +59,10 @@ export interface AudioCommands {
   record: { on?: boolean };
   ltc: Omit<LtcCmd, 'op'>;
   'ltc-in': { on?: boolean; input?: string; channel?: number };
+  // USB DMX (core/light/usb.ts): a universe's newest levels, and its interface let go of (it is opened by the host
+  // calling the window's `dmxOpen`, not by a command: app/main/host.ts says why)
+  dmx: { id: number; levels: Uint8Array | number[] };
+  'dmx-close': { id: number };
 }
 export type AudioOp = keyof AudioCommands;
 export type AudioCommand = { [K in AudioOp]: { op: K } & AudioCommands[K] }[AudioOp];
@@ -88,6 +92,7 @@ export interface AudioEvents {
   ltc: { key: string; ok: boolean; detail?: string };
   'ltc-in': { ok: boolean; detail?: string };
   'tc-in': { frame: { tc: TC; rate: Rate }; at: number };
+  'dmx-usb': { id: number; state: 'open' | 'failed' | 'lost'; detail?: string };
   operror: { op: string; key: string; detail: string };
   ctx: { state: AudioContextState; error?: true };
   level: { monitor: number | null; ducking: boolean; ducked: string[]; db: number; channels: { peak: number; rms: number }[]; buses: Record<string, number>; outs: number[];
