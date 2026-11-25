@@ -71,5 +71,8 @@ if (args.has('--clean')) {
   console.log('Watching (a new .ts needs a restart).');
 } else {
   for (const f of stale()) fs.rmSync(f);
-  await Promise.all([esbuild.build(node()), ...BUNDLES.map((b) => esbuild.build(page(b)))]);
+  // The .js beside each .ts first, then the bundles: a bundle's imports name the .js, so one made at the same time
+  // takes whatever .js is on the disk, which in a checkout just moved to another commit is the old one.
+  await esbuild.build(node());
+  await Promise.all(BUNDLES.map((b) => esbuild.build(page(b))));
 }
